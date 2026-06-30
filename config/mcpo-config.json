@@ -1,0 +1,29 @@
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/data/documents"],
+      "description": "Read and write files in ~/documents"
+    },
+    "memory": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"],
+      "description": "Persistent knowledge graph memory across conversations"
+    },
+    "fetch": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-fetch"],
+      "description": "Fetch and read any web page"
+    },
+    "qdrant-rag": {
+      "command": "node",
+      "args": ["/mcp-servers/qdrant-rag/index.js"],
+      "env": {
+        "QDRANT_URL": "http://qdrant:6333",
+        "EMBED_URL": "http://embed-server:8001/v1",
+        "COLLECTION": "my-knowledge-base"
+      },
+      "description": "Semantic search over your personal knowledge base"
+    }
+  }
+}

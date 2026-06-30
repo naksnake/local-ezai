@@ -1,0 +1,165 @@
+version: '3.8'
+
+# All services share this internal network.
+# They reach each other by container name (e.g. http://qdrant:6333).
+networks:
+  ai-net:
+    driver: bridge
+
+# Named volumes persist data when containers are stopped or updated.
+volumes:
+  openwebui-data:
+  qdrant-data:
+
+services:
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # OpenWebUI — Chat interface
+  # URL: http://localhost:3000
+  # ═══════════════════════════════════════════════════════════════════════
+  openwebui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: openwebui
+    restart: unless-stopped
+    ports:
+      - "3000:8080"
+    environment:
+      - OPENAI_API_BASE_URL=http://litellm:4000/v1
+      - OPENAI_API_KEY=${LITELLM_MASTER_KEY:-sk-ai-service-2024}
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-change-this-secret}
+    volumes:
+      - openwebui-data:/app/backend/data
+    networks:
+      - ai-net
+    depends_on:
+      - litellm
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # LiteLLM — Model routing proxy
+  # URL: http://localhost:4000
+  # ═══════════════════════════════════════════════════════════════════════
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: litellm
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./config/litellm-config.yaml:/app/config.yaml:ro
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    networks:
+      - ai-net
+    depends_on:
+      - vllm
+      - embed-server
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # vLLM — Main LLM inference server (GPU)
+  # URL: http://localhost:8000
+  # ═══════════════════════════════════════════════════════════════════════
+  vllm:
+    image: vllm/vllm-openai:latest
+    container_name: vllm
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ${MODELS_DIR:-~/ai-models/hf-cache}:/root/.cache/huggingface
+    environment:
+      - HF_HUB_OFFLINE=1
+    command:
+      - --model
+      - ${CHAT_MODEL:-Qwen/Qwen2.5-7B-Instruct}
+      - --served-model-name
+      - ${CHAT_MODEL_NAME:-qwen2.5-7b}
+      - --max-model-len
+      - "${MAX_MODEL_LEN:-4096}"
+      - --gpu-memory-utilization
+      - "${GPU_MEMORY_UTILIZATION:-0.85}"
+      - --enable-auto-tool-choice
+      - --tool-call-parser
+      - hermes
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    shm_size: '2gb'
+    networks:
+      - ai-net
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # Embed Server — Embedding model running on CPU
+  # Separate from vLLM so it doesn't compete for VRAM
+  # URL: http://localhost:8001
+  # ═══════════════════════════════════════════════════════════════════════
+  embed-server:
+    build:
+      context: .
+      dockerfile: embed-server/Dockerfile
+    container_name: embed-server
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    volumes:
+      - ${MODELS_DIR:-~/ai-models/hf-cache}:/root/.cache/huggingface
+    environment:
+      - HF_HUB_OFFLINE=1
+    networks:
+      - ai-net
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # Qdrant — Vector database for RAG
+  # URL: http://localhost:6333
+  # ═══════════════════════════════════════════════════════════════════════
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    networks:
+      - ai-net
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # SearXNG — Private self-hosted web search
+  # URL: http://localhost:8090
+  # ═══════════════════════════════════════════════════════════════════════
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    restart: unless-stopped
+    ports:
+      - "8090:8080"
+    volumes:
+      - ./config/searxng:/etc/searxng:rw
+    cap_add:
+      - SYS_ADMIN
+    networks:
+      - ai-net
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # mcpo — MCP tool proxy server
+  # Wraps MCP servers into an OpenAI-compatible tool endpoint
+  # URL: http://localhost:8200
+  # ═══════════════════════════════════════════════════════════════════════
+  mcpo:
+    build:
+      context: .
+      dockerfile: mcpo/Dockerfile
+    container_name: mcpo
+    restart: unless-stopped
+    ports:
+      - "8200:8200"
+    volumes:
+      - ${DOCUMENTS_DIR:-~/documents}:/data/documents
+      - ./config/mcpo-config.json:/app/mcpo-config.json:ro
+    environment:
+      - MCP_API_KEY=${MCP_API_KEY:-local-tools-key}
+    networks:
+      - ai-net

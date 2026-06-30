@@ -1,0 +1,21 @@
+# CPU-only override — use with:  make up-cpu
+# Replaces the vLLM GPU service with a smaller CPU-friendly model
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.cpu.yml up -d
+
+version: '3.8'
+
+services:
+  vllm:
+    command:
+      - --model
+      - Qwen/Qwen2.5-0.5B-Instruct
+      - --served-model-name
+      - qwen2.5-0.5b
+      - --max-model-len
+      - "2048"
+      - --device
+      - cpu
+    deploy:
+      resources: {}   # removes GPU requirement

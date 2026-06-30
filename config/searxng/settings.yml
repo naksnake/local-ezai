@@ -1,0 +1,11 @@
+use_default_settings: true
+
+server:
+  limiter: false          # disable rate limiting for local use
+  image_proxy: true
+  secret_key: "searxng-local-secret-change-this"
+
+search:
+  formats:
+    - html
+    - json              # REQUIRED: the agent tools use the JSON API

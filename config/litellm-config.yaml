@@ -1,0 +1,24 @@
+model_list:
+
+  # ── Main chat model ─────────────────────────────────────────────────────
+  # Served by vLLM at http://vllm:8000
+  # The model_name here must match CHAT_MODEL_NAME in your .env
+  - model_name: qwen2.5-7b
+    litellm_params:
+      model: openai/qwen2.5-7b
+      api_base: http://vllm:8000/v1
+      api_key: "not-needed-locally"
+
+  # ── Embedding model ─────────────────────────────────────────────────────
+  # Served by embed-server at http://embed-server:8001
+  - model_name: nomic-embed
+    litellm_params:
+      model: openai/nomic-embed-text-v1.5
+      api_base: http://embed-server:8001/v1
+      api_key: "not-needed-locally"
+
+# ── API Security ────────────────────────────────────────────────────────────
+# OpenWebUI sends this key with every request
+# Must match LITELLM_MASTER_KEY in your .env
+general_settings:
+  master_key: "sk-ai-service-2024"

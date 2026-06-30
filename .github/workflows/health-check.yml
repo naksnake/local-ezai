@@ -1,0 +1,94 @@
+name: Health Check
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'   # every 6 hours
+  workflow_dispatch:          # allow manual trigger
+
+jobs:
+  validate-configs:
+    runs-on: ubuntu-latest
+    name: Validate Configuration Files
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check required files exist
+        run: |
+          echo "Checking required files..."
+          files=(
+            "docker-compose.yml"
+            "config/litellm-config.yaml"
+            "config/searxng/settings.yml"
+            "config/mcpo-config.json"
+            "embed-server/Dockerfile"
+            "embed-server/server.py"
+            "mcpo/Dockerfile"
+            "mcp-servers/qdrant-rag/package.json"
+            "mcp-servers/qdrant-rag/index.js"
+            "scripts/setup.sh"
+            "scripts/health-check.sh"
+            "scripts/embed_documents.py"
+          )
+          all_ok=true
+          for f in "${files[@]}"; do
+            if [ -f "$f" ]; then
+              echo "  ✅  $f"
+            else
+              echo "  ❌  MISSING: $f"
+              all_ok=false
+            fi
+          done
+          $all_ok || exit 1
+
+      - name: Validate docker-compose.yml
+        run: |
+          pip install -q pyyaml
+          python3 -c "
+          import yaml
+          with open('docker-compose.yml') as f:
+              data = yaml.safe_load(f)
+          services = list(data.get('services', {}).keys())
+          print('Services:', services)
+          expected = {'openwebui','litellm','vllm','embed-server','qdrant','searxng','mcpo'}
+          missing = expected - set(services)
+          if missing:
+              print('MISSING services:', missing)
+              exit(1)
+          print('docker-compose.yml is valid')
+          "
+
+      - name: Validate litellm-config.yaml
+        run: |
+          python3 -c "
+          import yaml
+          with open('config/litellm-config.yaml') as f:
+              data = yaml.safe_load(f)
+          models = [m['model_name'] for m in data.get('model_list', [])]
+          print('Models:', models)
+          print('litellm-config.yaml is valid')
+          "
+
+      - name: Validate mcpo-config.json
+        run: |
+          python3 -c "
+          import json
+          with open('config/mcpo-config.json') as f:
+              data = json.load(f)
+          servers = list(data.get('mcpServers', {}).keys())
+          print('MCP servers:', servers)
+          print('mcpo-config.json is valid')
+          "
+
+      - name: Validate Node.js package.json
+        run: |
+          python3 -c "
+          import json
+          with open('mcp-servers/qdrant-rag/package.json') as f:
+              data = json.load(f)
+          deps = list(data.get('dependencies', {}).keys())
+          print('Dependencies:', deps)
+          print('package.json is valid')
+          "
+
+      - name: All checks passed
+        run: echo "All configuration files are valid ✅"
