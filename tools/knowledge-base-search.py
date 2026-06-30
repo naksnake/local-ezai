@@ -53,7 +53,7 @@ class Tools:
             embed_resp = requests.post(
                 f"{self.valves.embed_url}/embeddings",
                 json={"model": "nomic-embed-text-v1.5", "input": query},
-                timeout=15,
+                timeout=(5, 30),
             )
             embed_resp.raise_for_status()
             embed_data = embed_resp.json().get("data", [])

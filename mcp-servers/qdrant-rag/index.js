@@ -123,7 +123,7 @@ server.setRequestHandler("tools/call", async (request) => {
     try {
       const results = await qdrant.search(COLLECTION, {
         vector,
-        limit: Math.max(1, Math.min(Number(limit), 10)),
+        limit: Math.max(1, Math.min(Number(limit) || 5, 10)),
         with_payload: true
       });
 
