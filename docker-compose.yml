@@ -120,7 +120,7 @@ services:
     restart: unless-stopped
     ports:
       - "6333:6333"
-      - "6334:6334"
+      # gRPC port 6334 intentionally not exposed to host — use REST API only
     volumes:
       - qdrant-data:/qdrant/storage
     networks:
@@ -136,10 +136,10 @@ services:
     restart: unless-stopped
     ports:
       - "8090:8080"
+    environment:
+      - SEARXNG_SECRET=${SEARXNG_SECRET:-searxng-local-secret-change-this}
     volumes:
       - ./config/searxng:/etc/searxng:rw
-    cap_add:
-      - SYS_ADMIN
     networks:
       - ai-net
 
@@ -161,5 +161,30 @@ services:
       - ./config/mcpo-config.json:/app/mcpo-config.json:ro
     environment:
       - MCP_API_KEY=${MCP_API_KEY:-local-tools-key}
+      - RAG_COLLECTION=${RAG_COLLECTION:-my-knowledge-base}
     networks:
       - ai-net
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # Monitor — Real-time web dashboard for all services
+  # URL: http://localhost:8888
+  # ═══════════════════════════════════════════════════════════════════════
+  monitor:
+    build:
+      context: .
+      dockerfile: monitor/Dockerfile
+    container_name: monitor
+    restart: unless-stopped
+    ports:
+      - "8888:8888"
+    environment:
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-ai-service-2024}
+      - MCP_API_KEY=${MCP_API_KEY:-local-tools-key}
+      - POLL_INTERVAL=15
+    networks:
+      - ai-net
+    depends_on:
+      - openwebui
+      - litellm
+      - embed-server
+      - qdrant

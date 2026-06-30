@@ -53,10 +53,13 @@ class Tools:
             embed_resp = requests.post(
                 f"{self.valves.embed_url}/embeddings",
                 json={"model": "nomic-embed-text-v1.5", "input": query},
-                timeout=15,
+                timeout=(5, 30),
             )
             embed_resp.raise_for_status()
-            vector = embed_resp.json()["data"][0]["embedding"]
+            embed_data = embed_resp.json().get("data", [])
+            if not embed_data:
+                return f"No embeddings returned for query: '{query}'"
+            vector = embed_data[0]["embedding"]
 
             # Step 2: Search Qdrant for nearest neighbours
             search_resp = requests.post(
@@ -87,7 +90,7 @@ class Tools:
 
             return "\n\n---\n\n".join(output)
 
-        except requests.exceptions.ConnectionError as e:
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
             return (
                 "Cannot connect to the embedding server or Qdrant.\n"
                 "Check that both containers are running:\n"

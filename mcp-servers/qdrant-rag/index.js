@@ -94,21 +94,36 @@ server.setRequestHandler("tools/call", async (request) => {
 
   // ── search_knowledge_base ─────────────────────────────────────────────
   if (name === "search_knowledge_base") {
-    const { query, limit = 5 } = args;
+    const { query, limit = 5 } = args || {};
+    if (!query) {
+      return { content: [{ type: "text", text: "query is required." }], isError: true };
+    }
 
+    // Step 1: Embed the query using the local embedding server
+    let vector;
     try {
-      // Step 1: Embed the query using the local embedding server
       const embedResp = await axios.post(
         `${EMBED_URL}/embeddings`,
         { model: "nomic-embed-text-v1.5", input: query },
         { timeout: 15000 }
       );
-      const vector = embedResp.data.data[0].embedding;
+      const embeddingData = embedResp.data.data;
+      if (!embeddingData || embeddingData.length === 0) {
+        return { content: [{ type: "text", text: "Embed server returned no embeddings for the query." }], isError: true };
+      }
+      vector = embeddingData[0].embedding;
+    } catch (err) {
+      const msg = err.code === "ECONNREFUSED"
+        ? `Cannot reach embedding server at ${EMBED_URL}.\nIs the embed-server container running?`
+        : `Embedding error: ${err.message}`;
+      return { content: [{ type: "text", text: msg }], isError: true };
+    }
 
-      // Step 2: Find nearest neighbours in Qdrant
+    // Step 2: Find nearest neighbours in Qdrant
+    try {
       const results = await qdrant.search(COLLECTION, {
         vector,
-        limit: Math.min(Number(limit), 10),
+        limit: Math.max(1, Math.min(Number(limit) || 5, 10)),
         with_payload: true
       });
 
@@ -141,9 +156,8 @@ server.setRequestHandler("tools/call", async (request) => {
       };
 
     } catch (err) {
-      const isConnRefused = err.code === "ECONNREFUSED";
-      const msg = isConnRefused
-        ? `Cannot reach embedding server at ${EMBED_URL}.\nIs the embed-server container running?`
+      const msg = err.code === "ECONNREFUSED"
+        ? `Cannot reach Qdrant at ${QDRANT_URL}.\nIs the Qdrant container running?`
         : `Search error: ${err.message}`;
       return { content: [{ type: "text", text: msg }], isError: true };
     }
@@ -159,4 +173,7 @@ server.setRequestHandler("tools/call", async (request) => {
 const transport = new StdioServerTransport();
 server.connect(transport).then(() => {
   process.stderr.write(`[qdrant-rag] MCP server ready (collection: ${COLLECTION})\n`);
+}).catch((err) => {
+  process.stderr.write(`[qdrant-rag] Failed to start: ${err.message}\n`);
+  process.exit(1);
 });

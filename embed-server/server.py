@@ -13,6 +13,8 @@ from sentence_transformers import SentenceTransformer
 
 app = FastAPI(title="Embed Server", version="1.0.0")
 
+MODEL_ID = "nomic-embed-text-v1.5"
+
 # ── Load model from the HuggingFace cache mounted at /root/.cache/huggingface
 print("Loading nomic-embed-text-v1.5 from cache...", flush=True)
 model = SentenceTransformer(
@@ -28,26 +30,28 @@ print(f"Embedding model ready. Dimension: {EMBEDDING_DIM}", flush=True)
 # ── Request / response schemas ───────────────────────────────────────────────
 class EmbedRequest(BaseModel):
     input: Union[str, List[str]]
-    model: str = "nomic-embed-text-v1.5"
+    model: str = MODEL_ID
 
 
 # ── Endpoints ────────────────────────────────────────────────────────────────
 @app.get("/health")
 def health():
-    return {"status": "healthy", "model": "nomic-embed-text-v1.5", "dim": EMBEDDING_DIM}
+    return {"status": "healthy", "model": MODEL_ID, "dim": EMBEDDING_DIM}
 
 
 @app.post("/v1/embeddings")
 def embed(req: EmbedRequest):
     texts = [req.input] if isinstance(req.input, str) else req.input
     vectors = model.encode(texts, normalize_embeddings=True).tolist()
+    total_tokens = sum(len(t.split()) for t in texts)
     return {
         "object": "list",
-        "model": req.model,
+        "model": MODEL_ID,
         "data": [
             {"object": "embedding", "index": i, "embedding": vec}
             for i, vec in enumerate(vectors)
         ],
+        "usage": {"prompt_tokens": total_tokens, "total_tokens": total_tokens},
     }
 
 

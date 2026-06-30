@@ -1,5 +1,5 @@
 .PHONY: help setup build pull up up-cpu down restart logs health status embed \
-        k8s k8s-delete update clean slurm-setup push-github
+        k8s k8s-delete update clean slurm-setup push-github monitor
 
 # Load .env if it exists
 -include .env
@@ -28,7 +28,8 @@ up: ## Start all services with GPU
 	docker compose up -d
 	@echo ""
 	@echo "  Services starting... run 'make health' in 2-3 minutes"
-	@echo "  Chat UI: http://localhost:3000"
+	@echo "  Chat UI:  http://localhost:3000"
+	@echo "  Monitor:  http://localhost:8888"
 	@echo ""
 
 up-cpu: ## Start all services in CPU-only mode (no GPU required)
@@ -55,11 +56,15 @@ status: ## Show status of all containers
 
 embed: ## Embed documents from ~/documents into Qdrant knowledge base
 	@echo "Embedding documents from ~/documents..."
-	@source ~/ai-env/bin/activate && python3 scripts/embed_documents.py \
+	@. ~/ai-env/bin/activate && python3 scripts/embed_documents.py \
 		--input-dir $(DOCUMENTS_DIR) \
 		--qdrant-url http://localhost:6333 \
 		--embed-url http://localhost:8001/v1 \
 		--collection $(RAG_COLLECTION)
+
+monitor: ## Open the web monitoring dashboard
+	@echo "Monitor dashboard: http://localhost:8888"
+	@xdg-open http://localhost:8888 2>/dev/null || open http://localhost:8888 2>/dev/null || true
 
 k8s: ## Deploy to K3s Kubernetes cluster
 	kubectl apply -f k8s/namespace.yaml

@@ -32,7 +32,7 @@ def get_embeddings(texts: list[str], embed_url: str) -> list[list[float]]:
     resp = requests.post(
         f"{embed_url}/embeddings",
         json={"model": "nomic-embed-text-v1.5", "input": texts},
-        timeout=60,
+        timeout=(5, 60),
     )
     resp.raise_for_status()
     return [item["embedding"] for item in resp.json()["data"]]
@@ -64,6 +64,10 @@ def main():
     parser.add_argument("--overlap",     type=int, default=50)
     args = parser.parse_args()
 
+    if args.overlap >= args.chunk_size:
+        print(f"[ERROR] --overlap ({args.overlap}) must be less than --chunk-size ({args.chunk_size})")
+        sys.exit(1)
+
     input_path = Path(args.input_dir)
     if not input_path.exists():
         print(f"[ERROR] Input directory not found: {args.input_dir}")
@@ -94,16 +98,25 @@ def main():
         sys.exit(1)
 
     # ── Create collection if needed ───────────────────────────────────────────
+    current_dim = len(get_embeddings(["dim test"], args.embed_url)[0])
     existing_names = {c.name for c in client.get_collections().collections}
     if args.collection not in existing_names:
-        dim = len(get_embeddings(["dim test"], args.embed_url)[0])
         client.create_collection(
             args.collection,
-            vectors_config=VectorParams(size=dim, distance=Distance.COSINE),
+            vectors_config=VectorParams(size=current_dim, distance=Distance.COSINE),
         )
-        print(f"Created Qdrant collection '{args.collection}' (dim={dim})")
+        print(f"Created Qdrant collection '{args.collection}' (dim={current_dim})")
     else:
-        print(f"Using existing collection '{args.collection}'")
+        coll_info = client.get_collection(args.collection)
+        stored_dim = coll_info.config.params.vectors.size
+        if stored_dim != current_dim:
+            print(
+                f"[ERROR] Collection '{args.collection}' was built with dim={stored_dim} "
+                f"but current embed model returns dim={current_dim}. "
+                f"Delete the collection or use a different --collection name."
+            )
+            sys.exit(1)
+        print(f"Using existing collection '{args.collection}' (dim={stored_dim})")
 
     # ── Chunk all documents ───────────────────────────────────────────────────
     all_chunks: list[str] = []
@@ -137,12 +150,19 @@ def main():
         batch_meta  = all_meta[i : i + args.batch_size]
 
         vectors = get_embeddings(batch_texts, args.embed_url)
+        if len(vectors) != len(batch_texts):
+            print(f"\n[ERROR] Embed server returned {len(vectors)} vectors for {len(batch_texts)} texts")
+            sys.exit(1)
 
         points = [
             PointStruct(id=point_id + j, vector=vec, payload=meta)
             for j, (vec, meta) in enumerate(zip(vectors, batch_meta))
         ]
-        client.upsert(collection_name=args.collection, points=points)
+        try:
+            client.upsert(collection_name=args.collection, points=points)
+        except Exception as e:
+            print(f"\n[ERROR] Qdrant upsert failed at batch starting index {i}: {e}")
+            sys.exit(1)
         point_id += len(batch_texts)
 
         done = min(i + args.batch_size, len(all_chunks))
