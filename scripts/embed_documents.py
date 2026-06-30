@@ -32,7 +32,7 @@ def get_embeddings(texts: list[str], embed_url: str) -> list[list[float]]:
     resp = requests.post(
         f"{embed_url}/embeddings",
         json={"model": "nomic-embed-text-v1.5", "input": texts},
-        timeout=60,
+        timeout=(5, 60),
     )
     resp.raise_for_status()
     return [item["embedding"] for item in resp.json()["data"]]
@@ -63,6 +63,10 @@ def main():
     parser.add_argument("--chunk-size",  type=int, default=400)
     parser.add_argument("--overlap",     type=int, default=50)
     args = parser.parse_args()
+
+    if args.overlap >= args.chunk_size:
+        print(f"[ERROR] --overlap ({args.overlap}) must be less than --chunk-size ({args.chunk_size})")
+        sys.exit(1)
 
     input_path = Path(args.input_dir)
     if not input_path.exists():
@@ -137,6 +141,9 @@ def main():
         batch_meta  = all_meta[i : i + args.batch_size]
 
         vectors = get_embeddings(batch_texts, args.embed_url)
+        if len(vectors) != len(batch_texts):
+            print(f"\n[ERROR] Embed server returned {len(vectors)} vectors for {len(batch_texts)} texts")
+            sys.exit(1)
 
         points = [
             PointStruct(id=point_id + j, vector=vec, payload=meta)
