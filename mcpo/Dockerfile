@@ -18,5 +18,5 @@ WORKDIR /app
 EXPOSE 8200
 
 # mcpo reads the server list from /app/mcpo-config.json (mounted at runtime)
-CMD ["mcpo", "--port", "8200", "--api-key", "local-tools-key", \
-     "--config", "/app/mcpo-config.json"]
+ENV MCP_API_KEY=local-tools-key
+CMD sh -c "mcpo --port 8200 --api-key ${MCP_API_KEY} --config /app/mcpo-config.json"

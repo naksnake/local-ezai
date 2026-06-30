@@ -52,6 +52,7 @@ chk "SearXNG"          "http://localhost:8090/search?q=test&format=json"  '"resu
 chk "mcpo tools"       "http://localhost:8200/openapi.json"               "openapi"   "Authorization: Bearer ${MCP_KEY}"
 chk "LiteLLM proxy"    "http://localhost:4000/models"                     '"data"'    "Authorization: Bearer ${LITELLM_KEY}"
 chk "OpenWebUI"        "http://localhost:3000"                            "Open WebUI"
+chk "Monitor"          "http://localhost:8888/api/status"                 "server_time"
 
 echo ""
 echo -e "  ${BOLD}Passed: ${GREEN}${pass}${NC}  |  Failed: ${RED}${fail}${NC}"

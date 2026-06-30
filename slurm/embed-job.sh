@@ -8,7 +8,7 @@
 
 echo "=== Document embedding started: $(date) ==="
 source ~/ai-env/bin/activate
-python3 ~/ai-service/scripts/embed_documents.py \
+python3 ~/local-ezai/scripts/embed_documents.py \
   --input-dir ~/documents \
   --qdrant-url http://localhost:6333 \
   --embed-url http://localhost:8001/v1 \

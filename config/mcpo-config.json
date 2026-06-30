@@ -21,7 +21,7 @@
       "env": {
         "QDRANT_URL": "http://qdrant:6333",
         "EMBED_URL": "http://embed-server:8001/v1",
-        "COLLECTION": "my-knowledge-base"
+        "COLLECTION": "${RAG_COLLECTION:-my-knowledge-base}"
       },
       "description": "Semantic search over your personal knowledge base"
     }

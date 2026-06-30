@@ -21,4 +21,4 @@ model_list:
 # OpenWebUI sends this key with every request
 # Must match LITELLM_MASTER_KEY in your .env
 general_settings:
-  master_key: "sk-ai-service-2024"
+  master_key: os.environ/LITELLM_MASTER_KEY
