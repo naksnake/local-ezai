@@ -186,19 +186,31 @@ those steps are identical.
 
 ## Choosing a different model
 
-Set these in `.env`, re-run `make download-n97`, then edit
-`config/litellm-config.n97.yaml` so `model_name` matches, and
-`make up-n97` again:
+1. Set these in `.env` (example — faster + Apache-2.0 licensed, recommended
+   if 3B feels sluggish):
 
-```bash
-# Faster + Apache-2.0 licensed (recommended if 3B feels sluggish)
-N97_GGUF_REPO=Qwen/Qwen2.5-1.5B-Instruct-GGUF
-N97_MODEL_FILE=qwen2.5-1.5b-instruct-q4_k_m.gguf
-N97_MODEL_NAME=qwen2.5-1.5b
-```
+   ```bash
+   N97_GGUF_REPO=Qwen/Qwen2.5-1.5B-Instruct-GGUF
+   N97_MODEL_FILE=qwen2.5-1.5b-instruct-q4_k_m.gguf
+   N97_MODEL_NAME=qwen2.5-1.5b
+   ```
+
+2. `make download-n97`
+3. Edit `config/litellm-config.n97.yaml` so `model_name` (and the
+   `openai/...` value) match the new `N97_MODEL_NAME`
+4. `make up-n97` — recreates the llama.cpp container with the new model
+5. `docker compose restart litellm` — LiteLLM reads its config only at
+   startup, so without this the new model name never appears in OpenWebUI
 
 Any single-file GGUF from HuggingFace works the same way. Stay at or below
 ~3B parameters at Q4 on this hardware.
+
+## Updating
+
+Use `make update-n97`, **not** `make update` — the plain `update` target runs
+against the base compose file only, so it would pull the multi-GB CUDA vLLM
+image and recreate the LLM container from the GPU definition, which cannot
+start on this machine.
 
 ## Tuning knobs
 
@@ -213,6 +225,8 @@ Any single-file GGUF from HuggingFace works the same way. Stay at or below
 | Symptom | Fix |
 |---------|-----|
 | LLM container exits immediately | `docker compose logs vllm` — usually a wrong `N97_MODEL_FILE` path/name |
+| LLM broke after `make update` | `update` reverts to the GPU stack — run `make up-n97` to recover, and use `make update-n97` from now on |
+| Model switch not showing in OpenWebUI | LiteLLM only reads its config at startup — `docker compose restart litellm` |
 | `docker compose` errors on `!override` | Docker Compose too old — needs ≥ 2.24.4; `docker compose version`, then update docker-ce |
 | Everything crawls after ~10 min of use | Thermal throttling — check `sensors`; improve case airflow |
 | Container killed (`Exited (137)`) | Memory limit hit — check `docker stats`; use the 1.5B model or raise the limit in `docker-compose.n97.yml` |

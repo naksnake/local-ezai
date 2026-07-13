@@ -1,5 +1,5 @@
-.PHONY: help setup build pull up up-cpu up-n97 pull-n97 download-n97 down \
-        restart logs health status embed \
+.PHONY: help setup build pull up up-cpu up-n97 pull-n97 download-n97 \
+        update-n97 down restart logs health status embed \
         k8s k8s-delete update clean slurm-setup push-github monitor
 
 # Load .env if it exists
@@ -12,15 +12,15 @@ help: ## Show all available commands
 	@echo "  ║   AI Service — Make Commands     ║"
 	@echo "  ╚══════════════════════════════════╝"
 	@echo ""
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
+	@grep -hE '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 	@echo ""
 
 setup: ## Run the automated system setup script (first time only)
 	@bash scripts/setup.sh
 
-build: ## Build custom Docker images (embed-server and mcpo)
-	docker compose build embed-server mcpo
+build: ## Build custom Docker images (embed-server, mcpo, monitor)
+	docker compose build embed-server mcpo monitor
 
 pull: ## Pull all official Docker images
 	docker compose pull openwebui litellm vllm qdrant searxng
@@ -33,7 +33,7 @@ up: ## Start all services with GPU
 	@echo "  Monitor:  http://localhost:8888"
 	@echo ""
 
-up-cpu: ## Start all services in CPU-only mode (no GPU required)
+up-cpu: ## DEPRECATED — fails on GPU-less hosts; use up-n97 instead
 	docker compose -f docker-compose.yml -f docker-compose.cpu.yml up -d
 	@echo "  CPU mode: http://localhost:3000"
 
@@ -49,6 +49,10 @@ pull-n97: ## Pull images for the N97 stack (llama.cpp instead of vLLM)
 
 download-n97: ## Download the small quantized model set for the N97 stack
 	@bash scripts/download-models-n97.sh
+
+update-n97: ## Pull latest images and restart the N97 stack (do NOT use 'make update')
+	docker compose -f docker-compose.yml -f docker-compose.n97.yml pull
+	docker compose -f docker-compose.yml -f docker-compose.n97.yml up -d
 
 down: ## Stop all services
 	docker compose down

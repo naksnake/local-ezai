@@ -24,12 +24,12 @@ Monitor:            Real-time dashboard (http://localhost:8888)
 | GPU | NVIDIA 8 GB VRAM | NVIDIA 16+ GB VRAM |
 | Disk | 200 GB SSD | 500 GB NVMe |
 
-> **No GPU?** Use `make up-cpu` — runs a small 0.5B model on CPU only.
->
-> **Low-power mini PC?** (Intel N97/N100 class, ≤16 GB RAM, no AVX-512) — use
-> `make up-n97`, which swaps vLLM for llama.cpp with a quantized 3B model.
+> **No GPU?** Use `make up-n97` — swaps vLLM for llama.cpp with a quantized
+> 3B model. Despite the name it works on any x86-64 CPU with AVX2, and it is
+> the profile to use on low-power mini PCs (Intel N97/N100 class, ≤16 GB RAM).
 > See **[docs/DEPLOY-N97.md](docs/DEPLOY-N97.md)** for the full guide and
-> the hardware caveats.
+> the hardware caveats. (The older `make up-cpu` is deprecated — it keeps the
+> CUDA vLLM image and fails to start on machines without an NVIDIA runtime.)
 
 ---
 
@@ -117,12 +117,17 @@ Open **http://localhost:3000** to chat, **http://localhost:8888** for the monito
 ```
 local-ezai/
 ├── docker-compose.yml          GPU stack (8 services)
-├── docker-compose.cpu.yml      CPU-only override for vLLM
+├── docker-compose.n97.yml      CPU override: llama.cpp for N97/low-power boxes
+├── docker-compose.cpu.yml      DEPRECATED CPU override (use n97 instead)
 ├── .env.example                All configuration variables
 ├── Makefile                    Management commands
 │
+├── docs/
+│   └── DEPLOY-N97.md           Deployment guide for Intel N97 / no-GPU boxes
+│
 ├── config/
 │   ├── litellm-config.yaml     Model routing (reads from env)
+│   ├── litellm-config.n97.yaml Model routing for the N97/CPU profile
 │   ├── mcpo-config.json        MCP server list (reads from env)
 │   └── searxng/settings.yml    Search engine config
 │
@@ -144,7 +149,8 @@ local-ezai/
 │
 ├── scripts/
 │   ├── setup.sh                First-time system setup
-│   ├── download-models.sh      Download HuggingFace models
+│   ├── download-models.sh      Download HuggingFace models (GPU stack)
+│   ├── download-models-n97.sh  Download quantized GGUF set (N97/CPU stack)
 │   ├── health-check.sh         Check all 8 services
 │   └── embed_documents.py      Ingest documents into Qdrant
 │
@@ -203,10 +209,11 @@ make setup       First-time system setup (Docker, NVIDIA, Python, Node)
 make build       Build embed-server, mcpo, and monitor images
 make pull        Pull official Docker images
 make up          Start all 8 services (GPU mode)
-make up-cpu      Start in CPU-only mode
-make up-n97      Start tuned for Intel N97 / low-power mini PCs
+make up-n97      Start in CPU-only mode (N97 / low-power / no-GPU boxes)
 make pull-n97    Pull images for the N97 stack (llama.cpp)
 make download-n97  Download the small quantized model set (~2.5 GB)
+make update-n97  Pull latest images and restart the N97 stack
+make up-cpu      DEPRECATED — fails without an NVIDIA runtime; use up-n97
 make down        Stop all services
 make restart     Restart all services
 make logs        Tail logs from all services
@@ -366,18 +373,24 @@ make restart
 
 ## CPU-only mode
 
-No GPU? Use the CPU override — it loads a small 0.5B model instead:
+No GPU? Use the N97/CPU profile — it swaps vLLM for a llama.cpp server
+running a quantized 3B model (works on any x86-64 CPU with AVX2, not just
+the N97):
 
 ```bash
-make up-cpu
+make download-n97   # ~2.5 GB of models
+make up-n97
 ```
 
-This uses `docker-compose.cpu.yml` as an override, which:
-- Switches to `Qwen/Qwen2.5-0.5B-Instruct`
-- Sets `--device cpu`
-- Removes the GPU resource reservation
+Responses will be slower (~6–10 tokens/sec on a 4-core N97, faster on bigger
+CPUs) but everything else works identically. Full guide, tuning knobs, and
+hardware caveats: **[docs/DEPLOY-N97.md](docs/DEPLOY-N97.md)**.
 
-Responses will be slower (~1–5 tokens/sec) but everything else works identically.
+> The old `make up-cpu` override is **deprecated**: it keeps the CUDA vLLM
+> image (whose `--device cpu` mode doesn't work) and its empty
+> `deploy.resources` mapping does not actually remove the base file's NVIDIA
+> device reservation, so the container fails to start on machines without an
+> NVIDIA runtime.
 
 ---
 
