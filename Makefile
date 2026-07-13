@@ -1,4 +1,5 @@
-.PHONY: help setup build pull up up-cpu down restart logs health status embed \
+.PHONY: help setup build pull up up-cpu up-n97 pull-n97 download-n97 down \
+        restart logs health status embed \
         k8s k8s-delete update clean slurm-setup push-github monitor
 
 # Load .env if it exists
@@ -35,6 +36,19 @@ up: ## Start all services with GPU
 up-cpu: ## Start all services in CPU-only mode (no GPU required)
 	docker compose -f docker-compose.yml -f docker-compose.cpu.yml up -d
 	@echo "  CPU mode: http://localhost:3000"
+
+up-n97: ## Start all services tuned for Intel N97 / low-power mini PCs (see docs/DEPLOY-N97.md)
+	docker compose -f docker-compose.yml -f docker-compose.n97.yml up -d
+	@echo ""
+	@echo "  N97 mode (llama.cpp): http://localhost:3000"
+	@echo "  First start loads the model — run 'make health' in ~1 minute"
+	@echo ""
+
+pull-n97: ## Pull images for the N97 stack (llama.cpp instead of vLLM)
+	docker compose -f docker-compose.yml -f docker-compose.n97.yml pull openwebui litellm vllm qdrant searxng
+
+download-n97: ## Download the small quantized model set for the N97 stack
+	@bash scripts/download-models-n97.sh
 
 down: ## Stop all services
 	docker compose down

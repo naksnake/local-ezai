@@ -45,7 +45,23 @@ chk() {
     fi
 }
 
-chk "vLLM inference"   "http://localhost:8000/health"                     "healthy"
+# Status-code-only check — vLLM's /health returns an empty 200 body, and the
+# llama.cpp server used by the N97 profile returns {"status":"ok"}, so a body
+# pattern can't cover both.
+chk_code() {
+    local label=$1 url=$2
+
+    if curl -sf -o /dev/null "$url" 2>/dev/null; then
+        echo -e "  ${GREEN}✅${NC}  $label"
+        ((pass++))
+    else
+        echo -e "  ${RED}❌${NC}  $label"
+        echo -e "      ${YELLOW}→ check logs: docker compose logs vllm${NC}"
+        ((fail++))
+    fi
+}
+
+chk_code "LLM inference (vLLM / llama.cpp)" "http://localhost:8000/health"
 chk "Embed server"     "http://localhost:8001/health"                     "healthy"
 chk "Qdrant"           "http://localhost:6333/healthz"                    "qdrant"
 chk "SearXNG"          "http://localhost:8090/search?q=test&format=json"  '"results"'

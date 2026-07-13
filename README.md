@@ -25,6 +25,11 @@ Monitor:            Real-time dashboard (http://localhost:8888)
 | Disk | 200 GB SSD | 500 GB NVMe |
 
 > **No GPU?** Use `make up-cpu` — runs a small 0.5B model on CPU only.
+>
+> **Low-power mini PC?** (Intel N97/N100 class, ≤16 GB RAM, no AVX-512) — use
+> `make up-n97`, which swaps vLLM for llama.cpp with a quantized 3B model.
+> See **[docs/DEPLOY-N97.md](docs/DEPLOY-N97.md)** for the full guide and
+> the hardware caveats.
 
 ---
 
@@ -199,6 +204,9 @@ make build       Build embed-server, mcpo, and monitor images
 make pull        Pull official Docker images
 make up          Start all 8 services (GPU mode)
 make up-cpu      Start in CPU-only mode
+make up-n97      Start tuned for Intel N97 / low-power mini PCs
+make pull-n97    Pull images for the N97 stack (llama.cpp)
+make download-n97  Download the small quantized model set (~2.5 GB)
 make down        Stop all services
 make restart     Restart all services
 make logs        Tail logs from all services

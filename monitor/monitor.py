@@ -27,14 +27,20 @@ HISTORY_POINTS = int(os.getenv("HISTORY_POINTS", "60")) # keep last N readings
 LITELLM_KEY = os.getenv("LITELLM_MASTER_KEY", "sk-ai-service-2024")
 MCP_KEY     = os.getenv("MCP_API_KEY",         "local-tools-key")
 
+# The LLM slot is engine-agnostic: vLLM answers /health with an empty 200 body,
+# llama.cpp (N97 profile) with {"status":"ok"} — so match on status code only
+# (empty pattern) and let compose overrides relabel the card.
+LLM_NAME = os.getenv("LLM_SERVICE_NAME", "vLLM")
+LLM_DESC = os.getenv("LLM_SERVICE_DESC", "LLM inference (GPU)")
+
 SERVICES: list[dict] = [
     {
         "id":      "vllm",
-        "name":    "vLLM",
-        "desc":    "LLM inference (GPU)",
+        "name":    LLM_NAME,
+        "desc":    LLM_DESC,
         "url":     "http://vllm:8000/health",
         "method":  "GET",
-        "pattern": "healthy",
+        "pattern": "",
         "headers": {},
         "link":    "http://localhost:8000",
     },
