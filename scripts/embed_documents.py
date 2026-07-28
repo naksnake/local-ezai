@@ -5,7 +5,7 @@ scripts/embed_documents.py
 Embed text documents into Qdrant for RAG (Retrieval-Augmented Generation).
 
 Usage:
-    python3 embed_documents.py --input-dir ~/documents
+    python3 embed_documents.py --input-dir ./documents
 
 Options:
     --input-dir    Folder containing .txt or .md files  (required)

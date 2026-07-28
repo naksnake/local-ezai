@@ -6,55 +6,41 @@
 #
 #   Chat model:  Qwen2.5-3B-Instruct  Q4_K_M GGUF  (~2 GB, llama.cpp)
 #   Embeddings:  nomic-embed-text-v1.5              (~500 MB, embed-server)
+#
+# Runs the HuggingFace CLI inside a throwaway container — no host Python,
+# no venv. Downloads are resumable: re-run after an interruption.
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
-GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
+GREEN='\033[0;32m'; CYAN='\033[0;36m'; NC='\033[0m'
 
-GGUF_DIR="${N97_GGUF_DIR:-$HOME/ai-models/gguf}"
-CACHE_DIR="${MODELS_DIR:-$HOME/ai-models/hf-cache}"
+GGUF_DIR="${N97_GGUF_DIR:-$PWD/models/gguf}"
+CACHE_DIR="${MODELS_DIR:-$PWD/models/hf-cache}"
 GGUF_REPO="${N97_GGUF_REPO:-Qwen/Qwen2.5-3B-Instruct-GGUF}"
 GGUF_FILE="${N97_MODEL_FILE:-qwen2.5-3b-instruct-q4_k_m.gguf}"
+EMBED_MODEL="${CPU_EMBED_MODEL:-nomic-ai/nomic-embed-text-v1.5}"
 
 mkdir -p "$GGUF_DIR" "$CACHE_DIR"
-
-# Activate Python venv (where huggingface_hub is installed)
-if [[ -f "$HOME/ai-env/bin/activate" ]]; then
-    source "$HOME/ai-env/bin/activate"
-else
-    echo -e "${YELLOW}[WARN]${NC} ~/ai-env not found. Run setup.sh first."
-    exit 1
-fi
-
-# huggingface_hub >= 0.34 renamed the CLI to `hf`; keep the old name working
-HF_CLI="huggingface-cli"
-command -v hf &>/dev/null && HF_CLI="hf"
 
 echo ""
 echo -e "${CYAN}══ Downloading AI Models (N97 / CPU profile) ══${NC}"
 echo "  GGUF directory:  $GGUF_DIR"
 echo "  HF cache:        $CACHE_DIR"
 echo ""
-
-# ── Main chat model (quantized GGUF for llama.cpp) ────────────────────────────
-echo -e "${CYAN}[1/2]${NC} Downloading ${GGUF_REPO} → ${GGUF_FILE}"
-echo "      Size: ~2 GB | 4-bit quantized, fits comfortably in 16 GB RAM"
-echo ""
-"$HF_CLI" download "$GGUF_REPO" "$GGUF_FILE" \
-    --local-dir "$GGUF_DIR"
-echo -e "${GREEN}[OK]${NC}  ${GGUF_FILE} downloaded"
+echo -e "${CYAN}[1/2]${NC} ${GGUF_REPO} → ${GGUF_FILE}  (~2 GB, 4-bit quantized)"
+echo -e "${CYAN}[2/2]${NC} ${EMBED_MODEL}  (~500 MB, RAG document search)"
 echo ""
 
-# ── Embedding model (same as the standard stack) ──────────────────────────────
-echo -e "${CYAN}[2/2]${NC} Downloading nomic-embed-text-v1.5 (embedding model)"
-echo "      Size: ~500 MB | Used for: RAG document search"
-echo ""
-"$HF_CLI" download nomic-ai/nomic-embed-text-v1.5 \
-    --cache-dir "$CACHE_DIR"
-echo -e "${GREEN}[OK]${NC}  nomic-embed-text downloaded"
-echo ""
+docker run --rm \
+    -v "$GGUF_DIR":/gguf \
+    -v "$CACHE_DIR":/hf-cache \
+    -e HF_HUB_CACHE=/hf-cache \
+    python:3.11-slim \
+    bash -c "pip install -q 'huggingface_hub[cli]' && \
+             hf download $GGUF_REPO $GGUF_FILE --local-dir /gguf && \
+             hf download $EMBED_MODEL"
 
-# ── Summary ────────────────────────────────────────────────────────────────────
+echo ""
 echo -e "${GREEN}══ All models downloaded ══${NC}"
 echo ""
 echo "  GGUF location:  $GGUF_DIR/$GGUF_FILE"

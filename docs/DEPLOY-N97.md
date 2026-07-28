@@ -267,7 +267,7 @@ dashboard's links pick up the overrides automatically.
 |-----------------|---------|-------|
 | `N97_CTX` | `4096` | Context window; more = more RAM + slower prefill |
 | `N97_THREADS` | `4` | Match the 4 physical cores; don't oversubscribe |
-| `N97_GGUF_DIR` | `~/ai-models/gguf` | Host folder mounted into the container |
+| `N97_GGUF_DIR` | `./models/gguf` | Host folder mounted into the container |
 
 ## Troubleshooting (N97-specific)
 

@@ -37,7 +37,7 @@ services:
       - "1"
       - --jinja
     volumes:
-      - ${N97_GGUF_DIR:-~/ai-models/gguf}:/models:ro
+      - ${N97_GGUF_DIR:-./models/gguf}:/models:ro
     # !override replaces the whole deploy section from docker-compose.yml —
     # a plain merge would keep the NVIDIA GPU reservation and the container
     # would fail to start on a box without the NVIDIA runtime.

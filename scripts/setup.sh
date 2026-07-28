@@ -120,33 +120,8 @@ if [[ "$HAS_GPU" == "true" ]]; then
     fi
 fi
 
-# ── Install Python venv ────────────────────────────────────────────────────────
-step "Setting up Python virtual environment"
-sudo apt-get install -y python3-pip python3-venv python3-full -qq
-
-if [[ -d "$HOME/ai-env" ]]; then
-    success "Python venv already exists at ~/ai-env"
-else
-    python3 -m venv "$HOME/ai-env"
-    success "Created Python venv at ~/ai-env"
-fi
-
-# Activate and install packages
-source "$HOME/ai-env/bin/activate"
-pip install -q --retries 10 --timeout 60 --upgrade pip
-# Host-side tooling only: huggingface_hub (model downloads) and
-# qdrant-client + requests (scripts/embed_documents.py). The heavyweight ML
-# libraries (torch, sentence-transformers) run inside the Docker images and
-# must NOT be installed here — they add a multi-GB download that often fails
-# on slow links. To run embed-server outside Docker, see README "Development".
-pip install -q --retries 10 --timeout 60 huggingface_hub qdrant-client requests
-success "Python packages installed in venv"
-
-# Add to .bashrc if not already there
-if ! grep -q "ai-env/bin/activate" "$HOME/.bashrc"; then
-    echo 'source ~/ai-env/bin/activate' >> "$HOME/.bashrc"
-    success "Added venv auto-activation to ~/.bashrc"
-fi
+# No host Python needed: model downloads and the embed script run inside
+# throwaway Docker containers (make download-*, make embed).
 
 # ── Install Node.js 22 ────────────────────────────────────────────────────────
 # (Node 20 reached end-of-life in April 2026; any existing >= 20 is accepted)
@@ -168,13 +143,13 @@ fi
 
 # ── Create required directories ───────────────────────────────────────────────
 step "Creating project directories"
-mkdir -p "$HOME/ai-models/hf-cache"
-mkdir -p "$HOME/documents"
-success "Directories created: ~/ai-models/hf-cache, ~/documents"
+SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+mkdir -p "$SCRIPT_DIR/models/hf-cache" "$SCRIPT_DIR/models/gguf"
+mkdir -p "$SCRIPT_DIR/documents"
+success "Directories created: $SCRIPT_DIR/models, $SCRIPT_DIR/documents"
 
 # ── Create .env from template ─────────────────────────────────────────────────
 step "Setting up environment configuration"
-SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 if [[ -f "$SCRIPT_DIR/.env" ]]; then
     success ".env already exists — skipping"

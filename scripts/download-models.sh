@@ -1,62 +1,45 @@
 #!/usr/bin/env bash
 # scripts/download-models.sh
 # ─────────────────────────────────────────────────────────────────────────────
-# Downloads AI models from HuggingFace to the local cache.
+# Downloads AI models from HuggingFace into the project's model cache.
 # Run this BEFORE starting the Docker stack for the first time.
+#
+# Runs the HuggingFace CLI inside a throwaway container — no host Python,
+# no venv. Downloads are resumable: re-run after an interruption.
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
-GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
+GREEN='\033[0;32m'; CYAN='\033[0;36m'; NC='\033[0m'
 
-CACHE_DIR="${HOME}/ai-models/hf-cache"
+CACHE_DIR="${MODELS_DIR:-$PWD/models/hf-cache}"
+CHAT_MODEL="${CHAT_MODEL:-Qwen/Qwen2.5-7B-Instruct}"
+EMBED_MODEL="${CPU_EMBED_MODEL:-nomic-ai/nomic-embed-text-v1.5}"
+
 mkdir -p "$CACHE_DIR"
-
-# Activate Python venv (where huggingface_hub is installed)
-if [[ -f "$HOME/ai-env/bin/activate" ]]; then
-    source "$HOME/ai-env/bin/activate"
-else
-    echo -e "${YELLOW}[WARN]${NC} ~/ai-env not found. Run setup.sh first."
-    exit 1
-fi
-
-# huggingface_hub >= 0.34 renamed the CLI to `hf`; keep the old name working
-HF_CLI="huggingface-cli"
-command -v hf &>/dev/null && HF_CLI="hf"
 
 echo ""
 echo -e "${CYAN}══ Downloading AI Models ══${NC}"
 echo "  Cache directory: $CACHE_DIR"
+echo "  Chat model:      $CHAT_MODEL (~15 GB for the 7B default)"
+echo "  Embed model:     $EMBED_MODEL (~500 MB)"
 echo ""
 
-# ── Main chat model ────────────────────────────────────────────────────────────
-echo -e "${CYAN}[1/2]${NC} Downloading Qwen2.5-7B-Instruct (main chat model)"
-echo "      Size: ~15 GB | Good at: chat, tool use, code"
-echo ""
-"$HF_CLI" download Qwen/Qwen2.5-7B-Instruct \
-    --cache-dir "$CACHE_DIR"
-echo -e "${GREEN}[OK]${NC}  Qwen2.5-7B downloaded"
-echo ""
+docker run --rm \
+    -v "$CACHE_DIR":/hf-cache \
+    -e HF_HUB_CACHE=/hf-cache \
+    python:3.11-slim \
+    bash -c "pip install -q 'huggingface_hub[cli]' && \
+             hf download $CHAT_MODEL && \
+             hf download $EMBED_MODEL"
 
-# ── Embedding model ────────────────────────────────────────────────────────────
-echo -e "${CYAN}[2/2]${NC} Downloading nomic-embed-text-v1.5 (embedding model)"
-echo "      Size: ~500 MB | Used for: RAG document search"
 echo ""
-"$HF_CLI" download nomic-ai/nomic-embed-text-v1.5 \
-    --cache-dir "$CACHE_DIR"
-echo -e "${GREEN}[OK]${NC}  nomic-embed-text downloaded"
-echo ""
-
-# ── Summary ────────────────────────────────────────────────────────────────────
 echo -e "${GREEN}══ All models downloaded ══${NC}"
-echo ""
 echo "  Cache location: $CACHE_DIR"
 echo "  Total size: $(du -sh "$CACHE_DIR" | cut -f1)"
 echo ""
 echo "  Next: make build && make pull && make up"
 echo ""
-
-# ── Optional: smaller model for CPU-only or low VRAM ──────────────────────────
-echo "  Optional smaller models:"
-echo "    3B (4GB VRAM):  $HF_CLI download Qwen/Qwen2.5-3B-Instruct --cache-dir $CACHE_DIR"
-echo "    0.5B (CPU OK):  $HF_CLI download Qwen/Qwen2.5-0.5B-Instruct --cache-dir $CACHE_DIR"
+echo "  Optional smaller models (set CHAT_MODEL in .env, then re-run):"
+echo "    3B (4GB VRAM):  CHAT_MODEL=Qwen/Qwen2.5-3B-Instruct"
+echo "    0.5B (CPU OK):  CHAT_MODEL=Qwen/Qwen2.5-0.5B-Instruct"
 echo ""

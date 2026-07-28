@@ -65,7 +65,7 @@ services:
     ports:
       - "${LLM_PORT:-8000}:8000"
     volumes:
-      - ${MODELS_DIR:-~/ai-models/hf-cache}:/root/.cache/huggingface
+      - ${MODELS_DIR:-./models/hf-cache}:/root/.cache/huggingface
     environment:
       - HF_HUB_OFFLINE=1
       # 'hf download --cache-dir X' writes models--* directly under X, but the
@@ -109,7 +109,7 @@ services:
     ports:
       - "${EMBED_PORT:-8001}:8001"
     volumes:
-      - ${MODELS_DIR:-~/ai-models/hf-cache}:/root/.cache/huggingface
+      - ${MODELS_DIR:-./models/hf-cache}:/root/.cache/huggingface
     environment:
       - HF_HUB_OFFLINE=1
       # keep the hub lookup path aligned with the mount root (see vllm above)
@@ -164,7 +164,7 @@ services:
     ports:
       - "${MCPO_PORT:-8200}:8200"
     volumes:
-      - ${DOCUMENTS_DIR:-~/documents}:/data/documents
+      - ${DOCUMENTS_DIR:-./documents}:/data/documents
       - mcpo-memory:/data/memory
       - ./config/mcpo-config.json:/app/mcpo-config.json:ro
     environment:

@@ -3,7 +3,7 @@
     "filesystem": {
       "command": "mcp-server-filesystem",
       "args": ["/data/documents"],
-      "description": "Read and write files in ~/documents"
+      "description": "Read and write files in the project's documents folder"
     },
     "memory": {
       "command": "mcp-server-memory",

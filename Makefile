@@ -8,11 +8,15 @@
 -include .env
 export
 
-# Defaults (a .env value wins). MODELS_DIR is resolved to an absolute path
-# here so docker compose mounts the same folder no matter which user runs it.
+# Defaults (a .env value wins). Everything lives inside the project folder —
+# absolute paths so docker compose mounts the same folder no matter which
+# user runs it, and no host Python venv is needed anywhere.
 CPU_CHAT_MODEL  ?= Qwen/Qwen2.5-1.5B-Instruct
 CPU_EMBED_MODEL ?= nomic-ai/nomic-embed-text-v1.5
-MODELS_DIR      ?= $(HOME)/ai-models/hf-cache
+MODELS_DIR      ?= $(CURDIR)/models/hf-cache
+N97_GGUF_DIR    ?= $(CURDIR)/models/gguf
+DOCUMENTS_DIR   ?= $(CURDIR)/documents
+RAG_COLLECTION  ?= my-knowledge-base
 
 # HF hub cache layout: hf download puts each model in models--<org>--<name>
 CHAT_MODEL_DIR  = $(MODELS_DIR)/models--$(subst /,--,$(CPU_CHAT_MODEL))
@@ -128,13 +132,19 @@ health: ## Run health check on all services
 status: ## Show status of all containers
 	docker compose ps
 
-embed: ## Embed documents from ~/documents into Qdrant knowledge base
-	@echo "Embedding documents from ~/documents..."
-	@. ~/ai-env/bin/activate && python3 scripts/embed_documents.py \
-		--input-dir $(DOCUMENTS_DIR) \
-		--qdrant-url http://localhost:$(or $(QDRANT_PORT),6333) \
-		--embed-url http://localhost:$(or $(EMBED_PORT),8001)/v1 \
-		--collection $(RAG_COLLECTION)
+embed: ## Embed documents from the documents folder into the Qdrant knowledge base (runs in Docker)
+	@echo "Embedding documents from $(DOCUMENTS_DIR)..."
+	@mkdir -p "$(DOCUMENTS_DIR)"
+	docker run --rm --network host \
+		-v "$(CURDIR)/scripts":/scripts:ro \
+		-v "$(DOCUMENTS_DIR)":/documents:ro \
+		python:3.11-slim \
+		bash -c "pip install -q qdrant-client requests && \
+		         python3 /scripts/embed_documents.py \
+		           --input-dir /documents \
+		           --qdrant-url http://localhost:$(or $(QDRANT_PORT),6333) \
+		           --embed-url http://localhost:$(or $(EMBED_PORT),8001)/v1 \
+		           --collection $(RAG_COLLECTION)"
 
 reset-webui: ## Factory-reset OpenWebUI — deletes ALL users, passwords, chats and settings (asks first)
 	@bash scripts/reset-openwebui.sh wipe

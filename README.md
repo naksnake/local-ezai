@@ -104,7 +104,7 @@ section of `.env.example`.
                                             │ vectors
 ┌───────────────────────────────────────────▼─────────────────┐
 │  AGENT TOOLS — mcpo MCP proxy  :8200                        │
-│  ├── filesystem  → ~/documents  (read/write files)          │
+│  ├── filesystem  → ./documents  (read/write files)          │
 │  ├── memory      → knowledge graph (persistent across chats)│
 │  ├── fetch       → any public web page                      │
 │  └── qdrant-rag  → semantic search over your documents      │
@@ -197,8 +197,8 @@ cp .env.example .env
 | `CHAT_MODEL_NAME` | `qwen2.5-7b` | Short name used in API calls |
 | `MAX_MODEL_LEN` | `4096` | Context window size in tokens |
 | `GPU_MEMORY_UTILIZATION` | `0.85` | Fraction of VRAM to use (lower if OOM) |
-| `MODELS_DIR` | `~/ai-models/hf-cache` | Host path where models are cached |
-| `DOCUMENTS_DIR` | `~/documents` | Host path for `make embed` to read from |
+| `MODELS_DIR` | `./models/hf-cache` | Host path where models are cached |
+| `DOCUMENTS_DIR` | `./documents` | Host path for `make embed` to read from |
 | `RAG_COLLECTION` | `my-knowledge-base` | Qdrant collection name for RAG |
 
 Generate secure random values for the secret keys:
@@ -234,7 +234,7 @@ make logs        Tail logs from all services
 make logs-vllm   Tail logs from a specific service (any name after logs-)
 make health      Check health of all 8 services
 make status      Show container status table
-make embed       Ingest ~/documents into the Qdrant knowledge base
+make embed       Ingest ./documents into the Qdrant knowledge base
 make monitor     Open the monitor dashboard in your browser
 make update      Pull latest images and restart
 make k8s         Deploy to K3s Kubernetes
@@ -280,7 +280,7 @@ Downloads:
 - **Qwen2.5-7B-Instruct** (~15 GB) — main chat model
 - **nomic-embed-text-v1.5** (~500 MB) — embedding model for RAG
 
-Models are stored in `~/ai-models/hf-cache` and mounted read-only into the containers. You only download once; rebuilding images does not re-download.
+Models are stored in `./models/hf-cache` (inside the project folder) and mounted read-only into the containers. You only download once; rebuilding images does not re-download.
 
 For **gated models** (Llama, Gemma): get a token at https://huggingface.co/settings/tokens and add `HF_TOKEN=hf_your_token` to `.env`.
 
@@ -322,7 +322,7 @@ All 8 checks should pass.
    - URL: `http://localhost:8200`
    - API Key: value of `MCP_API_KEY` from your `.env`
 3. Enable the **🔧 wrench** icon in any chat to give the AI access to:
-   - `filesystem` — read and write `~/documents`
+   - `filesystem` — read and write `./documents`
    - `memory` — persistent knowledge graph across sessions
    - `fetch` — retrieve any web page
    - `search_knowledge_base` — semantic search over your embedded documents
@@ -330,7 +330,7 @@ All 8 checks should pass.
 ### 8. Add documents to the knowledge base
 
 ```bash
-# Put .txt or .md files in ~/documents, then:
+# Put .txt or .md files in ./documents, then:
 make embed
 ```
 
@@ -367,11 +367,8 @@ make monitor   # opens the dashboard in your browser
 Any vLLM-compatible model on HuggingFace works. Example — switch to Mistral 7B:
 
 ```bash
-# 1. Download the model
-. ~/ai-env/bin/activate
-hf download mistralai/Mistral-7B-Instruct-v0.3 \
-  --cache-dir ~/ai-models/hf-cache
-# (use `huggingface-cli download ...` on older huggingface_hub installs)
+# 1. Download the model (runs in Docker, no host Python needed)
+CHAT_MODEL=mistralai/Mistral-7B-Instruct-v0.3 bash scripts/download-models.sh
 
 # 2. Update .env
 CHAT_MODEL=mistralai/Mistral-7B-Instruct-v0.3
@@ -432,7 +429,7 @@ and restart LiteLLM.
 
 **embed-server:**
 ```bash
-. ~/ai-env/bin/activate
+python3 -m venv .venv && . .venv/bin/activate
 pip install fastapi uvicorn sentence-transformers
 python3 embed-server/server.py
 # Listens on :8001
@@ -447,7 +444,7 @@ QDRANT_URL=http://localhost:6333 EMBED_URL=http://localhost:8001/v1 node index.j
 
 **monitor:**
 ```bash
-. ~/ai-env/bin/activate
+python3 -m venv .venv && . .venv/bin/activate
 pip install fastapi uvicorn httpx
 python3 monitor/monitor.py
 # Listens on :8888
@@ -455,12 +452,15 @@ python3 monitor/monitor.py
 
 ### Embed documents manually
 
+`make embed` runs this in Docker for you (drop files into `./documents`
+first). To run it by hand with custom chunking options:
+
 ```bash
-. ~/ai-env/bin/activate
+python3 -m venv .venv && . .venv/bin/activate
 pip install requests qdrant-client
 
 python3 scripts/embed_documents.py \
-  --input-dir ~/documents \
+  --input-dir ./documents \
   --qdrant-url http://localhost:6333 \
   --embed-url http://localhost:8001/v1 \
   --collection my-knowledge-base \
@@ -521,7 +521,7 @@ make slurm-setup        # install single-node Slurm
 sbatch slurm/embed-job.sh   # submit an embedding job
 ```
 
-The embed job reads from `~/documents` and writes to Qdrant on `localhost:6333`. Make sure Qdrant is running on the compute node or adjust the `--qdrant-url` in `slurm/embed-job.sh`.
+The embed job reads from `./documents` and writes to Qdrant on `localhost:6333`. Make sure Qdrant is running on the compute node or adjust the `--qdrant-url` in `slurm/embed-job.sh`.
 
 ---
 
@@ -535,7 +535,7 @@ The embed job reads from `~/documents` and writes to Qdrant on `localhost:6333`.
 | mcpo tools not visible in chat | Admin Panel → Settings → Tools → verify URL and API key; `make logs-mcpo` |
 | `make embed` fails with "Cannot connect" | Start Qdrant and embed-server first: `make up` |
 | Qdrant search returns nothing | Run `make embed` to populate the collection |
-| `externally-managed-environment` Python error | Run `. ~/ai-env/bin/activate` first |
+| `externally-managed-environment` Python error | No host Python is needed anymore — downloads and `make embed` run in Docker; for development use a project venv: `python3 -m venv .venv` |
 | No GPU found by Docker | Verify NVIDIA Container Toolkit: `docker run --rm --gpus all nvidia/cuda:12.0-base nvidia-smi` |
 | `no space left on device` | `docker system prune -af` to free unused images/volumes |
 | Monitor shows all services unknown | It polls every 15 s from inside Docker — services must be on the `ai-net` network |
