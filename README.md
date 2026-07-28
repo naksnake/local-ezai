@@ -365,8 +365,9 @@ Any vLLM-compatible model on HuggingFace works. Example — switch to Mistral 7B
 ```bash
 # 1. Download the model
 . ~/ai-env/bin/activate
-huggingface-cli download mistralai/Mistral-7B-Instruct-v0.3 \
+hf download mistralai/Mistral-7B-Instruct-v0.3 \
   --cache-dir ~/ai-models/hf-cache
+# (use `huggingface-cli download ...` on older huggingface_hub installs)
 
 # 2. Update .env
 CHAT_MODEL=mistralai/Mistral-7B-Instruct-v0.3

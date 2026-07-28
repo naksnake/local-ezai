@@ -46,8 +46,9 @@ pull-cpu: ## Pull images for the vLLM CPU stack
 
 download-cpu: ## Download models for the vLLM CPU stack (~3.6 GB)
 	@. ~/ai-env/bin/activate && \
-	huggingface-cli download $(or $(CPU_CHAT_MODEL),Qwen/Qwen2.5-1.5B-Instruct) --cache-dir $(or $(MODELS_DIR),~/ai-models/hf-cache) && \
-	huggingface-cli download nomic-ai/nomic-embed-text-v1.5 --cache-dir $(or $(MODELS_DIR),~/ai-models/hf-cache)
+	HF_CLI=$$(command -v hf >/dev/null 2>&1 && echo hf || echo huggingface-cli) && \
+	$$HF_CLI download $(or $(CPU_CHAT_MODEL),Qwen/Qwen2.5-1.5B-Instruct) --cache-dir $(or $(MODELS_DIR),~/ai-models/hf-cache) && \
+	$$HF_CLI download nomic-ai/nomic-embed-text-v1.5 --cache-dir $(or $(MODELS_DIR),~/ai-models/hf-cache)
 
 update-cpu: ## Pull latest images and restart the vLLM CPU stack (do NOT use 'make update')
 	docker compose -f docker-compose.yml -f docker-compose.cpu.yml pull
