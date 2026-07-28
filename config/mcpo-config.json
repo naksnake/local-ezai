@@ -1,18 +1,19 @@
 {
   "mcpServers": {
     "filesystem": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/data/documents"],
+      "command": "mcp-server-filesystem",
+      "args": ["/data/documents"],
       "description": "Read and write files in ~/documents"
     },
     "memory": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-memory"],
+      "command": "mcp-server-memory",
+      "env": {
+        "MEMORY_FILE_PATH": "/data/memory/memory.json"
+      },
       "description": "Persistent knowledge graph memory across conversations"
     },
     "fetch": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-fetch"],
+      "command": "mcp-server-fetch",
       "description": "Fetch and read any web page"
     },
     "qdrant-rag": {

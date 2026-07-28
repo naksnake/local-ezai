@@ -16,6 +16,10 @@
 
 const { Server }               = require("@modelcontextprotocol/sdk/server/index.js");
 const { StdioServerTransport } = require("@modelcontextprotocol/sdk/server/stdio.js");
+const {
+  ListToolsRequestSchema,
+  CallToolRequestSchema,
+}                              = require("@modelcontextprotocol/sdk/types.js");
 const { QdrantClient }         = require("@qdrant/js-client-rest");
 const axios                    = require("axios");
 
@@ -32,7 +36,7 @@ const server = new Server(
 );
 
 // ── Tool definitions ──────────────────────────────────────────────────────
-server.setRequestHandler("tools/list", async () => ({
+server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
     {
       name: "search_knowledge_base",
@@ -68,7 +72,7 @@ server.setRequestHandler("tools/list", async () => ({
 }));
 
 // ── Tool handlers ─────────────────────────────────────────────────────────
-server.setRequestHandler("tools/call", async (request) => {
+server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
 
   // ── list_collections ──────────────────────────────────────────────────

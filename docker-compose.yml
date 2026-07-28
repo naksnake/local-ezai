@@ -10,6 +10,7 @@ networks:
 volumes:
   openwebui-data:
   qdrant-data:
+  mcpo-memory:
 
 services:
 
@@ -158,6 +159,7 @@ services:
       - "${MCPO_PORT:-8200}:8200"
     volumes:
       - ${DOCUMENTS_DIR:-~/documents}:/data/documents
+      - mcpo-memory:/data/memory
       - ./config/mcpo-config.json:/app/mcpo-config.json:ro
     environment:
       - MCP_API_KEY=${MCP_API_KEY:-local-tools-key}
