@@ -73,7 +73,7 @@ chk_code() {
 
 chk_code "LLM inference (vLLM / llama.cpp)" "http://localhost:${LLM_PORT}/health"
 chk "Embed server"     embed-server "http://localhost:${EMBED_PORT}/health"                     "healthy"
-chk "Qdrant"           qdrant       "http://localhost:${QDRANT_PORT}/healthz"                   "qdrant"
+chk "Qdrant"           qdrant       "http://localhost:${QDRANT_PORT}/healthz"                   "passed"
 chk "SearXNG"          searxng      "http://localhost:${SEARXNG_PORT}/search?q=test&format=json" '"results"'
 chk "mcpo tools"       mcpo         "http://localhost:${MCPO_PORT}/openapi.json"                "openapi"   "Authorization: Bearer ${MCP_KEY}"
 chk "LiteLLM proxy"    litellm      "http://localhost:${LITELLM_PORT}/models"                   '"data"'    "Authorization: Bearer ${LITELLM_KEY}"
