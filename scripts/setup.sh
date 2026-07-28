@@ -155,7 +155,13 @@ NODE_MAJOR="$(node --version 2>/dev/null | sed -E 's/^v([0-9]+).*/\1/' || true)"
 if [[ -n "$NODE_MAJOR" && "$NODE_MAJOR" -ge 20 ]]; then
     success "Node.js already installed: $(node --version)"
 else
-    curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - -qq
+    # Run the NodeSource repo installer from a temp file rather than piping
+    # into sudo bash: `bash - -qq` made bash look for a file named "-qq",
+    # and sudo-rs (default sudo on Ubuntu >= 25.10) does not support -E.
+    NODESOURCE_SETUP="$(mktemp)"
+    curl -fsSL https://deb.nodesource.com/setup_22.x -o "$NODESOURCE_SETUP"
+    sudo bash "$NODESOURCE_SETUP"
+    rm -f "$NODESOURCE_SETUP"
     sudo apt-get install -y nodejs -qq
     success "Node.js installed: $(node --version)"
 fi
