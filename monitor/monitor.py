@@ -33,6 +33,11 @@ MCP_KEY     = os.getenv("MCP_API_KEY",         "local-tools-key")
 LLM_NAME = os.getenv("LLM_SERVICE_NAME", "vLLM")
 LLM_DESC = os.getenv("LLM_SERVICE_DESC", "LLM inference (GPU)")
 
+# Published host ports for the "Open" links — the internal poll URLs use the
+# fixed container ports, but the browser-facing links must match .env overrides
+def _port(env: str, default: str) -> str:
+    return os.getenv(env, default)
+
 SERVICES: list[dict] = [
     {
         "id":      "vllm",
@@ -42,7 +47,7 @@ SERVICES: list[dict] = [
         "method":  "GET",
         "pattern": "",
         "headers": {},
-        "link":    "http://localhost:8000",
+        "link":    f"http://localhost:{_port('LLM_PORT', '8000')}",
     },
     {
         "id":      "embed",
@@ -52,7 +57,7 @@ SERVICES: list[dict] = [
         "method":  "GET",
         "pattern": "healthy",
         "headers": {},
-        "link":    "http://localhost:8001/health",
+        "link":    f"http://localhost:{_port('EMBED_PORT', '8001')}/health",
     },
     {
         "id":      "qdrant",
@@ -62,7 +67,7 @@ SERVICES: list[dict] = [
         "method":  "GET",
         "pattern": "qdrant",
         "headers": {},
-        "link":    "http://localhost:6333/dashboard",
+        "link":    f"http://localhost:{_port('QDRANT_PORT', '6333')}/dashboard",
     },
     {
         "id":      "searxng",
@@ -72,7 +77,7 @@ SERVICES: list[dict] = [
         "method":  "GET",
         "pattern": "results",
         "headers": {},
-        "link":    "http://localhost:8090",
+        "link":    f"http://localhost:{_port('SEARXNG_PORT', '8090')}",
     },
     {
         "id":      "litellm",
@@ -82,7 +87,7 @@ SERVICES: list[dict] = [
         "method":  "GET",
         "pattern": "data",
         "headers": {"Authorization": f"Bearer {LITELLM_KEY}"},
-        "link":    "http://localhost:4000",
+        "link":    f"http://localhost:{_port('LITELLM_PORT', '4000')}",
     },
     {
         "id":      "mcpo",
@@ -92,7 +97,7 @@ SERVICES: list[dict] = [
         "method":  "GET",
         "pattern": "openapi",
         "headers": {"Authorization": f"Bearer {MCP_KEY}"},
-        "link":    "http://localhost:8200",
+        "link":    f"http://localhost:{_port('MCPO_PORT', '8200')}",
     },
     {
         "id":      "openwebui",
@@ -102,7 +107,7 @@ SERVICES: list[dict] = [
         "method":  "GET",
         "pattern": "Open WebUI",
         "headers": {},
-        "link":    "http://localhost:3000",
+        "link":    f"http://localhost:{_port('OPENWEBUI_PORT', '3000')}",
     },
 ]
 

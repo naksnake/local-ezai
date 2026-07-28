@@ -1,5 +1,6 @@
-.PHONY: help setup build pull up up-cpu up-n97 pull-n97 download-n97 \
-        update-n97 down restart logs health status embed \
+.PHONY: help setup build pull up up-cpu pull-cpu download-cpu update-cpu \
+        up-n97 pull-n97 download-n97 update-n97 \
+        down restart logs health status embed \
         k8s k8s-delete update clean slurm-setup push-github monitor
 
 # Load .env if it exists
@@ -33,9 +34,24 @@ up: ## Start all services with GPU
 	@echo "  Monitor:  http://localhost:8888"
 	@echo ""
 
-up-cpu: ## DEPRECATED — fails on GPU-less hosts; use up-n97 instead
+up-cpu: ## Start with vLLM on CPU (no GPU; slower than up-n97 on AVX2-only boxes)
 	docker compose -f docker-compose.yml -f docker-compose.cpu.yml up -d
-	@echo "  CPU mode: http://localhost:3000"
+	@echo ""
+	@echo "  vLLM CPU mode: http://localhost:$(or $(OPENWEBUI_PORT),3000)"
+	@echo "  vLLM takes 1-3 minutes to load the model — run 'make health' after"
+	@echo ""
+
+pull-cpu: ## Pull images for the vLLM CPU stack
+	docker compose -f docker-compose.yml -f docker-compose.cpu.yml pull openwebui litellm vllm qdrant searxng
+
+download-cpu: ## Download models for the vLLM CPU stack (~3.6 GB)
+	@. ~/ai-env/bin/activate && \
+	huggingface-cli download $(or $(CPU_CHAT_MODEL),Qwen/Qwen2.5-1.5B-Instruct) --cache-dir $(or $(MODELS_DIR),~/ai-models/hf-cache) && \
+	huggingface-cli download nomic-ai/nomic-embed-text-v1.5 --cache-dir $(or $(MODELS_DIR),~/ai-models/hf-cache)
+
+update-cpu: ## Pull latest images and restart the vLLM CPU stack (do NOT use 'make update')
+	docker compose -f docker-compose.yml -f docker-compose.cpu.yml pull
+	docker compose -f docker-compose.yml -f docker-compose.cpu.yml up -d
 
 up-n97: ## Start all services tuned for Intel N97 / low-power mini PCs (see docs/DEPLOY-N97.md)
 	docker compose -f docker-compose.yml -f docker-compose.n97.yml up -d
@@ -76,8 +92,8 @@ embed: ## Embed documents from ~/documents into Qdrant knowledge base
 	@echo "Embedding documents from ~/documents..."
 	@. ~/ai-env/bin/activate && python3 scripts/embed_documents.py \
 		--input-dir $(DOCUMENTS_DIR) \
-		--qdrant-url http://localhost:6333 \
-		--embed-url http://localhost:8001/v1 \
+		--qdrant-url http://localhost:$(or $(QDRANT_PORT),6333) \
+		--embed-url http://localhost:$(or $(EMBED_PORT),8001)/v1 \
 		--collection $(RAG_COLLECTION)
 
 monitor: ## Open the web monitoring dashboard

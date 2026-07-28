@@ -7,8 +7,8 @@ right-sizes every service.
 
 ```
 make up          → needs NVIDIA GPU          ✗ N97 has none
-make up-cpu      → vLLM CPU mode             ✗ won't run on an N97 (see barriers)
-make up-n97      → llama.cpp + 3B Q4 model   ✓ this guide
+make up-cpu      → vLLM engine on CPU        △ works, but slower here (see barriers)
+make up-n97      → llama.cpp + 3B Q4 model   ✓ recommended — this guide
 ```
 
 ---
@@ -33,16 +33,17 @@ which is a **CUDA build**. Without an NVIDIA GPU and the NVIDIA container
 runtime the container will not start (`could not select device driver
 "nvidia"`). This rules out `make up`.
 
-### 2. No AVX-512 — vLLM's CPU mode is a bad fit too
+### 2. No AVX-512 — vLLM runs on this CPU, but as a second-class citizen
 
-The existing `make up-cpu` override passes `--device cpu` to the same CUDA
-image, which doesn't work. vLLM does publish a separate CPU image
-(`vllm/vllm-openai-cpu`), but its optimized x86 kernels key off **AVX-512**;
-on an AVX2-only chip like the N97 (Alder Lake-N) it runs in a
-"limited features" degraded mode. The practical CPU inference engine for
-this class of hardware is **llama.cpp**, which is exactly what the N97
-profile deploys — same OpenAI-compatible API, so LiteLLM, OpenWebUI, and the
-MCP tools all work unchanged.
+vLLM's CPU image (`vllm/vllm-openai-cpu`, wired up as `make up-cpu`) does
+start on the N97, but its optimized x86 kernels key off **AVX-512**; on an
+AVX2-only chip like the N97 (Alder Lake-N) it runs in vLLM's officially
+documented "limited features" mode — slower and heavier than a purpose-built
+AVX2 engine. The best-performing CPU inference engine for this class of
+hardware is **llama.cpp**, which is what the N97 profile deploys — same
+OpenAI-compatible API, so LiteLLM, OpenWebUI, and the MCP tools all work
+unchanged. If you specifically need vLLM, see
+[Using vLLM instead of llama.cpp](#using-vllm-instead-of-llamacpp) below.
 
 ### 3. 16 GB RAM shared by everything — the 7B model doesn't fit
 
@@ -211,6 +212,54 @@ Use `make update-n97`, **not** `make update` — the plain `update` target runs
 against the base compose file only, so it would pull the multi-GB CUDA vLLM
 image and recreate the LLM container from the GPU definition, which cannot
 start on this machine.
+
+## Using vLLM instead of llama.cpp
+
+If you need the actual vLLM engine on this box (API parity with a GPU
+deployment, vLLM-specific behavior, staging before moving to GPU hardware),
+the `up-cpu` profile runs the official `vllm/vllm-openai-cpu` image with
+Qwen2.5-1.5B in bf16:
+
+```bash
+make download-cpu   # Qwen2.5-1.5B safetensors + embeddings (~3.6 GB)
+make pull-cpu
+make up-cpu         # instead of up-n97 — stop the other profile first: make down
+make health
+```
+
+The chat model appears as `qwen2.5-1.5b` in OpenWebUI. Knobs in `.env`:
+`CPU_CHAT_MODEL`, `CPU_CHAT_MODEL_NAME`, `CPU_MAX_MODEL_LEN` (default 2048),
+`VLLM_CPU_KVCACHE_SPACE` (GiB of RAM for KV cache, default 2 here).
+
+What to expect on the N97 vs. the llama.cpp profile:
+
+- **Slower.** vLLM's AVX2 path is its documented "limited features" mode,
+  and the model runs in bf16 (~3.1 GB weights) instead of 4-bit (~1 GB for
+  the same 1.5B) — on a memory-bandwidth-bound machine that alone costs ~3×
+  in generation speed. Expect a few tokens/sec.
+- **Heavier.** Weights + KV cache + vLLM's Python runtime put the container
+  around 6–8 GB (capped at 10 GB), vs ~3 GB for llama.cpp with a larger 3B
+  model.
+- **Slower startup.** vLLM initializes in 1–3 minutes; llama.cpp loads in
+  seconds.
+
+Run one LLM profile at a time (`make down` first) — both bind the same
+`vllm` service name and LLM port.
+
+## Port conflicts with other containers
+
+Already running other services on the box (lab containers, dashboards,
+etc.)? Every published host port is configurable in `.env` — the stack's
+defaults are 3000, 4000, 6333, 8000, 8001, 8090, 8200, and 8888. Only the
+host side changes; inter-service traffic uses the internal Docker network
+and is unaffected. Example: if 8090 is taken (the SearXNG default), set:
+
+```bash
+SEARXNG_PORT=8095
+```
+
+then `make up-n97` (or `up-cpu`) again. `make health` and the monitor
+dashboard's links pick up the overrides automatically.
 
 ## Tuning knobs
 

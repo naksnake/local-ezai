@@ -16,6 +16,16 @@ fi
 LITELLM_KEY="${LITELLM_MASTER_KEY:-sk-ai-service-2024}"
 MCP_KEY="${MCP_API_KEY:-local-tools-key}"
 
+# Host ports (override in .env if they clash with other services)
+LLM_PORT="${LLM_PORT:-8000}"
+EMBED_PORT="${EMBED_PORT:-8001}"
+QDRANT_PORT="${QDRANT_PORT:-6333}"
+SEARXNG_PORT="${SEARXNG_PORT:-8090}"
+MCPO_PORT="${MCPO_PORT:-8200}"
+LITELLM_PORT="${LITELLM_PORT:-4000}"
+OPENWEBUI_PORT="${OPENWEBUI_PORT:-3000}"
+MONITOR_PORT="${MONITOR_PORT:-8888}"
+
 pass=0; fail=0; warn=0
 
 echo ""
@@ -61,14 +71,14 @@ chk_code() {
     fi
 }
 
-chk_code "LLM inference (vLLM / llama.cpp)" "http://localhost:8000/health"
-chk "Embed server"     "http://localhost:8001/health"                     "healthy"
-chk "Qdrant"           "http://localhost:6333/healthz"                    "qdrant"
-chk "SearXNG"          "http://localhost:8090/search?q=test&format=json"  '"results"'
-chk "mcpo tools"       "http://localhost:8200/openapi.json"               "openapi"   "Authorization: Bearer ${MCP_KEY}"
-chk "LiteLLM proxy"    "http://localhost:4000/models"                     '"data"'    "Authorization: Bearer ${LITELLM_KEY}"
-chk "OpenWebUI"        "http://localhost:3000"                            "Open WebUI"
-chk "Monitor"          "http://localhost:8888/api/status"                 "server_time"
+chk_code "LLM inference (vLLM / llama.cpp)" "http://localhost:${LLM_PORT}/health"
+chk "Embed server"     "http://localhost:${EMBED_PORT}/health"                     "healthy"
+chk "Qdrant"           "http://localhost:${QDRANT_PORT}/healthz"                   "qdrant"
+chk "SearXNG"          "http://localhost:${SEARXNG_PORT}/search?q=test&format=json" '"results"'
+chk "mcpo tools"       "http://localhost:${MCPO_PORT}/openapi.json"                "openapi"   "Authorization: Bearer ${MCP_KEY}"
+chk "LiteLLM proxy"    "http://localhost:${LITELLM_PORT}/models"                   '"data"'    "Authorization: Bearer ${LITELLM_KEY}"
+chk "OpenWebUI"        "http://localhost:${OPENWEBUI_PORT}"                        "Open WebUI"
+chk "Monitor"          "http://localhost:${MONITOR_PORT}/api/status"               "server_time"
 
 echo ""
 echo -e "  ${BOLD}Passed: ${GREEN}${pass}${NC}  |  Failed: ${RED}${fail}${NC}"
@@ -76,7 +86,7 @@ echo -e "${CYAN}═════════════════════�
 echo ""
 
 if [[ $fail -eq 0 ]]; then
-    echo -e "  ${GREEN}All services healthy!${NC}  →  http://localhost:3000"
+    echo -e "  ${GREEN}All services healthy!${NC}  →  http://localhost:${OPENWEBUI_PORT}"
 else
     echo -e "  ${YELLOW}Tip: vLLM takes 2–5 minutes to load the model.${NC}"
     echo    "  Run again after waiting, or check logs:"

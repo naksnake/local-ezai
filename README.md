@@ -24,12 +24,14 @@ Monitor:            Real-time dashboard (http://localhost:8888)
 | GPU | NVIDIA 8 GB VRAM | NVIDIA 16+ GB VRAM |
 | Disk | 200 GB SSD | 500 GB NVMe |
 
-> **No GPU?** Use `make up-n97` — swaps vLLM for llama.cpp with a quantized
-> 3B model. Despite the name it works on any x86-64 CPU with AVX2, and it is
-> the profile to use on low-power mini PCs (Intel N97/N100 class, ≤16 GB RAM).
-> See **[docs/DEPLOY-N97.md](docs/DEPLOY-N97.md)** for the full guide and
-> the hardware caveats. (The older `make up-cpu` is deprecated — it keeps the
-> CUDA vLLM image and fails to start on machines without an NVIDIA runtime.)
+> **No GPU?** Two CPU profiles are available:
+> - `make up-n97` — llama.cpp with a quantized 3B model. Fastest option on
+>   low-power mini PCs (Intel N97/N100 class, ≤16 GB RAM); works on any
+>   x86-64 CPU with AVX2. Guide: **[docs/DEPLOY-N97.md](docs/DEPLOY-N97.md)**
+> - `make up-cpu` — the real vLLM engine on CPU (`vllm/vllm-openai-cpu`)
+>   with Qwen2.5-1.5B in bf16. Use it when you specifically want vLLM;
+>   on AVX2-only chips it runs in vLLM's "limited features" mode and is
+>   slower than the llama.cpp profile.
 
 ---
 
@@ -63,6 +65,10 @@ Open **http://localhost:3000** to chat, **http://localhost:8888** for the monito
 ---
 
 ## Service map
+
+URLs below show the default ports. Every published port can be changed in
+`.env` (e.g. `SEARXNG_PORT=8095` if 8090 is taken) — see the *Host ports*
+section of `.env.example`.
 
 | Service | URL | Auth |
 |---------|-----|------|
@@ -118,7 +124,7 @@ Open **http://localhost:3000** to chat, **http://localhost:8888** for the monito
 local-ezai/
 ├── docker-compose.yml          GPU stack (8 services)
 ├── docker-compose.n97.yml      CPU override: llama.cpp for N97/low-power boxes
-├── docker-compose.cpu.yml      DEPRECATED CPU override (use n97 instead)
+├── docker-compose.cpu.yml      CPU override: real vLLM engine (vllm-openai-cpu)
 ├── .env.example                All configuration variables
 ├── Makefile                    Management commands
 │
@@ -127,7 +133,8 @@ local-ezai/
 │
 ├── config/
 │   ├── litellm-config.yaml     Model routing (reads from env)
-│   ├── litellm-config.n97.yaml Model routing for the N97/CPU profile
+│   ├── litellm-config.n97.yaml Model routing for the N97/llama.cpp profile
+│   ├── litellm-config.cpu.yaml Model routing for the vLLM CPU profile
 │   ├── mcpo-config.json        MCP server list (reads from env)
 │   └── searxng/settings.yml    Search engine config
 │
@@ -209,11 +216,14 @@ make setup       First-time system setup (Docker, NVIDIA, Python, Node)
 make build       Build embed-server, mcpo, and monitor images
 make pull        Pull official Docker images
 make up          Start all 8 services (GPU mode)
-make up-n97      Start in CPU-only mode (N97 / low-power / no-GPU boxes)
+make up-n97      Start CPU-only via llama.cpp (N97 / low-power boxes)
 make pull-n97    Pull images for the N97 stack (llama.cpp)
 make download-n97  Download the small quantized model set (~2.5 GB)
 make update-n97  Pull latest images and restart the N97 stack
-make up-cpu      DEPRECATED — fails without an NVIDIA runtime; use up-n97
+make up-cpu      Start CPU-only via vLLM (vllm-openai-cpu image)
+make pull-cpu    Pull images for the vLLM CPU stack
+make download-cpu  Download models for the vLLM CPU stack (~3.6 GB)
+make update-cpu  Pull latest images and restart the vLLM CPU stack
 make down        Stop all services
 make restart     Restart all services
 make logs        Tail logs from all services
@@ -373,24 +383,37 @@ make restart
 
 ## CPU-only mode
 
-No GPU? Use the N97/CPU profile — it swaps vLLM for a llama.cpp server
-running a quantized 3B model (works on any x86-64 CPU with AVX2, not just
-the N97):
+No GPU? Two profiles run the whole stack on CPU; everything except the LLM
+engine is identical.
+
+**Option 1 — llama.cpp (recommended for low-power boxes):** quantized 3B
+model, lowest RAM use, fastest on AVX2-only chips like the Intel N97/N100.
 
 ```bash
 make download-n97   # ~2.5 GB of models
 make up-n97
 ```
 
-Responses will be slower (~6–10 tokens/sec on a 4-core N97, faster on bigger
-CPUs) but everything else works identically. Full guide, tuning knobs, and
-hardware caveats: **[docs/DEPLOY-N97.md](docs/DEPLOY-N97.md)**.
+Full guide, tuning knobs, and hardware caveats:
+**[docs/DEPLOY-N97.md](docs/DEPLOY-N97.md)**.
 
-> The old `make up-cpu` override is **deprecated**: it keeps the CUDA vLLM
-> image (whose `--device cpu` mode doesn't work) and its empty
-> `deploy.resources` mapping does not actually remove the base file's NVIDIA
-> device reservation, so the container fails to start on machines without an
-> NVIDIA runtime.
+**Option 2 — vLLM on CPU:** the real vLLM engine via the official
+`vllm/vllm-openai-cpu` image, serving Qwen2.5-1.5B in bf16. Use this when
+you specifically want vLLM (API parity with the GPU stack, vLLM-specific
+features, or testing before a GPU deployment).
+
+```bash
+make download-cpu   # ~3.6 GB of models
+make pull-cpu
+make up-cpu
+```
+
+vLLM's x86 CPU backend is optimized for AVX-512; on AVX2-only CPUs it runs
+in "limited features" mode — expect it to be noticeably slower and heavier
+than option 1 on the same hardware (that's why option 1 exists). Tune via
+`CPU_CHAT_MODEL`, `CPU_MAX_MODEL_LEN`, and `VLLM_CPU_KVCACHE_SPACE` in
+`.env`; if you change the model, also edit `config/litellm-config.cpu.yaml`
+and restart LiteLLM.
 
 ---
 
