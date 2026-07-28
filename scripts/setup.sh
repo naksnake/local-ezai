@@ -133,8 +133,13 @@ fi
 
 # Activate and install packages
 source "$HOME/ai-env/bin/activate"
-pip install -q --upgrade pip
-pip install -q huggingface_hub sentence-transformers qdrant-client
+pip install -q --retries 10 --timeout 60 --upgrade pip
+# Host-side tooling only: huggingface_hub (model downloads) and
+# qdrant-client + requests (scripts/embed_documents.py). The heavyweight ML
+# libraries (torch, sentence-transformers) run inside the Docker images and
+# must NOT be installed here — they add a multi-GB download that often fails
+# on slow links. To run embed-server outside Docker, see README "Development".
+pip install -q --retries 10 --timeout 60 huggingface_hub qdrant-client requests
 success "Python packages installed in venv"
 
 # Add to .bashrc if not already there
