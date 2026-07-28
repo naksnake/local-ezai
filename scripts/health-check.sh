@@ -36,7 +36,7 @@ echo ""
 
 # ── Check function ─────────────────────────────────────────────────────────
 chk() {
-    local label=$1 url=$2 pattern=$3 hdr=${4:-}
+    local label=$1 svc=$2 url=$3 pattern=$4 hdr=${5:-}
 
     local response
     if [[ -n "$hdr" ]]; then
@@ -50,7 +50,7 @@ chk() {
         ((pass++))
     else
         echo -e "  ${RED}❌${NC}  $label"
-        echo -e "      ${YELLOW}→ check logs: docker compose logs $(echo "$label" | tr '[:upper:]' '[:lower:]' | tr ' ' '-')${NC}"
+        echo -e "      ${YELLOW}→ check logs: docker compose logs $svc${NC}"
         ((fail++))
     fi
 }
@@ -72,13 +72,13 @@ chk_code() {
 }
 
 chk_code "LLM inference (vLLM / llama.cpp)" "http://localhost:${LLM_PORT}/health"
-chk "Embed server"     "http://localhost:${EMBED_PORT}/health"                     "healthy"
-chk "Qdrant"           "http://localhost:${QDRANT_PORT}/healthz"                   "qdrant"
-chk "SearXNG"          "http://localhost:${SEARXNG_PORT}/search?q=test&format=json" '"results"'
-chk "mcpo tools"       "http://localhost:${MCPO_PORT}/openapi.json"                "openapi"   "Authorization: Bearer ${MCP_KEY}"
-chk "LiteLLM proxy"    "http://localhost:${LITELLM_PORT}/models"                   '"data"'    "Authorization: Bearer ${LITELLM_KEY}"
-chk "OpenWebUI"        "http://localhost:${OPENWEBUI_PORT}"                        "Open WebUI"
-chk "Monitor"          "http://localhost:${MONITOR_PORT}/api/status"               "server_time"
+chk "Embed server"     embed-server "http://localhost:${EMBED_PORT}/health"                     "healthy"
+chk "Qdrant"           qdrant       "http://localhost:${QDRANT_PORT}/healthz"                   "qdrant"
+chk "SearXNG"          searxng      "http://localhost:${SEARXNG_PORT}/search?q=test&format=json" '"results"'
+chk "mcpo tools"       mcpo         "http://localhost:${MCPO_PORT}/openapi.json"                "openapi"   "Authorization: Bearer ${MCP_KEY}"
+chk "LiteLLM proxy"    litellm      "http://localhost:${LITELLM_PORT}/models"                   '"data"'    "Authorization: Bearer ${LITELLM_KEY}"
+chk "OpenWebUI"        openwebui    "http://localhost:${OPENWEBUI_PORT}"                        "Open WebUI"
+chk "Monitor"          monitor      "http://localhost:${MONITOR_PORT}/api/status"               "server_time"
 
 echo ""
 echo -e "  ${BOLD}Passed: ${GREEN}${pass}${NC}  |  Failed: ${RED}${fail}${NC}"
