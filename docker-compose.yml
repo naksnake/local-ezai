@@ -68,6 +68,10 @@ services:
       - ${MODELS_DIR:-~/ai-models/hf-cache}:/root/.cache/huggingface
     environment:
       - HF_HUB_OFFLINE=1
+      # 'hf download --cache-dir X' writes models--* directly under X, but the
+      # hub's default lookup is $HF_HOME/hub — point it at the mount root so
+      # the offline lookup matches the layout the download produces
+      - HF_HUB_CACHE=/root/.cache/huggingface
     command:
       - --model
       - ${CHAT_MODEL:-Qwen/Qwen2.5-7B-Instruct}
@@ -108,6 +112,8 @@ services:
       - ${MODELS_DIR:-~/ai-models/hf-cache}:/root/.cache/huggingface
     environment:
       - HF_HUB_OFFLINE=1
+      # keep the hub lookup path aligned with the mount root (see vllm above)
+      - HF_HUB_CACHE=/root/.cache/huggingface
     networks:
       - ai-net
 

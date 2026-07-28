@@ -1,11 +1,24 @@
-.PHONY: help setup build pull up up-cpu pull-cpu download-cpu update-cpu \
+.PHONY: help setup build pull up up-cpu pull-cpu download-cpu update-cpu setup-cpu wait-ready \
         up-n97 pull-n97 download-n97 update-n97 \
         down restart logs health status embed \
+        reset-webui reset-password \
         k8s k8s-delete update clean slurm-setup push-github monitor
 
 # Load .env if it exists
 -include .env
 export
+
+# Defaults (a .env value wins). MODELS_DIR is resolved to an absolute path
+# here so docker compose mounts the same folder no matter which user runs it.
+CPU_CHAT_MODEL  ?= Qwen/Qwen2.5-1.5B-Instruct
+CPU_EMBED_MODEL ?= nomic-ai/nomic-embed-text-v1.5
+MODELS_DIR      ?= $(HOME)/ai-models/hf-cache
+
+# HF hub cache layout: hf download puts each model in models--<org>--<name>
+CHAT_MODEL_DIR  = $(MODELS_DIR)/models--$(subst /,--,$(CPU_CHAT_MODEL))
+EMBED_MODEL_DIR = $(MODELS_DIR)/models--$(subst /,--,$(CPU_EMBED_MODEL))
+
+COMPOSE_CPU = docker compose -f docker-compose.yml -f docker-compose.cpu.yml
 
 help: ## Show all available commands
 	@echo ""
@@ -34,25 +47,51 @@ up: ## Start all services with GPU
 	@echo "  Monitor:  http://localhost:8888"
 	@echo ""
 
-up-cpu: ## Start with vLLM on CPU (no GPU; slower than up-n97 on AVX2-only boxes)
-	docker compose -f docker-compose.yml -f docker-compose.cpu.yml up -d
+setup-cpu: ## One command for the vLLM CPU stack: pull, build, download models, start, wait until healthy
+	$(MAKE) pull-cpu
+	$(MAKE) build
+	$(MAKE) download-cpu
+	$(MAKE) up-cpu
+	$(MAKE) wait-ready
+
+up-cpu: ## Start with vLLM on CPU (auto-downloads models if missing; slower than up-n97 on AVX2-only boxes)
+	@if [ ! -d "$(CHAT_MODEL_DIR)/snapshots" ] || [ ! -d "$(EMBED_MODEL_DIR)/snapshots" ]; then \
+		echo "Models not found in $(MODELS_DIR) — downloading them first (~3.6 GB)..."; \
+		$(MAKE) download-cpu; \
+	fi
+	$(COMPOSE_CPU) up -d
 	@echo ""
 	@echo "  vLLM CPU mode: http://localhost:$(or $(OPENWEBUI_PORT),3000)"
-	@echo "  vLLM takes 1-3 minutes to load the model — run 'make health' after"
+	@echo "  vLLM takes 1-3 minutes to load the model — run 'make wait-ready' or 'make health'"
 	@echo ""
 
-pull-cpu: ## Pull images for the vLLM CPU stack
-	docker compose -f docker-compose.yml -f docker-compose.cpu.yml pull openwebui litellm vllm qdrant searxng
+wait-ready: ## Wait for the LLM server to finish loading, then run the health check
+	@echo "Waiting for the LLM server to load the model (up to 5 minutes)..."
+	@ok=0; for i in $$(seq 1 60); do \
+		if curl -sf -o /dev/null http://localhost:$(or $(LLM_PORT),8000)/health; then ok=1; break; fi; \
+		sleep 5; \
+	done; \
+	if [ "$$ok" != "1" ]; then \
+		echo "LLM server is still not answering — check: docker compose logs vllm | tail -30"; \
+	fi
+	@bash scripts/health-check.sh
 
-download-cpu: ## Download models for the vLLM CPU stack (~3.6 GB)
-	@. ~/ai-env/bin/activate && \
-	HF_CLI=$$(command -v hf >/dev/null 2>&1 && echo hf || echo huggingface-cli) && \
-	$$HF_CLI download $(or $(CPU_CHAT_MODEL),Qwen/Qwen2.5-1.5B-Instruct) --cache-dir $(or $(MODELS_DIR),~/ai-models/hf-cache) && \
-	$$HF_CLI download nomic-ai/nomic-embed-text-v1.5 --cache-dir $(or $(MODELS_DIR),~/ai-models/hf-cache)
+pull-cpu: ## Pull images for the vLLM CPU stack
+	$(COMPOSE_CPU) pull openwebui litellm vllm qdrant searxng
+
+download-cpu: ## Download models for the vLLM CPU stack (~3.6 GB; runs in Docker, resumable)
+	@mkdir -p "$(MODELS_DIR)"
+	docker run --rm \
+		-v "$(MODELS_DIR)":/hf-cache \
+		-e HF_HUB_CACHE=/hf-cache \
+		python:3.11-slim \
+		bash -c "pip install -q 'huggingface_hub[cli]' && \
+		         hf download $(CPU_CHAT_MODEL) && \
+		         hf download $(CPU_EMBED_MODEL)"
 
 update-cpu: ## Pull latest images and restart the vLLM CPU stack (do NOT use 'make update')
-	docker compose -f docker-compose.yml -f docker-compose.cpu.yml pull
-	docker compose -f docker-compose.yml -f docker-compose.cpu.yml up -d
+	$(COMPOSE_CPU) pull
+	$(COMPOSE_CPU) up -d
 
 up-n97: ## Start all services tuned for Intel N97 / low-power mini PCs (see docs/DEPLOY-N97.md)
 	docker compose -f docker-compose.yml -f docker-compose.n97.yml up -d
@@ -96,6 +135,12 @@ embed: ## Embed documents from ~/documents into Qdrant knowledge base
 		--qdrant-url http://localhost:$(or $(QDRANT_PORT),6333) \
 		--embed-url http://localhost:$(or $(EMBED_PORT),8001)/v1 \
 		--collection $(RAG_COLLECTION)
+
+reset-webui: ## Factory-reset OpenWebUI — deletes ALL users, passwords, chats and settings (asks first)
+	@bash scripts/reset-openwebui.sh wipe
+
+reset-password: ## Reset an OpenWebUI password: make reset-password EMAIL=you@example.com PASSWORD=newpass  (EMAIL=all → every user)
+	@bash scripts/reset-openwebui.sh password "$(EMAIL)" "$(PASSWORD)"
 
 monitor: ## Open the web monitoring dashboard
 	@echo "Monitor dashboard: http://localhost:8888"

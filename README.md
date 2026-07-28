@@ -220,10 +220,14 @@ make up-n97      Start CPU-only via llama.cpp (N97 / low-power boxes)
 make pull-n97    Pull images for the N97 stack (llama.cpp)
 make download-n97  Download the small quantized model set (~2.5 GB)
 make update-n97  Pull latest images and restart the N97 stack
-make up-cpu      Start CPU-only via vLLM (vllm-openai-cpu image)
+make setup-cpu   vLLM CPU stack end-to-end: pull, build, download, start, health
+make up-cpu      Start CPU-only via vLLM (auto-downloads models if missing)
 make pull-cpu    Pull images for the vLLM CPU stack
-make download-cpu  Download models for the vLLM CPU stack (~3.6 GB)
+make download-cpu  Download models for the vLLM CPU stack (~3.6 GB, runs in Docker)
 make update-cpu  Pull latest images and restart the vLLM CPU stack
+make wait-ready  Wait for the LLM to finish loading, then run the health check
+make reset-webui Factory-reset OpenWebUI (deletes all users, chats, settings)
+make reset-password  Reset an OpenWebUI password (EMAIL=... PASSWORD=..., EMAIL=all for everyone)
 make down        Stop all services
 make restart     Restart all services
 make logs        Tail logs from all services
@@ -405,10 +409,13 @@ you specifically want vLLM (API parity with the GPU stack, vLLM-specific
 features, or testing before a GPU deployment).
 
 ```bash
-make download-cpu   # ~3.6 GB of models
-make pull-cpu
-make up-cpu
+make setup-cpu      # pull + build + download models (~3.6 GB) + start + health check
 ```
+
+Or step by step: `make pull-cpu`, `make build`, `make download-cpu`,
+`make up-cpu`. The model download runs inside a throwaway Docker container
+straight into `MODELS_DIR`, so it needs no Python venv on the host and works
+the same whether you run make as root or as a normal user.
 
 vLLM's x86 CPU backend is optimized for AVX-512; on AVX2-only CPUs it runs
 in "limited features" mode — expect it to be noticeably slower and heavier
