@@ -18,7 +18,7 @@ Monitor:            Real-time dashboard (http://localhost:8888)
 
 | | Minimum | Recommended |
 |--|---------|-------------|
-| OS | Ubuntu 24.04 LTS | Ubuntu 24.04 LTS |
+| OS | Ubuntu 24.04 or 26.04 LTS | Ubuntu 24.04 or 26.04 LTS |
 | CPU | 8 cores | 16 cores |
 | RAM | 32 GB | 64 GB |
 | GPU | NVIDIA 8 GB VRAM | NVIDIA 16+ GB VRAM |
@@ -247,7 +247,8 @@ make clean       Remove all containers, images, volumes (destructive)
 bash scripts/setup.sh
 ```
 
-Installs Docker CE, NVIDIA Container Toolkit, Python 3 virtualenv, and Node.js 20.
+Installs Docker CE, NVIDIA Container Toolkit, Python 3 virtualenv, and Node.js 22.
+Supports Ubuntu 24.04 and 26.04 LTS.
 
 > If NVIDIA drivers were installed, the script exits and asks you to reboot.  
 > After rebooting, run `bash scripts/setup.sh` again to finish.

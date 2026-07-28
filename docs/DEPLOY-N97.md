@@ -131,7 +131,7 @@ the ~3 GB of models this profile needs.
 
 ### 1. System setup
 
-Ubuntu 24.04 LTS (or Server) on the N97 box, then:
+Ubuntu 24.04 or 26.04 LTS (Desktop or Server) on the N97 box, then:
 
 ```bash
 git clone https://github.com/naksnake/local-ezai.git
