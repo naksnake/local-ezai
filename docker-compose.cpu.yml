@@ -28,6 +28,12 @@ services:
       # torch's float16 support on CPU is unstable — vLLM docs recommend bf16
       - --dtype
       - bfloat16
+      # OpenWebUI sends tool definitions with tool_choice "auto"; without
+      # these vLLM rejects the request (Qwen2.5 uses the hermes format,
+      # same as the GPU profile)
+      - --enable-auto-tool-choice
+      - --tool-call-parser
+      - hermes
     environment:
       # GiB reserved for the KV cache (vLLM CPU default is 4; 2 is plenty
       # for a single user at 2048 context and saves RAM on 16 GB boxes)
