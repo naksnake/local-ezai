@@ -158,6 +158,9 @@ health: ## Run health check on all services
 bench: ## One-question LLM benchmark — prints prompt & generation tokens/sec
 	@bash scripts/bench.sh
 
+install-autorag: ## Install the Auto-RAG filter into OpenWebUI (global, no UI steps)
+	@bash scripts/install-autorag.sh
+
 status: ## Show status of all containers
 	docker compose ps
 
