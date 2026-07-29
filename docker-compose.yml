@@ -55,7 +55,16 @@ services:
       - "${LITELLM_PORT:-4000}:4000"
     volumes:
       - ./config/litellm-config.yaml:/app/config.yaml:ro
+      # Auto-RAG pre-call hook (module referenced by litellm_settings.callbacks)
+      - ./config/litellm_custom_callbacks.py:/app/litellm_custom_callbacks.py:ro
     command: ["--config", "/app/config.yaml", "--port", "4000"]
+    environment:
+      - EMBED_URL=http://embed-server:8001/v1
+      - QDRANT_URL=http://qdrant:6333
+      - RAG_COLLECTION=${RAG_COLLECTION:-my-knowledge-base}
+      - RAG_TOP_K=${RAG_TOP_K:-3}
+      - RAG_MIN_SCORE=${RAG_MIN_SCORE:-0.4}
+      - RAG_AUTO=${RAG_AUTO:-true}
     networks:
       - ai-net
     depends_on:

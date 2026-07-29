@@ -22,3 +22,9 @@ model_list:
 # Must match LITELLM_MASTER_KEY in your .env
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
+
+# ── Auto-RAG hook ───────────────────────────────────────────────────────────
+# Injects knowledge-base context into every chat and strips OpenWebUI's
+# built-in knowledge tools. See config/litellm_custom_callbacks.py.
+litellm_settings:
+  callbacks: litellm_custom_callbacks.auto_rag_handler
