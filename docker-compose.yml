@@ -11,6 +11,7 @@ volumes:
   openwebui-data:
   qdrant-data:
   mcpo-memory:
+  vllm-cache:
 
 services:
 
@@ -66,6 +67,9 @@ services:
       - "${LLM_PORT:-8000}:8000"
     volumes:
       - ${MODELS_DIR:-./models/hf-cache}:/root/.cache/huggingface
+      # torch.compile artifacts — persisting this makes restarts take seconds
+      # instead of re-compiling for minutes (matters a lot on slow CPUs)
+      - vllm-cache:/root/.cache/vllm
     environment:
       - HF_HUB_OFFLINE=1
       # 'hf download --cache-dir X' writes models--* directly under X, but the
