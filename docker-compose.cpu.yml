@@ -17,7 +17,8 @@
 services:
 
   vllm:
-    image: vllm/vllm-openai-cpu:latest
+    # Pin a specific tag via .env if :latest misbehaves on your CPU
+    image: ${VLLM_CPU_IMAGE:-vllm/vllm-openai-cpu:latest}
     command:
       - --model
       - ${CPU_CHAT_MODEL:-Qwen/Qwen2.5-1.5B-Instruct}
@@ -25,9 +26,12 @@ services:
       - ${CPU_CHAT_MODEL_NAME:-qwen2.5-1.5b}
       - --max-model-len
       - "${CPU_MAX_MODEL_LEN:-2048}"
-      # torch's float16 support on CPU is unstable — vLLM docs recommend bf16
+      # torch's float16 support on CPU is unstable — vLLM docs recommend bf16.
+      # On AVX2-only chips without native bf16 (N97/N100), bf16 is emulated;
+      # if warmup or generation is pathologically slow, try CPU_DTYPE=float32
+      # in .env (uses ~2x model RAM — consider CPU_MEM_LIMIT=12g too).
       - --dtype
-      - bfloat16
+      - ${CPU_DTYPE:-bfloat16}
       # OpenWebUI sends tool definitions with tool_choice "auto"; without
       # these vLLM rejects the request (Qwen2.5 uses the hermes format,
       # same as the GPU profile)
@@ -48,7 +52,7 @@ services:
     deploy: !override
       resources:
         limits:
-          memory: 10g
+          memory: ${CPU_MEM_LIMIT:-10g}
 
   # Route the CPU model name instead of qwen2.5-7b
   litellm:
