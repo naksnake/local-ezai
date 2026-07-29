@@ -87,18 +87,23 @@ now = int(time.time())
 models = list(dict.fromkeys(os.environ["CHAT_MODELS"].split()))
 
 for mid in models:
-    row = db.execute("SELECT meta FROM model WHERE id = ?", (mid,)).fetchone()
+    row = db.execute("SELECT meta, params FROM model WHERE id = ?", (mid,)).fetchone()
     if row:
         meta = json.loads(row[0] or "{}")
         meta.setdefault("builtinTools", {})["knowledge"] = False
-        db.execute("UPDATE model SET meta = ?, updated_at = ? WHERE id = ?",
-                   (json.dumps(meta), now, mid))
+        # 'default' (prompt-based) function calling: built-in agentic tools
+        # only exist in native mode, so this removes them on every OpenWebUI
+        # version — and the Auto-RAG filter needs no tool calling at all.
+        params = json.loads(row[1] or "{}")
+        params["function_calling"] = "default"
+        db.execute("UPDATE model SET meta = ?, params = ?, updated_at = ? WHERE id = ?",
+                   (json.dumps(meta), json.dumps(params), now, mid))
         print(f"updated existing model override: {mid}")
     else:
         new = {
             "id": mid, "user_id": admin[0] if admin else None,
             "base_model_id": None, "name": mid,
-            "params": json.dumps({}),
+            "params": json.dumps({"function_calling": "default"}),
             "meta": json.dumps({"builtinTools": {"knowledge": False}}),
             "access_control": None, "is_active": 1,
             "updated_at": now, "created_at": now,
@@ -108,7 +113,7 @@ for mid in models:
             f"INSERT INTO model ({','.join(new)}) VALUES ({','.join('?' * len(new))})",
             list(new.values()),
         )
-        print(f"created model override: {mid} (built-in knowledge tools off)")
+        print(f"created model override: {mid} (knowledge builtins off, function_calling=default)")
 
 db.commit()
 PY
