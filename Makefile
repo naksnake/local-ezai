@@ -48,12 +48,19 @@ build: ## Build custom Docker images (embed-server, mcpo, monitor)
 pull: ## Pull all official Docker images
 	docker compose pull openwebui litellm vllm qdrant searxng
 
-up: ## Start all services with GPU
+# Port conflicts are fixed in .env by check-ports.sh; the actual start runs
+# in a sub-make so the corrected .env is re-read (make's exported copies of
+# the old values would otherwise override it inside docker compose).
+up: ## Start all services with GPU (auto-resolves port conflicts)
+	@bash scripts/check-ports.sh
+	@$(MAKE) --no-print-directory up-run
+
+up-run:
 	docker compose up -d
 	@echo ""
 	@echo "  Services starting... run 'make health' in 2-3 minutes"
-	@echo "  Chat UI:  http://localhost:3000"
-	@echo "  Monitor:  http://localhost:8888"
+	@echo "  Chat UI:  http://localhost:$(or $(OPENWEBUI_PORT),3000)"
+	@echo "  Monitor:  http://localhost:$(or $(MONITOR_PORT),8888)"
 	@echo ""
 
 setup-cpu: ## One command for the vLLM CPU stack: pull, build, download models, start, wait until healthy
@@ -63,7 +70,11 @@ setup-cpu: ## One command for the vLLM CPU stack: pull, build, download models, 
 	$(MAKE) up-cpu
 	$(MAKE) wait-ready
 
-up-cpu: ## Start with vLLM on CPU (auto-downloads models if missing; slower than up-n97 on AVX2-only boxes)
+up-cpu: ## Start with vLLM on CPU (auto-downloads models, auto-resolves port conflicts)
+	@bash scripts/check-ports.sh
+	@$(MAKE) --no-print-directory up-cpu-run
+
+up-cpu-run:
 	@if [ ! -d "$(CHAT_MODEL_DIR)/snapshots" ] || [ ! -d "$(EMBED_MODEL_DIR)/snapshots" ] || [ ! -d "$(EMBED_CODE_DIR)/snapshots" ]; then \
 		echo "Models not found in $(MODELS_DIR) — downloading them first (~3.6 GB)..."; \
 		$(MAKE) download-cpu; \
@@ -112,7 +123,11 @@ setup-n97: ## One command for the N97 stack: pull, build, download models, start
 	$(MAKE) up-n97
 	$(MAKE) wait-ready
 
-up-n97: ## Start all services tuned for Intel N97 / low-power mini PCs (auto-downloads models if missing)
+up-n97: ## Start all services tuned for Intel N97 / low-power mini PCs (auto-downloads models, auto-resolves ports)
+	@bash scripts/check-ports.sh
+	@$(MAKE) --no-print-directory up-n97-run
+
+up-n97-run:
 	@if [ ! -f "$(N97_GGUF_DIR)/$(N97_MODEL_FILE)" ] || [ ! -d "$(EMBED_MODEL_DIR)/snapshots" ] || [ ! -d "$(EMBED_CODE_DIR)/snapshots" ]; then \
 		echo "Models not found — downloading them first..."; \
 		$(MAKE) download-n97; \
@@ -124,9 +139,13 @@ up-n97: ## Start all services tuned for Intel N97 / low-power mini PCs (auto-dow
 	@echo ""
 
 up-n97-igpu: ## N97 profile with llama.cpp on the Intel iGPU (Vulkan): ~2-3x faster prompt processing
+	@bash scripts/check-ports.sh
+	@$(MAKE) --no-print-directory up-n97-igpu-run
+
+up-n97-igpu-run:
 	docker compose -f docker-compose.yml -f docker-compose.n97.yml -f docker-compose.n97-igpu.yml up -d
 	@echo ""
-	@echo "  N97 iGPU mode (llama.cpp + Vulkan): http://localhost:3000"
+	@echo "  N97 iGPU mode (llama.cpp + Vulkan): http://localhost:$(or $(OPENWEBUI_PORT),3000)"
 	@echo "  Check the iGPU was picked up:  docker compose logs vllm | grep -i vulkan"
 	@echo ""
 

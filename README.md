@@ -653,6 +653,9 @@ The embed job reads from `./documents` and writes to Qdrant on `localhost:6333`.
 
 | Symptom | Fix |
 |---------|-----|
+| `Bind for 0.0.0.0:XXXX failed: port is already allocated` | Shouldn't happen anymore — `make up*` auto-relocates conflicting ports and saves them to `.env`. If starting compose directly, run `bash scripts/check-ports.sh` first |
+| Logging in to OpenWebUI logs out another session | Sessions on **different devices/browsers are independent** and never affect each other. One *browser* holds a single login per address — two accounts on the same machine need two browsers, profiles, or a private window |
+| All OpenWebUI users logged out after a restart | `WEBUI_SECRET_KEY` changed — set it to a fixed value in `.env` (sessions are signed with it) |
 | `make health` shows vLLM offline | Still loading — wait 3–5 min, then: `make logs-vllm` |
 | `Exited (137)` on vLLM | Out of VRAM — lower `GPU_MEMORY_UTILIZATION=0.75` in `.env` and `make restart` |
 | LiteLLM returns 401 | `LITELLM_MASTER_KEY` in `.env` must match the key OpenWebUI is sending |
