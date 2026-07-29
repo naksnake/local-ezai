@@ -284,6 +284,61 @@ async def _embed(client: httpx.AsyncClient, texts: list[str]) -> list[list[float
     return [d["embedding"] for d in r.json()["data"]]
 
 
+@app.get("/api/rag/files")
+async def rag_files():
+    """List every source file in the knowledge base with its chunk count."""
+    counts: dict[str, int] = {}
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        offset = None
+        while True:
+            body = {"limit": 500, "with_payload": ["source"], "with_vector": False}
+            if offset is not None:
+                body["offset"] = offset
+            try:
+                r = await client.post(
+                    f"{QDRANT_URL}/collections/{RAG_COLLECTION}/points/scroll",
+                    json=body)
+            except Exception as e:
+                return JSONResponse({"error": f"qdrant unavailable: {e}"}, status_code=502)
+            if r.status_code == 404:
+                return {"files": [], "total_chunks": 0}
+            r.raise_for_status()
+            res = r.json()["result"]
+            for p in res.get("points", []):
+                src = (p.get("payload") or {}).get("source", "unknown")
+                counts[src] = counts.get(src, 0) + 1
+            offset = res.get("next_page_offset")
+            if offset is None:
+                break
+    return {"files": [{"source": s, "chunks": n} for s, n in sorted(counts.items())],
+            "total_chunks": sum(counts.values())}
+
+
+@app.delete("/api/rag/files")
+async def rag_delete(source: str):
+    """Remove every chunk of one source file from the knowledge base."""
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        try:
+            r = await client.post(
+                f"{QDRANT_URL}/collections/{RAG_COLLECTION}/points/delete?wait=true",
+                json={"filter": {"must": [{"key": "source", "match": {"value": source}}]}})
+        except Exception as e:
+            return JSONResponse({"error": f"qdrant unavailable: {e}"}, status_code=502)
+        if r.status_code == 404:
+            return JSONResponse({"error": "collection not found"}, status_code=404)
+        r.raise_for_status()
+
+    removed = False
+    try:
+        path = os.path.join(DOCUMENTS_DIR, os.path.basename(source))
+        if os.path.isfile(path):
+            os.remove(path)
+            removed = True
+    except Exception:
+        pass
+    return {"deleted": source, "documents_file_removed": removed}
+
+
 @app.get("/api/rag/status")
 async def rag_status():
     async with httpx.AsyncClient(timeout=10.0) as client:
@@ -472,6 +527,11 @@ _DASHBOARD_HTML = """<!doctype html>
   .rag-status { font-size: 12px; color: var(--muted); }
   .rag-status.ok  { color: var(--green); }
   .rag-status.err { color: var(--red); }
+  .rag-files { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 8px; }
+  .rag-chip { font-size: 12px; background: var(--bg); border: 1px solid var(--border);
+              border-radius: 12px; padding: 3px 10px; color: var(--text); }
+  .rag-chip em { color: var(--muted); font-style: normal; }
+  .rag-chip a { color: var(--red); text-decoration: none; margin-left: 6px; font-weight: 700; }
   @media (max-width: 480px) { .summary { flex-wrap: wrap; } .sum-card { min-width: 100px; } }
 </style>
 </head>
@@ -493,6 +553,7 @@ _DASHBOARD_HTML = """<!doctype html>
   <input type="file" id="rag-file" accept=".txt,.md,.log,.csv,.pdf">
   <button id="rag-btn">Upload &amp; Embed</button>
   <span class="rag-status" id="rag-status"></span>
+  <div class="rag-files" id="rag-files"></div>
 </div>
 
 <main><div class="grid" id="grid"></div></main>
@@ -602,6 +663,9 @@ function applyData(data) {
 }
 
 // ── RAG upload block ─────────────────────────────────────────────
+const esc = s => s.replace(/[&<>"']/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
 async function refreshRag() {
   try {
     const r = await fetch('/api/rag/status');
@@ -610,6 +674,22 @@ async function refreshRag() {
       ? `${d.points} chunks in '${d.collection}'`
       : `collection '${d.collection}' is empty`;
   } catch { $('rag-count').textContent = 'status unavailable'; }
+  try {
+    const r = await fetch('/api/rag/files');
+    const d = await r.json();
+    const wrap = $('rag-files');
+    wrap.innerHTML = (d.files || []).map(f =>
+      `<span class="rag-chip">${esc(f.source)} <em>(${f.chunks})</em>` +
+      `<a href="#" data-src="${encodeURIComponent(f.source)}" title="Remove from knowledge base">✕</a></span>`
+    ).join('');
+    wrap.querySelectorAll('a[data-src]').forEach(a => a.onclick = async e => {
+      e.preventDefault();
+      const src = decodeURIComponent(a.dataset.src);
+      if (!confirm(`Remove all chunks of "${src}" from the knowledge base?`)) return;
+      await fetch('/api/rag/files?source=' + encodeURIComponent(src), { method: 'DELETE' });
+      refreshRag();
+    });
+  } catch {}
 }
 refreshRag();
 
