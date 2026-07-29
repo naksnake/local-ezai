@@ -2,10 +2,19 @@ model_list:
 
   # ── Main chat model (N97 / low-power CPU) ───────────────────────────────
   # Served by llama.cpp at http://vllm:8000 (service keeps the vllm name).
-  # The model_name here must match N97_MODEL_NAME in your .env
+  # Both common sizes are routed; pick the one matching N97_MODEL_NAME in
+  # your .env from OpenWebUI's model selector. llama.cpp serves whichever
+  # single model it was started with, regardless of the requested name —
+  # so the non-loaded entry also answers, just under the wrong label.
   - model_name: qwen2.5-3b
     litellm_params:
       model: openai/qwen2.5-3b
+      api_base: http://vllm:8000/v1
+      api_key: "not-needed-locally"
+
+  - model_name: qwen2.5-1.5b
+    litellm_params:
+      model: openai/qwen2.5-1.5b
       api_base: http://vllm:8000/v1
       api_key: "not-needed-locally"
 
