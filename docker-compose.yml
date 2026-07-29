@@ -29,6 +29,10 @@ services:
       - OPENAI_API_BASE_URL=http://litellm:4000/v1
       - OPENAI_API_KEY=${LITELLM_MASTER_KEY:-sk-ai-service-2024}
       - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-change-this-secret}
+      # Auto-register the mcpo tool servers at boot (Admin Panel > Settings >
+      # Tools shows them without manual setup). NOTE: once an admin edits the
+      # tool list in the UI, the UI-saved value wins over this env default.
+      - 'TOOL_SERVER_CONNECTIONS=[{"url":"http://mcpo:8200/qdrant-rag","path":"openapi.json","auth_type":"bearer","key":"${MCP_API_KEY:-local-tools-key}","config":{"enable":true},"info":{"id":"qdrant-rag","name":"Knowledge Base Search"}},{"url":"http://mcpo:8200/fetch","path":"openapi.json","auth_type":"bearer","key":"${MCP_API_KEY:-local-tools-key}","config":{"enable":true},"info":{"id":"fetch","name":"Web Fetch"}},{"url":"http://mcpo:8200/memory","path":"openapi.json","auth_type":"bearer","key":"${MCP_API_KEY:-local-tools-key}","config":{"enable":true},"info":{"id":"memory","name":"Memory"}},{"url":"http://mcpo:8200/filesystem","path":"openapi.json","auth_type":"bearer","key":"${MCP_API_KEY:-local-tools-key}","config":{"enable":true},"info":{"id":"filesystem","name":"Filesystem"}}]'
     volumes:
       - openwebui-data:/app/backend/data
     networks:
