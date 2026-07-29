@@ -156,7 +156,7 @@ embed: ## Embed documents from the documents folder into the Qdrant knowledge ba
 		-v "$(CURDIR)/scripts":/scripts:ro \
 		-v "$(DOCUMENTS_DIR)":/documents:ro \
 		python:3.11-slim \
-		bash -c "pip install -q qdrant-client requests && \
+		bash -c "pip install -q qdrant-client requests pypdf && \
 		         python3 /scripts/embed_documents.py \
 		           --input-dir /documents \
 		           --qdrant-url http://localhost:$(or $(QDRANT_PORT),6333) \

@@ -38,8 +38,8 @@ EMBED_URL      = os.getenv("EMBED_URL",      "http://embed-server:8001/v1")
 QDRANT_URL     = os.getenv("QDRANT_URL",     "http://qdrant:6333")
 RAG_COLLECTION = os.getenv("RAG_COLLECTION", "my-knowledge-base")
 DOCUMENTS_DIR  = os.getenv("DOCUMENTS_DIR_CONTAINER", "/data/documents")
-RAG_EXTENSIONS = {".txt", ".md", ".log", ".csv"}
-RAG_MAX_BYTES  = 5_000_000
+RAG_EXTENSIONS = {".txt", ".md", ".log", ".csv", ".pdf"}
+RAG_MAX_BYTES  = 20_000_000
 EMBED_BATCH    = 16
 
 # The LLM slot is engine-agnostic: vLLM answers /health with an empty 200 body,
@@ -80,7 +80,8 @@ SERVICES: list[dict] = [
         "desc":    "Vector database",
         "url":     "http://qdrant:6333/healthz",
         "method":  "GET",
-        "pattern": "qdrant",
+        # /healthz returns the plain text "healthz check passed"
+        "pattern": "passed",
         "headers": {},
         "link":    f"http://localhost:{_port('QDRANT_PORT', '6333')}/dashboard",
     },
@@ -308,11 +309,24 @@ async def rag_upload(file: UploadFile = File(...)):
 
     raw = await file.read()
     if len(raw) > RAG_MAX_BYTES:
-        return JSONResponse({"error": "file too large (max 5 MB)"}, status_code=413)
+        return JSONResponse({"error": "file too large (max 20 MB)"}, status_code=413)
 
-    chunks = _chunk_text(raw.decode("utf-8", errors="ignore"))
+    if ext == ".pdf":
+        try:
+            from io import BytesIO
+            from pypdf import PdfReader
+            reader = PdfReader(BytesIO(raw))
+            text = "\n".join((page.extract_text() or "") for page in reader.pages)
+        except Exception as e:
+            return JSONResponse({"error": f"could not read PDF: {e}"}, status_code=400)
+    else:
+        text = raw.decode("utf-8", errors="ignore")
+
+    chunks = _chunk_text(text)
     if not chunks:
-        return JSONResponse({"error": "file contains no text"}, status_code=400)
+        return JSONResponse(
+            {"error": "file contains no extractable text (scanned PDFs need OCR first)"},
+            status_code=400)
 
     async with httpx.AsyncClient(timeout=180.0) as client:
         # Embed the first batch to learn the vector dimension
@@ -476,7 +490,7 @@ _DASHBOARD_HTML = """<!doctype html>
 <div class="rag-bar">
   <div class="rag-title">📚 Knowledge Base (RAG)</div>
   <div class="rag-count" id="rag-count">…</div>
-  <input type="file" id="rag-file" accept=".txt,.md,.log,.csv">
+  <input type="file" id="rag-file" accept=".txt,.md,.log,.csv,.pdf">
   <button id="rag-btn">Upload &amp; Embed</button>
   <span class="rag-status" id="rag-status"></span>
 </div>
