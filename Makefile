@@ -143,6 +143,9 @@ logs-%: ## Show logs for a specific service (e.g. make logs-vllm)
 health: ## Run health check on all services
 	@bash scripts/health-check.sh
 
+bench: ## One-question LLM benchmark — prints prompt & generation tokens/sec
+	@bash scripts/bench.sh
+
 status: ## Show status of all containers
 	docker compose ps
 
