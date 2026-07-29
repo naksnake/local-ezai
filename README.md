@@ -217,6 +217,7 @@ make build       Build embed-server, mcpo, and monitor images
 make pull        Pull official Docker images
 make up          Start all 8 services (GPU mode)
 make up-n97      Start CPU-only via llama.cpp (N97 / low-power boxes)
+make up-n97-igpu Same, but llama.cpp runs on the Intel iGPU (Vulkan; faster prefill)
 make pull-n97    Pull images for the N97 stack (llama.cpp)
 make download-n97  Download the small quantized model set (~2.5 GB)
 make update-n97  Pull latest images and restart the N97 stack

@@ -111,6 +111,13 @@ up-n97: ## Start all services tuned for Intel N97 / low-power mini PCs (see docs
 	@echo "  First start loads the model — run 'make health' in ~1 minute"
 	@echo ""
 
+up-n97-igpu: ## N97 profile with llama.cpp on the Intel iGPU (Vulkan): ~2-3x faster prompt processing
+	docker compose -f docker-compose.yml -f docker-compose.n97.yml -f docker-compose.n97-igpu.yml up -d
+	@echo ""
+	@echo "  N97 iGPU mode (llama.cpp + Vulkan): http://localhost:3000"
+	@echo "  Check the iGPU was picked up:  docker compose logs vllm | grep -i vulkan"
+	@echo ""
+
 pull-n97: ## Pull images for the N97 stack (llama.cpp instead of vLLM)
 	docker compose -f docker-compose.yml -f docker-compose.n97.yml pull openwebui litellm vllm qdrant searxng
 
