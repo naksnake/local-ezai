@@ -1,5 +1,5 @@
 .PHONY: help setup build pull up up-cpu pull-cpu download-cpu update-cpu setup-cpu wait-ready \
-        up-n97 pull-n97 download-n97 update-n97 \
+        up-n97 pull-n97 download-n97 update-n97 setup-n97 up-n97-igpu bench \
         down restart logs health status embed \
         reset-webui reset-password \
         k8s k8s-delete update clean slurm-setup push-github monitor
@@ -13,6 +13,7 @@ export
 # user runs it, and no host Python venv is needed anywhere.
 CPU_CHAT_MODEL  ?= Qwen/Qwen2.5-1.5B-Instruct
 CPU_EMBED_MODEL ?= nomic-ai/nomic-embed-text-v1.5
+N97_MODEL_FILE  ?= qwen2.5-3b-instruct-q4_k_m.gguf
 # nomic-embed loads its custom modeling code (trust_remote_code) from this
 # separate repo at runtime — the offline cache must contain it too
 EMBED_CODE_REPO ?= nomic-ai/nomic-bert-2048
@@ -104,11 +105,22 @@ update-cpu: ## Pull latest images and restart the vLLM CPU stack (do NOT use 'ma
 	$(COMPOSE_CPU) pull
 	$(COMPOSE_CPU) up -d
 
-up-n97: ## Start all services tuned for Intel N97 / low-power mini PCs (see docs/DEPLOY-N97.md)
+setup-n97: ## One command for the N97 stack: pull, build, download models, start, wait until healthy
+	$(MAKE) pull-n97
+	$(MAKE) build
+	$(MAKE) download-n97
+	$(MAKE) up-n97
+	$(MAKE) wait-ready
+
+up-n97: ## Start all services tuned for Intel N97 / low-power mini PCs (auto-downloads models if missing)
+	@if [ ! -f "$(N97_GGUF_DIR)/$(N97_MODEL_FILE)" ] || [ ! -d "$(EMBED_MODEL_DIR)/snapshots" ] || [ ! -d "$(EMBED_CODE_DIR)/snapshots" ]; then \
+		echo "Models not found — downloading them first..."; \
+		$(MAKE) download-n97; \
+	fi
 	docker compose -f docker-compose.yml -f docker-compose.n97.yml up -d
 	@echo ""
-	@echo "  N97 mode (llama.cpp): http://localhost:3000"
-	@echo "  First start loads the model — run 'make health' in ~1 minute"
+	@echo "  N97 mode (llama.cpp): http://localhost:$(or $(OPENWEBUI_PORT),3000)"
+	@echo "  First start loads the model — run 'make wait-ready' or 'make health'"
 	@echo ""
 
 up-n97-igpu: ## N97 profile with llama.cpp on the Intel iGPU (Vulkan): ~2-3x faster prompt processing
