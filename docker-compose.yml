@@ -189,9 +189,13 @@ services:
     restart: unless-stopped
     ports:
       - "${MONITOR_PORT:-8888}:8888"
+    volumes:
+      # RAG uploads are also dropped here so the filesystem MCP tool sees them
+      - ${DOCUMENTS_DIR:-./documents}:/data/documents
     environment:
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-ai-service-2024}
       - MCP_API_KEY=${MCP_API_KEY:-local-tools-key}
+      - RAG_COLLECTION=${RAG_COLLECTION:-my-knowledge-base}
       - POLL_INTERVAL=15
       # Host ports for the "Open" links on the dashboard cards
       - OPENWEBUI_PORT=${OPENWEBUI_PORT:-3000}

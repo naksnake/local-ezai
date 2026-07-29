@@ -4,20 +4,24 @@ monitor/monitor.py
 Web monitoring dashboard for the AI service stack.
 
 Polls all 7 services on a background thread and serves:
-  GET /           → dashboard HTML
-  GET /api/status → current status JSON
-  GET /api/stream → SSE stream (push updates to browser)
+  GET  /               → dashboard HTML
+  GET  /api/status     → current status JSON
+  GET  /api/stream     → SSE stream (push updates to browser)
+  POST /api/rag/upload → embed an uploaded text file into the knowledge base
+  GET  /api/rag/status → knowledge-base collection info (chunk count)
 """
 import asyncio
 import json
 import os
 import time
+import uuid
 from collections import deque
 from typing import AsyncGenerator
 
 import httpx
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi import FastAPI, File, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 # ── Configuration ─────────────────────────────────────────────────────────────
@@ -26,6 +30,17 @@ HISTORY_POINTS = int(os.getenv("HISTORY_POINTS", "60")) # keep last N readings
 
 LITELLM_KEY = os.getenv("LITELLM_MASTER_KEY", "sk-ai-service-2024")
 MCP_KEY     = os.getenv("MCP_API_KEY",         "local-tools-key")
+
+# RAG upload: chunks uploaded files and stores them in Qdrant, using the same
+# chunking and payload shape as scripts/embed_documents.py so the qdrant-rag
+# MCP tool finds them.
+EMBED_URL      = os.getenv("EMBED_URL",      "http://embed-server:8001/v1")
+QDRANT_URL     = os.getenv("QDRANT_URL",     "http://qdrant:6333")
+RAG_COLLECTION = os.getenv("RAG_COLLECTION", "my-knowledge-base")
+DOCUMENTS_DIR  = os.getenv("DOCUMENTS_DIR_CONTAINER", "/data/documents")
+RAG_EXTENSIONS = {".txt", ".md", ".log", ".csv"}
+RAG_MAX_BYTES  = 5_000_000
+EMBED_BATCH    = 16
 
 # The LLM slot is engine-agnostic: vLLM answers /health with an empty 200 body,
 # llama.cpp (N97 profile) with {"status":"ok"} — so match on status code only
@@ -197,6 +212,15 @@ async def _poll_loop() -> None:
 # ── FastAPI app ───────────────────────────────────────────────────────────────
 app = FastAPI(title="AI Service Monitor", version="1.0.0")
 
+# Open CORS so other lab dashboards on the LAN can call the RAG upload API
+# directly from browser JavaScript.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 if os.path.isdir(STATIC_DIR):
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -235,6 +259,120 @@ async def api_stream() -> StreamingResponse:
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+# ── RAG upload API ────────────────────────────────────────────────────────────
+def _chunk_text(text: str, chunk_size: int = 400, overlap: int = 50) -> list[str]:
+    """Same word-level chunking as scripts/embed_documents.py."""
+    words = text.split()
+    step = max(1, chunk_size - overlap)
+    out = []
+    for i in range(0, len(words), step):
+        chunk = " ".join(words[i : i + chunk_size])
+        if chunk.strip():
+            out.append(chunk)
+    return out
+
+
+async def _embed(client: httpx.AsyncClient, texts: list[str]) -> list[list[float]]:
+    r = await client.post(
+        f"{EMBED_URL}/embeddings",
+        json={"model": "nomic-embed-text-v1.5", "input": texts},
+    )
+    r.raise_for_status()
+    return [d["embedding"] for d in r.json()["data"]]
+
+
+@app.get("/api/rag/status")
+async def rag_status():
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            r = await client.get(f"{QDRANT_URL}/collections/{RAG_COLLECTION}")
+        except Exception as e:
+            return JSONResponse({"error": f"qdrant unavailable: {e}"}, status_code=502)
+    if r.status_code == 200:
+        res = r.json()["result"]
+        return {"collection": RAG_COLLECTION, "exists": True,
+                "points": res.get("points_count", 0)}
+    return {"collection": RAG_COLLECTION, "exists": False, "points": 0}
+
+
+@app.post("/api/rag/upload")
+async def rag_upload(file: UploadFile = File(...)):
+    name = os.path.basename(file.filename or "upload.txt")
+    ext = os.path.splitext(name)[1].lower()
+    if ext not in RAG_EXTENSIONS:
+        return JSONResponse(
+            {"error": f"unsupported file type '{ext}' — allowed: {sorted(RAG_EXTENSIONS)}"},
+            status_code=400)
+
+    raw = await file.read()
+    if len(raw) > RAG_MAX_BYTES:
+        return JSONResponse({"error": "file too large (max 5 MB)"}, status_code=413)
+
+    chunks = _chunk_text(raw.decode("utf-8", errors="ignore"))
+    if not chunks:
+        return JSONResponse({"error": "file contains no text"}, status_code=400)
+
+    async with httpx.AsyncClient(timeout=180.0) as client:
+        # Embed the first batch to learn the vector dimension
+        try:
+            vectors = await _embed(client, chunks[:EMBED_BATCH])
+        except Exception as e:
+            return JSONResponse({"error": f"embed server unavailable: {e}"}, status_code=502)
+        dim = len(vectors[0])
+
+        # Ensure the collection exists and matches the embedding dimension
+        try:
+            r = await client.get(f"{QDRANT_URL}/collections/{RAG_COLLECTION}")
+            if r.status_code == 404:
+                r = await client.put(
+                    f"{QDRANT_URL}/collections/{RAG_COLLECTION}",
+                    json={"vectors": {"size": dim, "distance": "Cosine"}})
+                r.raise_for_status()
+            elif r.status_code == 200:
+                stored = r.json()["result"]["config"]["params"]["vectors"]["size"]
+                if stored != dim:
+                    return JSONResponse(
+                        {"error": f"collection dim {stored} != embed dim {dim}"},
+                        status_code=409)
+            else:
+                r.raise_for_status()
+        except Exception as e:
+            return JSONResponse({"error": f"qdrant unavailable: {e}"}, status_code=502)
+
+        # Embed the rest and upsert everything
+        try:
+            for i in range(EMBED_BATCH, len(chunks), EMBED_BATCH):
+                vectors += await _embed(client, chunks[i : i + EMBED_BATCH])
+
+            points = [
+                {"id": str(uuid.uuid4()), "vector": vec,
+                 "payload": {"source": name, "source_path": f"upload:{name}",
+                             "chunk_index": idx, "text": chunk}}
+                for idx, (chunk, vec) in enumerate(zip(chunks, vectors))
+            ]
+            for i in range(0, len(points), 64):
+                r = await client.put(
+                    f"{QDRANT_URL}/collections/{RAG_COLLECTION}/points?wait=true",
+                    json={"points": points[i : i + 64]})
+                r.raise_for_status()
+        except Exception as e:
+            return JSONResponse({"error": f"embedding/upsert failed: {e}"}, status_code=502)
+
+    # Best-effort: also drop the original into the shared documents folder so
+    # the filesystem MCP tool can read it
+    saved = False
+    try:
+        if os.path.isdir(DOCUMENTS_DIR):
+            with open(os.path.join(DOCUMENTS_DIR, name), "wb") as f:
+                f.write(raw)
+            saved = True
+    except Exception:
+        pass
+
+    return {"file": name, "chunks": len(chunks),
+            "collection": RAG_COLLECTION, "saved_to_documents": saved}
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -308,6 +446,18 @@ _DASHBOARD_HTML = """<!doctype html>
               color: var(--blue); text-decoration: none; }
   .link-btn:hover { text-decoration: underline; }
   .last-updated { font-size: 12px; color: var(--muted); padding: 0 24px 16px; }
+  .rag-bar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+             background: var(--card); border: 1px solid var(--border);
+             border-radius: 10px; margin: 0 24px 8px; padding: 14px 18px; }
+  .rag-title { font-weight: 600; font-size: 14px; }
+  .rag-count { font-size: 12px; color: var(--muted); }
+  .rag-bar input[type=file] { font-size: 12px; color: var(--muted); max-width: 260px; }
+  .rag-bar button { background: var(--blue); color: white; border: 0; border-radius: 6px;
+                    padding: 7px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .rag-bar button:disabled { opacity: .5; cursor: wait; }
+  .rag-status { font-size: 12px; color: var(--muted); }
+  .rag-status.ok  { color: var(--green); }
+  .rag-status.err { color: var(--red); }
   @media (max-width: 480px) { .summary { flex-wrap: wrap; } .sum-card { min-width: 100px; } }
 </style>
 </head>
@@ -322,6 +472,15 @@ _DASHBOARD_HTML = """<!doctype html>
 
 <div class="summary" id="summary"></div>
 <div class="last-updated" id="last-updated"></div>
+
+<div class="rag-bar">
+  <div class="rag-title">📚 Knowledge Base (RAG)</div>
+  <div class="rag-count" id="rag-count">…</div>
+  <input type="file" id="rag-file" accept=".txt,.md,.log,.csv">
+  <button id="rag-btn">Upload &amp; Embed</button>
+  <span class="rag-status" id="rag-status"></span>
+</div>
+
 <main><div class="grid" id="grid"></div></main>
 
 <script>
@@ -427,6 +586,44 @@ function applyData(data) {
   $('last-updated').textContent = 'Last updated: ' + new Date().toLocaleTimeString()
     + '  ·  Polling every ' + data.poll_interval + 's';
 }
+
+// ── RAG upload block ─────────────────────────────────────────────
+async function refreshRag() {
+  try {
+    const r = await fetch('/api/rag/status');
+    const d = await r.json();
+    $('rag-count').textContent = d.exists
+      ? `${d.points} chunks in '${d.collection}'`
+      : `collection '${d.collection}' is empty`;
+  } catch { $('rag-count').textContent = 'status unavailable'; }
+}
+refreshRag();
+
+$('rag-btn').onclick = async () => {
+  const f = $('rag-file').files[0];
+  const st = $('rag-status');
+  if (!f) { st.textContent = 'pick a file first'; st.className = 'rag-status err'; return; }
+  $('rag-btn').disabled = true;
+  st.textContent = `embedding ${f.name}… (large files take a while)`;
+  st.className = 'rag-status';
+  try {
+    const fd = new FormData();
+    fd.append('file', f);
+    const r = await fetch('/api/rag/upload', { method: 'POST', body: fd });
+    const d = await r.json();
+    if (r.ok) {
+      st.textContent = `✓ ${d.file}: ${d.chunks} chunks embedded`;
+      st.className = 'rag-status ok';
+      refreshRag();
+    } else {
+      st.textContent = '✗ ' + (d.error || r.statusText);
+      st.className = 'rag-status err';
+    }
+  } catch (e) {
+    st.textContent = '✗ ' + e;
+    st.className = 'rag-status err';
+  } finally { $('rag-btn').disabled = false; }
+};
 
 // SSE connection with auto-reconnect
 let evtSrc;
