@@ -14,6 +14,9 @@ set -euo pipefail
 
 GREEN='\033[0;32m'; CYAN='\033[0;36m'; NC='\033[0m'
 
+# Pick up HF_TOKEN / MODELS_DIR / N97_* overrides when run outside make
+if [[ -f .env ]]; then set -a; source .env; set +a; fi
+
 GGUF_DIR="${N97_GGUF_DIR:-$PWD/models/gguf}"
 CACHE_DIR="${MODELS_DIR:-$PWD/models/hf-cache}"
 GGUF_REPO="${N97_GGUF_REPO:-Qwen/Qwen2.5-3B-Instruct-GGUF}"
@@ -35,6 +38,7 @@ docker run --rm \
     -v "$GGUF_DIR":/gguf \
     -v "$CACHE_DIR":/hf-cache \
     -e HF_HUB_CACHE=/hf-cache \
+    -e HF_TOKEN \
     python:3.11-slim \
     bash -c "pip install -q 'huggingface_hub[cli]' && \
              hf download $GGUF_REPO $GGUF_FILE --local-dir /gguf && \

@@ -92,6 +92,7 @@ download-cpu: ## Download models for the vLLM CPU stack (~3.6 GB; runs in Docker
 	docker run --rm \
 		-v "$(MODELS_DIR)":/hf-cache \
 		-e HF_HUB_CACHE=/hf-cache \
+		-e HF_TOKEN \
 		python:3.11-slim \
 		bash -c "pip install -q 'huggingface_hub[cli]' && \
 		         hf download $(CPU_CHAT_MODEL) && \
