@@ -13,15 +13,17 @@ Polls all 7 services on a background thread and serves:
 import asyncio
 import json
 import os
+import secrets
 import time
 import uuid
 from collections import deque
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 
 import httpx
-from fastapi import FastAPI, File, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 
 # ── Configuration ─────────────────────────────────────────────────────────────
@@ -30,6 +32,54 @@ HISTORY_POINTS = int(os.getenv("HISTORY_POINTS", "60")) # keep last N readings
 
 LITELLM_KEY = os.getenv("LITELLM_MASTER_KEY", "sk-ai-service-2024")
 MCP_KEY     = os.getenv("MCP_API_KEY",         "local-tools-key")
+
+# ── RBAC ──────────────────────────────────────────────────────────────────────
+# Two browser roles via HTTP Basic auth, plus a machine credential:
+#   admin  — full access (dashboard + RAG upload/delete)
+#   viewer — read-only (dashboard and status/file listing; no changes)
+#   Authorization: Bearer <MCP_API_KEY> — machine access, admin-equivalent
+#     (used by the health check, lab-monitor integrations and scripts)
+# Set MONITOR_AUTH=false to disable authentication entirely.
+MONITOR_AUTH = os.getenv("MONITOR_AUTH", "true").lower() != "false"
+ADMIN_PASSWORD  = os.getenv("MONITOR_ADMIN_PASSWORD",  "admin")
+VIEWER_PASSWORD = os.getenv("MONITOR_VIEWER_PASSWORD", "viewer")
+
+_basic = HTTPBasic(auto_error=False)
+
+
+def _resolve_role(credentials: Optional[HTTPBasicCredentials],
+                  authorization: Optional[str]) -> Optional[str]:
+    if not MONITOR_AUTH:
+        return "admin"
+    if authorization and secrets.compare_digest(authorization, f"Bearer {MCP_KEY}"):
+        return "admin"
+    if credentials:
+        if (credentials.username == "admin"
+                and secrets.compare_digest(credentials.password, ADMIN_PASSWORD)):
+            return "admin"
+        if (credentials.username == "viewer"
+                and secrets.compare_digest(credentials.password, VIEWER_PASSWORD)):
+            return "viewer"
+    return None
+
+
+async def require_viewer(
+    credentials: Optional[HTTPBasicCredentials] = Depends(_basic),
+    authorization: Optional[str] = Header(None),
+) -> str:
+    role = _resolve_role(credentials, authorization)
+    if role is None:
+        raise HTTPException(
+            status_code=401, detail="Authentication required",
+            headers={"WWW-Authenticate": 'Basic realm="AI Service Monitor"'})
+    return role
+
+
+async def require_admin(role: str = Depends(require_viewer)) -> str:
+    if role != "admin":
+        raise HTTPException(status_code=403,
+                            detail="admin role required (viewer is read-only)")
+    return role
 
 # RAG upload: chunks uploaded files and stores them in Qdrant, using the same
 # chunking and payload shape as scripts/embed_documents.py so the qdrant-rag
@@ -233,12 +283,12 @@ async def _startup() -> None:
 
 
 @app.get("/api/status")
-async def api_status() -> dict:
+async def api_status(role: str = Depends(require_viewer)) -> dict:
     return _snapshot()
 
 
 @app.get("/api/stream")
-async def api_stream() -> StreamingResponse:
+async def api_stream(role: str = Depends(require_viewer)) -> StreamingResponse:
     queue: asyncio.Queue = asyncio.Queue(maxsize=5)
     _subscribers.append(queue)
 
@@ -285,7 +335,7 @@ async def _embed(client: httpx.AsyncClient, texts: list[str]) -> list[list[float
 
 
 @app.get("/api/rag/files")
-async def rag_files():
+async def rag_files(role: str = Depends(require_viewer)):
     """List every source file in the knowledge base with its chunk count."""
     counts: dict[str, int] = {}
     async with httpx.AsyncClient(timeout=30.0) as client:
@@ -315,7 +365,7 @@ async def rag_files():
 
 
 @app.delete("/api/rag/files")
-async def rag_delete(source: str):
+async def rag_delete(source: str, role: str = Depends(require_admin)):
     """Remove every chunk of one source file from the knowledge base."""
     async with httpx.AsyncClient(timeout=60.0) as client:
         try:
@@ -340,7 +390,7 @@ async def rag_delete(source: str):
 
 
 @app.get("/api/rag/status")
-async def rag_status():
+async def rag_status(role: str = Depends(require_viewer)):
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             r = await client.get(f"{QDRANT_URL}/collections/{RAG_COLLECTION}")
@@ -354,7 +404,7 @@ async def rag_status():
 
 
 @app.post("/api/rag/upload")
-async def rag_upload(file: UploadFile = File(...)):
+async def rag_upload(file: UploadFile = File(...), role: str = Depends(require_admin)):
     name = os.path.basename(file.filename or "upload.txt")
     ext = os.path.splitext(name)[1].lower()
     if ext not in RAG_EXTENSIONS:
@@ -445,7 +495,7 @@ async def rag_upload(file: UploadFile = File(...)):
 
 
 @app.get("/", response_class=HTMLResponse)
-async def dashboard() -> str:
+async def dashboard(role: str = Depends(require_viewer)) -> str:
     return _DASHBOARD_HTML
 
 

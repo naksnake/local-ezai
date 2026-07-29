@@ -16,51 +16,69 @@ Monitor:            Real-time dashboard (http://localhost:8888)
 
 ## Requirements
 
-| | Minimum | Recommended |
-|--|---------|-------------|
-| OS | Ubuntu 24.04 or 26.04 LTS | Ubuntu 24.04 or 26.04 LTS |
-| CPU | 8 cores | 16 cores |
-| RAM | 32 GB | 64 GB |
-| GPU | NVIDIA 8 GB VRAM | NVIDIA 16+ GB VRAM |
-| Disk | 200 GB SSD | 500 GB NVMe |
+The same stack runs on anything from a fanless mini-PC to a GPU server —
+you only swap the inference profile and the model:
 
-> **No GPU?** Two CPU profiles are available:
-> - `make up-n97` — llama.cpp with a quantized 3B model. Fastest option on
->   low-power mini PCs (Intel N97/N100 class, ≤16 GB RAM); works on any
->   x86-64 CPU with AVX2. Guide: **[docs/DEPLOY-N97.md](docs/DEPLOY-N97.md)**
-> - `make up-cpu` — the real vLLM engine on CPU (`vllm/vllm-openai-cpu`)
->   with Qwen2.5-1.5B in bf16. Use it when you specifically want vLLM;
->   on AVX2-only chips it runs in vLLM's "limited features" mode and is
->   slower than the llama.cpp profile.
+| Hardware tier | Profile | Chat model (default) | Example machines |
+|---|---|---|---|
+| Low-power x86 CPU (±16 GB RAM) | `make setup-n97` (llama.cpp) | Qwen2.5 1.5B/3B, 4-bit GGUF | Intel N97/N100 mini-PCs |
+| Same, using the Intel iGPU | `make up-n97-igpu` (llama.cpp + Vulkan) | same GGUF, ~2-3× faster prompt processing | Alder Lake-N UHD graphics |
+| Any x86 CPU with AVX2 | `make setup-cpu` (vLLM CPU) | Qwen2.5-1.5B bf16 | when you specifically need vLLM |
+| NVIDIA GPU, x86 or ARM | `make up` (vLLM CUDA) | Qwen2.5-7B (or far larger) | RTX workstation → HGX/MGX-class servers |
+
+OS: Ubuntu 24.04/26.04 LTS (any Linux with Docker ≥ 24 and Compose ≥ 2.24.4
+works). Disk: ~30 GB for the small profiles, 200 GB+ for large GPU models.
 
 ---
 
-## Quick start
+## Quick start — example: Intel N97 mini-PC with iGPU
+
+This walks a fresh machine to a working chat + RAG service with a
+1.5-billion-parameter model. Only Docker is required on the host — model
+downloads and helper scripts all run in containers.
 
 ```bash
 # 1. Clone
 git clone https://github.com/YOUR_USERNAME/local-ezai.git
 cd local-ezai
 
-# 2. First-time system setup (installs Docker, NVIDIA toolkit, Python, Node.js)
+# 2. No Docker yet? This installs it (safe to skip otherwise):
 bash scripts/setup.sh
-# ↳ If the script installs the NVIDIA driver, reboot, then re-run to continue.
 
-# 3. Copy config and set your secret keys
+# 3. Configure
 cp .env.example .env
-nano .env   # change LITELLM_MASTER_KEY, WEBUI_SECRET_KEY, SEARXNG_SECRET
+nano .env
+#    change: LITELLM_MASTER_KEY, WEBUI_SECRET_KEY, SEARXNG_SECRET,
+#            MONITOR_ADMIN_PASSWORD, MONITOR_VIEWER_PASSWORD
+#    set:    LAN_HOST=<this machine's IP>   (needed for browser-side tools)
+#    model:  add these three lines for the fast 1.5B (default is 3B):
+#            N97_GGUF_REPO=Qwen/Qwen2.5-1.5B-Instruct-GGUF
+#            N97_MODEL_FILE=qwen2.5-1.5b-instruct-q4_k_m.gguf
+#            N97_MODEL_NAME=qwen2.5-1.5b
 
-# 4. Download models (~15 GB, takes 10–40 min depending on connection)
-bash scripts/download-models.sh
+# 4. Everything else in one command: pull, build, download models,
+#    start all 8 services, wait until healthy (~15-30 min first time)
+make setup-n97
 
-# 5. Build images, pull the rest, start everything
-make build && make pull && make up
-
-# 6. Wait ~3 minutes for vLLM to load the model, then check health
-make health
+# 5. Optional: run inference on the Intel iGPU instead of the CPU
+#    (~2-3x faster prompt processing, frees the CPU cores)
+make up-n97-igpu
 ```
 
-Open **http://localhost:3000** to chat, **http://localhost:8888** for the monitor.
+Then:
+
+1. **Chat** — open `http://<LAN_HOST>:3000`, sign up (the first account
+   becomes admin), pick your model in the selector, and talk to it.
+2. **RAG** — open the monitor `http://<LAN_HOST>:8888` (log in as `admin`),
+   upload a PDF/MD/TXT in the *Knowledge Base* bar, then ask about its
+   content in any chat. Answers cite the source file automatically — RAG is
+   injected at the LiteLLM proxy, so no per-chat setup is needed.
+3. **Web search** — toggle the globe icon in the chat box to let answers
+   use live web results via the bundled private SearXNG.
+
+Useful afterwards: `make health` (all-service check), `make bench`
+(tokens/sec), `make logs-vllm` (inference logs), `make reset-webui` /
+`make reset-password` (account recovery).
 
 ---
 
@@ -216,7 +234,8 @@ make setup       First-time system setup (Docker, NVIDIA, Python, Node)
 make build       Build embed-server, mcpo, and monitor images
 make pull        Pull official Docker images
 make up          Start all 8 services (GPU mode)
-make up-n97      Start CPU-only via llama.cpp (N97 / low-power boxes)
+make setup-n97   N97 stack end-to-end: pull, build, download, start, health
+make up-n97      Start CPU-only via llama.cpp (auto-downloads models if missing)
 make up-n97-igpu Same, but llama.cpp runs on the Intel iGPU (Vulkan; faster prefill)
 make pull-n97    Pull images for the N97 stack (llama.cpp)
 make download-n97  Download the small quantized model set (~2.5 GB)
@@ -234,8 +253,11 @@ make restart     Restart all services
 make logs        Tail logs from all services
 make logs-vllm   Tail logs from a specific service (any name after logs-)
 make health      Check health of all 8 services
+make bench       One-question LLM benchmark (prompt & generation tokens/sec)
 make status      Show container status table
 make embed       Ingest ./documents into the Qdrant knowledge base
+make install-autorag  (optional) install the in-OpenWebUI RAG filter — RAG
+                 already works via the LiteLLM hook without this
 make monitor     Open the monitor dashboard in your browser
 make update      Pull latest images and restart
 make k8s         Deploy to K3s Kubernetes
@@ -354,12 +376,28 @@ Shows live status for all 8 services:
 - Consecutive failure count
 - 20-point sparkline of response history
 - Direct link to each service's UI
+- Knowledge Base bar: upload documents (PDF/MD/TXT/CSV/LOG) into the RAG
+  database, see every stored file with its chunk count, remove files with ✕
 
 Updates automatically via Server-Sent Events (SSE) — no manual refresh needed.
 
 ```bash
 make monitor   # opens the dashboard in your browser
 ```
+
+### Access control (RBAC)
+
+The dashboard asks for a login (HTTP Basic). Two roles, passwords set in `.env`:
+
+| Login | Password from | Can do |
+|---|---|---|
+| `admin` | `MONITOR_ADMIN_PASSWORD` | everything, including RAG upload/remove |
+| `viewer` | `MONITOR_VIEWER_PASSWORD` | read-only: status cards + file listing |
+
+Scripts and other dashboards authenticate with a header instead:
+`Authorization: Bearer <MCP_API_KEY>` (admin-equivalent). The health check
+uses this automatically. Set `MONITOR_AUTH=false` in `.env` to disable the
+login entirely (not recommended beyond an isolated lab).
 
 ---
 
@@ -382,6 +420,91 @@ nano config/litellm-config.yaml
 # 4. Restart
 make restart
 ```
+
+The same pattern applies to the CPU profiles — set `CPU_CHAT_MODEL` /
+`CPU_CHAT_MODEL_NAME` (vLLM CPU) or `N97_GGUF_REPO` / `N97_MODEL_FILE` /
+`N97_MODEL_NAME` (llama.cpp) in `.env`, run the matching `make download-*`,
+and keep the short name in sync with `config/litellm-config.*.yaml`.
+
+---
+
+## Scaling up: NVIDIA GPU servers (x86 and ARM)
+
+The GPU profile (`make up`) is the same stack with vLLM on CUDA — nothing
+else changes, so a knowledge base built on an N97 works identically on an
+HGX-class server. Sizing guidance:
+
+| Machine class | Suggested starting model | .env |
+|---|---|---|
+| Single RTX GPU (8-24 GB) | Qwen2.5-7B-Instruct (default) | defaults work |
+| Multi-GPU x86 server (HGX/DGX class) | 32B-72B+ models | raise `MAX_MODEL_LEN`; add `--tensor-parallel-size N` to the vllm command |
+| ARM Grace + NVIDIA (GB300 / MGX class) | as above | set `VLLM_IMAGE` to an arm64 vLLM build (e.g. from NGC) — the default Docker Hub image is x86-64 |
+
+Notes for big iron:
+
+- **Image**: `VLLM_IMAGE` in `.env` swaps the inference image without
+  touching compose files. On Grace/ARM systems use an aarch64 vLLM image
+  (NVIDIA publishes vLLM containers on NGC); everything else in the stack
+  (OpenWebUI, Qdrant, SearXNG, mcpo, monitor) is multi-arch or builds
+  locally on arm64.
+- **Tensor parallelism**: for multi-GPU serving add `--tensor-parallel-size`
+  to the vllm `command:` in `docker-compose.yml` and raise the `count` under
+  `deploy.resources` accordingly.
+- **Throughput**: raise `MAX_MODEL_LEN` and `GPU_MEMORY_UTILIZATION` in
+  `.env`; vLLM batches concurrent users automatically.
+- **Embeddings**: the CPU embed-server is fine at any scale for personal or
+  team KBs; it only runs when documents are added or questions asked.
+
+---
+
+## Multi-language chat & RAG
+
+Three independent layers control language support:
+
+1. **The chat model** does the talking. The default Qwen2.5 family is
+   already strong in English and Chinese and usable in ~29 languages —
+   just type in your language, no configuration needed. For deeper coverage
+   of a specific language, swap the chat model (see *Changing the AI
+   model*); good multilingual picks include larger Qwen2.5 sizes, or
+   Gemma/Llama variants for European languages.
+2. **The UI**: OpenWebUI follows your browser language automatically and
+   can be forced per user under Settings → Interface → Language (Traditional
+   Chinese, Japanese, German, etc.).
+3. **RAG embeddings** decide how well non-English documents are *searched*.
+   The default `nomic-embed-text-v1.5` is English-optimised. For multilingual
+   knowledge bases switch to a multilingual embedder such as `BAAI/bge-m3`:
+
+   ```bash
+   # .env
+   CPU_EMBED_MODEL=BAAI/bge-m3
+   RAG_COLLECTION=kb-multilingual        # new collection: vector size differs
+
+   make download-cpu                      # fetches the new embed model
+   docker compose up -d embed-server litellm mcpo
+   # then re-upload / re-embed your documents into the new collection
+   ```
+
+   Keep one collection per embedding model — vectors from different models
+   are not comparable.
+
+---
+
+## Web search in chat
+
+The stack ships a private SearXNG metasearch engine — chat can use it to
+answer questions about current information, with no cloud search API and
+no tracking:
+
+1. In the OpenWebUI message box, toggle the **globe icon (Web Search)**.
+2. Ask something time-sensitive: *"What is the latest Ubuntu LTS release?"*
+3. OpenWebUI queries SearXNG (`http://searxng:8080` internally), retrieves
+   the top pages, and the model answers with citations.
+
+Enabled by default via `ENABLE_WEB_SEARCH=true` (see `.env.example`). Two
+other paths to the web exist for agentic use: the mcpo `fetch` tool (model
+fetches a specific URL) and SearXNG's own UI at `http://localhost:8090`.
+On small models, keep web search off for ordinary chats — retrieving and
+reading pages adds noticeable latency on low-power CPUs.
 
 ---
 

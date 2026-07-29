@@ -78,7 +78,7 @@ chk "SearXNG"          searxng      "http://localhost:${SEARXNG_PORT}/search?q=t
 chk "mcpo tools"       mcpo         "http://localhost:${MCPO_PORT}/openapi.json"                "openapi"   "Authorization: Bearer ${MCP_KEY}"
 chk "LiteLLM proxy"    litellm      "http://localhost:${LITELLM_PORT}/models"                   '"data"'    "Authorization: Bearer ${LITELLM_KEY}"
 chk "OpenWebUI"        openwebui    "http://localhost:${OPENWEBUI_PORT}"                        "Open WebUI"
-chk "Monitor"          monitor      "http://localhost:${MONITOR_PORT}/api/status"               "server_time"
+chk "Monitor"          monitor      "http://localhost:${MONITOR_PORT}/api/status"               "server_time" "Authorization: Bearer ${MCP_KEY}"
 
 echo ""
 echo -e "  ${BOLD}Passed: ${GREEN}${pass}${NC}  |  Failed: ${RED}${fail}${NC}"

@@ -5,6 +5,7 @@ OpenAI-compatible embedding server.
 Runs nomic-embed-text-v1.5 on CPU from the local HuggingFace cache.
 Endpoint: POST /v1/embeddings  (same format as OpenAI Embeddings API)
 """
+import os
 from typing import List, Union
 
 from fastapi import FastAPI
@@ -13,12 +14,13 @@ from sentence_transformers import SentenceTransformer
 
 app = FastAPI(title="Embed Server", version="1.0.0")
 
-MODEL_ID = "nomic-embed-text-v1.5"
+# Configurable so multilingual models (e.g. BAAI/bge-m3) can be swapped in
+MODEL_ID = os.getenv("EMBED_MODEL_ID", "nomic-ai/nomic-embed-text-v1.5")
 
 # ── Load model from the HuggingFace cache mounted at /root/.cache/huggingface
-print("Loading nomic-embed-text-v1.5 from cache...", flush=True)
+print(f"Loading {MODEL_ID} from cache...", flush=True)
 model = SentenceTransformer(
-    "nomic-ai/nomic-embed-text-v1.5",
+    MODEL_ID,
     trust_remote_code=True,
     device="cpu",
     cache_folder="/root/.cache/huggingface",

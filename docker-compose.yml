@@ -29,6 +29,13 @@ services:
       - OPENAI_API_BASE_URL=http://litellm:4000/v1
       - OPENAI_API_KEY=${LITELLM_MASTER_KEY:-sk-ai-service-2024}
       - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-change-this-secret}
+      # Web search in chat via the bundled SearXNG (toggle the globe icon in
+      # the message box). Both env spellings cover old and new OpenWebUI.
+      - ENABLE_WEB_SEARCH=${ENABLE_WEB_SEARCH:-true}
+      - WEB_SEARCH_ENGINE=searxng
+      - ENABLE_RAG_WEB_SEARCH=${ENABLE_WEB_SEARCH:-true}
+      - RAG_WEB_SEARCH_ENGINE=searxng
+      - SEARXNG_QUERY_URL=http://searxng:8080/search?q=<query>
       # Auto-register the mcpo tool servers at boot (Admin Panel > Settings >
       # Tools shows them without manual setup). OpenWebUI's FRONTEND fetches
       # these specs from the browser, so the URLs must be reachable from the
@@ -76,7 +83,9 @@ services:
   # URL: http://localhost:8000
   # ═══════════════════════════════════════════════════════════════════════
   vllm:
-    image: vllm/vllm-openai:latest
+    # Override for other architectures/registries, e.g. an arm64/Grace build
+    # or an NGC image on GB300-class machines: set VLLM_IMAGE in .env
+    image: ${VLLM_IMAGE:-vllm/vllm-openai:latest}
     container_name: vllm
     restart: unless-stopped
     ports:
@@ -134,6 +143,9 @@ services:
       - HF_HUB_OFFLINE=1
       # keep the hub lookup path aligned with the mount root (see vllm above)
       - HF_HUB_CACHE=/root/.cache/huggingface
+      # Swap the embedding model (e.g. BAAI/bge-m3 for multilingual RAG);
+      # download it first and re-embed into a fresh collection — see README
+      - EMBED_MODEL_ID=${CPU_EMBED_MODEL:-nomic-ai/nomic-embed-text-v1.5}
     networks:
       - ai-net
 
@@ -213,6 +225,11 @@ services:
       - MCP_API_KEY=${MCP_API_KEY:-local-tools-key}
       - RAG_COLLECTION=${RAG_COLLECTION:-my-knowledge-base}
       - POLL_INTERVAL=15
+      # RBAC: browser users admin/viewer (HTTP Basic); Bearer MCP_API_KEY for
+      # scripts. MONITOR_AUTH=false disables authentication.
+      - MONITOR_AUTH=${MONITOR_AUTH:-true}
+      - MONITOR_ADMIN_PASSWORD=${MONITOR_ADMIN_PASSWORD:-admin}
+      - MONITOR_VIEWER_PASSWORD=${MONITOR_VIEWER_PASSWORD:-viewer}
       # Host ports for the "Open" links on the dashboard cards
       - OPENWEBUI_PORT=${OPENWEBUI_PORT:-3000}
       - LITELLM_PORT=${LITELLM_PORT:-4000}
