@@ -12,7 +12,15 @@ set -euo pipefail
 
 YELLOW='\033[1;33m'; GREEN='\033[0;32m'; NC='\033[0m'
 
-touch .env
+if [[ ! -f .env ]]; then
+    if [[ -f .env.example ]]; then
+        cp .env.example .env
+        echo -e "${YELLOW}→ No .env found — created one from .env.example."
+        echo -e "  Edit it to set passwords, LAN_HOST and your model choice: nano .env${NC}"
+    else
+        touch .env
+    fi
+fi
 set -a; source .env; set +a
 
 OUR_CONTAINERS="openwebui litellm vllm embed-server qdrant searxng mcpo monitor"
