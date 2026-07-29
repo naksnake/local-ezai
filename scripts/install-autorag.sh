@@ -16,8 +16,14 @@ if ! docker ps --format '{{.Names}}' | grep -qx openwebui; then
     echo "❌ openwebui container is not running — start the stack first."
     exit 1
 fi
+if [[ ! -f tools/auto-rag-filter.py ]]; then
+    echo "❌ tools/auto-rag-filter.py not found — run from the repo root after 'git pull'."
+    exit 1
+fi
 
+echo "→ [1/3] Copying filter into the openwebui container..."
 docker cp tools/auto-rag-filter.py openwebui:/tmp/auto-rag-filter.py
+echo "→ [2/3] Installing filter + model overrides into webui.db..."
 
 docker exec openwebui python3 - <<'PY'
 import json, sqlite3, time
@@ -25,16 +31,27 @@ import json, sqlite3, time
 DB = "/app/backend/data/webui.db"
 content = open("/tmp/auto-rag-filter.py").read()
 
+import os
+if not os.path.isfile(DB):
+    raise SystemExit(f"❌ {DB} does not exist — unexpected OpenWebUI layout.")
+
 db = sqlite3.connect(DB)
+tables = [r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")]
 cols = [r[1] for r in db.execute("PRAGMA table_info(function)")]
 if not cols:
-    raise SystemExit("function table not found — unexpected OpenWebUI version; "
-                     "paste tools/auto-rag-filter.py via Admin Panel > Functions instead.")
+    raise SystemExit(f"❌ function table not found (tables: {tables}) — paste "
+                     "tools/auto-rag-filter.py via Admin Panel > Functions instead.")
 
-admin = db.execute("SELECT id FROM user WHERE role='admin' LIMIT 1").fetchone()
+admin = None
+for user_table in ("user", "users"):
+    if user_table in tables:
+        admin = (db.execute(f"SELECT id FROM {user_table} WHERE role='admin' LIMIT 1").fetchone()
+                 or db.execute(f"SELECT id FROM {user_table} LIMIT 1").fetchone())
+        if admin:
+            break
 if not admin:
-    raise SystemExit("no admin user yet — open the WebUI, create the first "
-                     "account, then re-run this script.")
+    raise SystemExit("❌ no user account found — open the WebUI, sign up (first "
+                     "account becomes admin), then re-run 'make install-autorag'.")
 
 now = int(time.time())
 row = {
@@ -119,6 +136,7 @@ db.commit()
 PY
 
 # OpenWebUI caches functions and model meta in memory — restart to load
+echo "→ [3/3] Restarting openwebui to load the changes..."
 docker restart openwebui > /dev/null
 echo ""
 echo "✅ Auto-RAG installed as a global filter, and OpenWebUI's built-in"
