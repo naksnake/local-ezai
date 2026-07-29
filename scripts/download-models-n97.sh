@@ -38,7 +38,9 @@ docker run --rm \
     python:3.11-slim \
     bash -c "pip install -q 'huggingface_hub[cli]' && \
              hf download $GGUF_REPO $GGUF_FILE --local-dir /gguf && \
-             hf download $EMBED_MODEL"
+             hf download $EMBED_MODEL && \
+             hf download nomic-ai/nomic-bert-2048"
+             # ^ nomic-embed's trust_remote_code lives in this separate repo
 
 echo ""
 echo -e "${GREEN}══ All models downloaded ══${NC}"

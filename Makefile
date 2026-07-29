@@ -13,6 +13,9 @@ export
 # user runs it, and no host Python venv is needed anywhere.
 CPU_CHAT_MODEL  ?= Qwen/Qwen2.5-1.5B-Instruct
 CPU_EMBED_MODEL ?= nomic-ai/nomic-embed-text-v1.5
+# nomic-embed loads its custom modeling code (trust_remote_code) from this
+# separate repo at runtime — the offline cache must contain it too
+EMBED_CODE_REPO ?= nomic-ai/nomic-bert-2048
 MODELS_DIR      ?= $(CURDIR)/models/hf-cache
 N97_GGUF_DIR    ?= $(CURDIR)/models/gguf
 DOCUMENTS_DIR   ?= $(CURDIR)/documents
@@ -21,6 +24,7 @@ RAG_COLLECTION  ?= my-knowledge-base
 # HF hub cache layout: hf download puts each model in models--<org>--<name>
 CHAT_MODEL_DIR  = $(MODELS_DIR)/models--$(subst /,--,$(CPU_CHAT_MODEL))
 EMBED_MODEL_DIR = $(MODELS_DIR)/models--$(subst /,--,$(CPU_EMBED_MODEL))
+EMBED_CODE_DIR  = $(MODELS_DIR)/models--$(subst /,--,$(EMBED_CODE_REPO))
 
 COMPOSE_CPU = docker compose -f docker-compose.yml -f docker-compose.cpu.yml
 
@@ -59,7 +63,7 @@ setup-cpu: ## One command for the vLLM CPU stack: pull, build, download models, 
 	$(MAKE) wait-ready
 
 up-cpu: ## Start with vLLM on CPU (auto-downloads models if missing; slower than up-n97 on AVX2-only boxes)
-	@if [ ! -d "$(CHAT_MODEL_DIR)/snapshots" ] || [ ! -d "$(EMBED_MODEL_DIR)/snapshots" ]; then \
+	@if [ ! -d "$(CHAT_MODEL_DIR)/snapshots" ] || [ ! -d "$(EMBED_MODEL_DIR)/snapshots" ] || [ ! -d "$(EMBED_CODE_DIR)/snapshots" ]; then \
 		echo "Models not found in $(MODELS_DIR) — downloading them first (~3.6 GB)..."; \
 		$(MAKE) download-cpu; \
 	fi
@@ -91,7 +95,8 @@ download-cpu: ## Download models for the vLLM CPU stack (~3.6 GB; runs in Docker
 		python:3.11-slim \
 		bash -c "pip install -q 'huggingface_hub[cli]' && \
 		         hf download $(CPU_CHAT_MODEL) && \
-		         hf download $(CPU_EMBED_MODEL)"
+		         hf download $(CPU_EMBED_MODEL) && \
+		         hf download $(EMBED_CODE_REPO)"
 
 update-cpu: ## Pull latest images and restart the vLLM CPU stack (do NOT use 'make update')
 	$(COMPOSE_CPU) pull
