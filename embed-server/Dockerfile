@@ -8,6 +8,10 @@ RUN pip install --no-cache-dir \
     uvicorn==0.29.0 \
     sentence-transformers==3.0.1
 
+# Required by nomic-bert's trust_remote_code modeling file
+# (separate layer so adding it doesn't re-download the torch stack)
+RUN pip install --no-cache-dir einops==0.8.0
+
 # Copy the server script
 COPY embed-server/server.py .
 
