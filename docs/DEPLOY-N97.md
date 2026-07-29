@@ -54,7 +54,7 @@ memory limit on every container. Rough steady-state budget:
 
 | Component | RAM |
 |-----------|-----|
-| llama.cpp (3B Q4 + 4k context) | ~3 GB |
+| llama.cpp (3B Q4 + 8k context) | ~3.5 GB |
 | embed-server (PyTorch + nomic-embed) | ~1.5–2 GB |
 | OpenWebUI | ~0.5–1 GB |
 | LiteLLM + Qdrant + SearXNG + mcpo + monitor | ~1.5 GB |
@@ -82,7 +82,7 @@ DDR5-4800 gives ~38 GB/s theoretical (~25–30 GB/s real), so expect roughly:
 Prompt processing (reading your input + RAG context) is compute-bound on the
 4 E-cores and is what you'll actually feel: with a couple of thousand tokens
 of RAG context, end-to-end throughput can drop to a fraction of the raw
-generation rate. Keep `N97_CTX=4096` unless you really need more.
+generation rate. The default is 8192 — OpenWebUI sends the mcpo tool schemas (~2-3k tokens) with every request, so 4096 overflows in normal tool-enabled chats. Drop to 4096 only if you disable tools and need the RAM back.
 
 Adding more RAM won't speed generation up (bandwidth, not capacity, is the
 limit), and the iGPU shares the same memory bus, so GPU offload doesn't help
@@ -265,7 +265,7 @@ dashboard's links pick up the overrides automatically.
 
 | `.env` variable | Default | Notes |
 |-----------------|---------|-------|
-| `N97_CTX` | `4096` | Context window; more = more RAM + slower prefill |
+| `N97_CTX` | `8192` | Context window; more = more RAM + slower prefill |
 | `N97_THREADS` | `4` | Match the 4 physical cores; don't oversubscribe |
 | `N97_GGUF_DIR` | `./models/gguf` | Host folder mounted into the container |
 
