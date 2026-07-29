@@ -89,7 +89,8 @@ pull-cpu: ## Pull images for the vLLM CPU stack
 
 download-cpu: ## Download models for the vLLM CPU stack (~3.6 GB; runs in Docker, resumable)
 	@mkdir -p "$(MODELS_DIR)"
-	docker run --rm \
+	@echo "Downloading models (several GB) — do NOT interrupt; re-running resumes."
+	docker run --rm $(shell [ -t 1 ] && echo -t) \
 		-v "$(MODELS_DIR)":/hf-cache \
 		-e HF_HUB_CACHE=/hf-cache \
 		-e HF_TOKEN \

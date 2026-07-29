@@ -34,7 +34,12 @@ echo -e "${CYAN}[1/2]${NC} ${GGUF_REPO} → ${GGUF_FILE}  (~2 GB, 4-bit quantize
 echo -e "${CYAN}[2/2]${NC} ${EMBED_MODEL}  (~500 MB, RAG document search)"
 echo ""
 
-docker run --rm \
+# -t (when run from a terminal) makes the download progress bars visible —
+# without it the multi-GB download looks frozen and invites a Ctrl-C
+TTY_FLAG=""; [ -t 1 ] && TTY_FLAG="-t"
+echo "Downloading — do NOT interrupt; re-running this script resumes."
+
+docker run --rm $TTY_FLAG \
     -v "$GGUF_DIR":/gguf \
     -v "$CACHE_DIR":/hf-cache \
     -e HF_HUB_CACHE=/hf-cache \

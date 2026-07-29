@@ -27,7 +27,12 @@ echo "  Chat model:      $CHAT_MODEL (~15 GB for the 7B default)"
 echo "  Embed model:     $EMBED_MODEL (~500 MB)"
 echo ""
 
-docker run --rm \
+# -t (when run from a terminal) makes the download progress bars visible —
+# without it the multi-GB download looks frozen and invites a Ctrl-C
+TTY_FLAG=""; [ -t 1 ] && TTY_FLAG="-t"
+echo "Downloading — do NOT interrupt; re-running this script resumes."
+
+docker run --rm $TTY_FLAG \
     -v "$CACHE_DIR":/hf-cache \
     -e HF_HUB_CACHE=/hf-cache \
     -e HF_TOKEN \
