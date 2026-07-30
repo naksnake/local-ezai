@@ -460,6 +460,56 @@ and keep the short name in sync with `config/litellm-config.*.yaml`.
 
 ---
 
+## Switching the RAG embedding model
+
+The embedding model turns your documents (and questions) into vectors for
+the knowledge-base search. It is independent of the chat model — switching
+it changes *how well documents are found*, not how answers are written.
+
+**The one rule:** vectors from different embedding models are incompatible.
+Always pair a new embedding model with a **new collection name**, then
+re-upload / re-embed your documents. Never mix models in one collection.
+
+Recommended options (all run on the CPU embed-server, any profile):
+
+| Model (`CPU_EMBED_MODEL`) | Languages | Size | Notes |
+|---|---|---|---|
+| `nomic-ai/nomic-embed-text-v1.5` (default) | English-optimised | ~0.5 GB | fast, great English retrieval |
+| `intfloat/multilingual-e5-small` | 100+ languages | ~0.5 GB | best multilingual pick for N97-class CPUs |
+| `BAAI/bge-m3` | 100+ languages | ~2.3 GB | strongest multilingual quality; heavy — raise the embed-server memory cap on 16 GB boxes and expect slower embedding |
+
+Switch procedure (example: multilingual e5 on the N97 profile):
+
+```bash
+# 1. .env — new model AND new collection, always together
+CPU_EMBED_MODEL=intfloat/multilingual-e5-small
+RAG_COLLECTION=kb-e5
+
+# 2. Download it (the download-* target of your profile fetches the
+#    embedding model too; resumable)
+make download-n97          # or download-cpu / download-gpu
+
+# 3. Restart every service that touches the knowledge base
+docker compose -f docker-compose.yml -f docker-compose.n97.yml \
+    up -d embed-server litellm mcpo monitor
+
+# 4. Re-add your documents (monitor upload bar or make embed) —
+#    the new collection is created automatically with the right
+#    vector size on first upload
+```
+
+Your old collection stays in Qdrant untouched, so switching back is just
+reverting the two `.env` lines and restarting the same services. To
+reclaim space from an abandoned collection:
+`curl -X DELETE http://localhost:6333/collections/<name>`
+
+Retrieval tuning knobs (`.env`, applied by the LiteLLM auto-RAG hook):
+`RAG_TOP_K` (excerpts injected per question, default 3) and
+`RAG_MIN_SCORE` (relevance cutoff 0-1, default 0.4 — raise it if answers
+cite irrelevant excerpts, lower it if the KB misses things it does contain).
+
+---
+
 ## Scaling up: NVIDIA GPU servers (x86 and ARM)
 
 The GPU profile (`make up`) is the same stack with vLLM on CUDA — nothing
@@ -503,21 +553,9 @@ Three independent layers control language support:
    can be forced per user under Settings → Interface → Language (Traditional
    Chinese, Japanese, German, etc.).
 3. **RAG embeddings** decide how well non-English documents are *searched*.
-   The default `nomic-embed-text-v1.5` is English-optimised. For multilingual
-   knowledge bases switch to a multilingual embedder such as `BAAI/bge-m3`:
-
-   ```bash
-   # .env
-   CPU_EMBED_MODEL=BAAI/bge-m3
-   RAG_COLLECTION=kb-multilingual        # new collection: vector size differs
-
-   make download-cpu                      # fetches the new embed model
-   docker compose up -d embed-server litellm mcpo
-   # then re-upload / re-embed your documents into the new collection
-   ```
-
-   Keep one collection per embedding model — vectors from different models
-   are not comparable.
+   The default `nomic-embed-text-v1.5` is English-optimised — for
+   multilingual knowledge bases switch to `intfloat/multilingual-e5-small`
+   or `BAAI/bge-m3` following **Switching the RAG embedding model** above.
 
 ---
 
