@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/setup.sh
 # ─────────────────────────────────────────────────────────────────────────────
-# Automated system setup for Ubuntu 24.04.4 LTS
+# Automated system setup for Ubuntu LTS (24.04 "noble" / 26.04 "resolute")
 # Run once on a fresh machine before launching the AI service.
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
@@ -20,7 +20,7 @@ step()    { echo -e "\n${BLUE}══ $* ══${NC}"; }
 echo ""
 echo -e "${BLUE}╔══════════════════════════════════════════╗${NC}"
 echo -e "${BLUE}║     AI Service — System Setup            ║${NC}"
-echo -e "${BLUE}║     Ubuntu 24.04.4 LTS                   ║${NC}"
+echo -e "${BLUE}║     Ubuntu 24.04 / 26.04 LTS             ║${NC}"
 echo -e "${BLUE}╚══════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -29,12 +29,15 @@ step "Checking Ubuntu version"
 OS_VERSION=$(lsb_release -rs 2>/dev/null || echo "unknown")
 OS_CODENAME=$(lsb_release -cs 2>/dev/null || echo "unknown")
 
-if [[ "$OS_VERSION" != "24.04" ]]; then
-    warn "This script is designed for Ubuntu 24.04. You have $OS_VERSION."
-    warn "Proceeding anyway — some steps may need adjustments."
-else
-    success "Ubuntu $OS_VERSION ($OS_CODENAME) — supported"
-fi
+case "$OS_VERSION" in
+    24.04|26.04)
+        success "Ubuntu $OS_VERSION ($OS_CODENAME) — supported"
+        ;;
+    *)
+        warn "This script is tested on Ubuntu 24.04 and 26.04. You have $OS_VERSION."
+        warn "Proceeding anyway — some steps may need adjustments."
+        ;;
+esac
 
 # ── Update system ──────────────────────────────────────────────────────────────
 step "Updating system packages"
@@ -117,48 +120,36 @@ if [[ "$HAS_GPU" == "true" ]]; then
     fi
 fi
 
-# ── Install Python venv ────────────────────────────────────────────────────────
-step "Setting up Python virtual environment"
-sudo apt-get install -y python3-pip python3-venv python3-full -qq
+# No host Python needed: model downloads and the embed script run inside
+# throwaway Docker containers (make download-*, make embed).
 
-if [[ -d "$HOME/ai-env" ]]; then
-    success "Python venv already exists at ~/ai-env"
-else
-    python3 -m venv "$HOME/ai-env"
-    success "Created Python venv at ~/ai-env"
-fi
-
-# Activate and install packages
-source "$HOME/ai-env/bin/activate"
-pip install -q --upgrade pip
-pip install -q huggingface_hub sentence-transformers qdrant-client
-success "Python packages installed in venv"
-
-# Add to .bashrc if not already there
-if ! grep -q "ai-env/bin/activate" "$HOME/.bashrc"; then
-    echo 'source ~/ai-env/bin/activate' >> "$HOME/.bashrc"
-    success "Added venv auto-activation to ~/.bashrc"
-fi
-
-# ── Install Node.js 20 ────────────────────────────────────────────────────────
-step "Installing Node.js 20 LTS"
-if node --version 2>/dev/null | grep -q "v20"; then
+# ── Install Node.js 22 ────────────────────────────────────────────────────────
+# (Node 20 reached end-of-life in April 2026; any existing >= 20 is accepted)
+step "Installing Node.js 22 LTS"
+NODE_MAJOR="$(node --version 2>/dev/null | sed -E 's/^v([0-9]+).*/\1/' || true)"
+if [[ -n "$NODE_MAJOR" && "$NODE_MAJOR" -ge 20 ]]; then
     success "Node.js already installed: $(node --version)"
 else
-    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - -qq
+    # Run the NodeSource repo installer from a temp file rather than piping
+    # into sudo bash: `bash - -qq` made bash look for a file named "-qq",
+    # and sudo-rs (default sudo on Ubuntu >= 25.10) does not support -E.
+    NODESOURCE_SETUP="$(mktemp)"
+    curl -fsSL https://deb.nodesource.com/setup_22.x -o "$NODESOURCE_SETUP"
+    sudo bash "$NODESOURCE_SETUP"
+    rm -f "$NODESOURCE_SETUP"
     sudo apt-get install -y nodejs -qq
     success "Node.js installed: $(node --version)"
 fi
 
 # ── Create required directories ───────────────────────────────────────────────
 step "Creating project directories"
-mkdir -p "$HOME/ai-models/hf-cache"
-mkdir -p "$HOME/documents"
-success "Directories created: ~/ai-models/hf-cache, ~/documents"
+SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+mkdir -p "$SCRIPT_DIR/models/hf-cache" "$SCRIPT_DIR/models/gguf"
+mkdir -p "$SCRIPT_DIR/documents"
+success "Directories created: $SCRIPT_DIR/models, $SCRIPT_DIR/documents"
 
 # ── Create .env from template ─────────────────────────────────────────────────
 step "Setting up environment configuration"
-SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 if [[ -f "$SCRIPT_DIR/.env" ]]; then
     success ".env already exists — skipping"
@@ -177,17 +168,24 @@ echo -e "${GREEN}╚════════════════════
 echo ""
 echo "  Next steps:"
 echo ""
-echo "  1. Edit your config:     nano .env"
-echo "  2. Download AI models:   bash scripts/download-models.sh"
-echo "  3. Build images:         make build"
-echo "  4. Pull images:          make pull"
-echo "  5. Start services:       make up"
-echo "  6. Health check:         make health"
-echo ""
-
 if [[ "$HAS_GPU" == "true" ]]; then
+    echo "  1. Edit your config:     nano .env"
+    echo "  2. Download AI models:   bash scripts/download-models.sh"
+    echo "  3. Build images:         make build"
+    echo "  4. Pull images:          make pull"
+    echo "  5. Start services:       make up"
+    echo "  6. Health check:         make health"
+    echo ""
     echo -e "  ${GREEN}GPU mode:${NC} vLLM will run on your NVIDIA GPU"
 else
-    echo -e "  ${YELLOW}CPU mode:${NC} Use 'make up-cpu' (slower but works without GPU)"
+    echo "  1. Edit your config:     nano .env"
+    echo "  2. Download AI models:   make download-n97"
+    echo "  3. Build images:         make build"
+    echo "  4. Pull images:          make pull-n97"
+    echo "  5. Start services:       make up-n97"
+    echo "  6. Health check:         make health"
+    echo ""
+    echo -e "  ${YELLOW}CPU mode:${NC} no NVIDIA GPU found — use the llama.cpp profile"
+    echo "           (make up-n97). Guide: docs/DEPLOY-N97.md"
 fi
 echo ""

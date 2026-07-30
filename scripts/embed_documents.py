@@ -5,7 +5,7 @@ scripts/embed_documents.py
 Embed text documents into Qdrant for RAG (Retrieval-Augmented Generation).
 
 Usage:
-    python3 embed_documents.py --input-dir ~/documents
+    python3 embed_documents.py --input-dir ./documents
 
 Options:
     --input-dir    Folder containing .txt or .md files  (required)
@@ -73,12 +73,14 @@ def main():
         print(f"[ERROR] Input directory not found: {args.input_dir}")
         sys.exit(1)
 
-    # Find all text files
+    # Find all supported files
     files = sorted(
-        list(input_path.glob("**/*.txt")) + list(input_path.glob("**/*.md"))
+        list(input_path.glob("**/*.txt"))
+        + list(input_path.glob("**/*.md"))
+        + list(input_path.glob("**/*.pdf"))
     )
     if not files:
-        print(f"[ERROR] No .txt or .md files found in {args.input_dir}")
+        print(f"[ERROR] No .txt, .md or .pdf files found in {args.input_dir}")
         sys.exit(1)
 
     print(f"Found {len(files)} files in {args.input_dir}")
@@ -124,7 +126,12 @@ def main():
 
     for filepath in files:
         try:
-            text = filepath.read_text(encoding="utf-8", errors="ignore")
+            if filepath.suffix.lower() == ".pdf":
+                from pypdf import PdfReader
+                reader = PdfReader(str(filepath))
+                text = "\n".join((page.extract_text() or "") for page in reader.pages)
+            else:
+                text = filepath.read_text(encoding="utf-8", errors="ignore")
         except Exception as e:
             print(f"  [SKIP] {filepath.name}: {e}")
             continue

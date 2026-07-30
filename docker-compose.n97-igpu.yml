@@ -1,0 +1,46 @@
+# Intel iGPU (Vulkan) add-on for the N97 profile — use with:  make up-n97-igpu
+#
+# Layers on top of docker-compose.n97.yml and switches llama.cpp to its
+# official Vulkan build, offloading the model to the Alder Lake-N UHD iGPU
+# (24 EUs) via /dev/dri.
+#
+# What to expect on N97/N100-class chips:
+#   • Prompt processing (prefill): ~2-3x faster — the big win, since tool
+#     schemas + RAG context dominate request latency on this stack.
+#   • Token generation: roughly UNCHANGED — CPU and iGPU share the same
+#     single-channel memory bandwidth, which is the bottleneck.
+#   • CPU cores freed up for embed-server/Qdrant, lower package temperature.
+#
+# Host requirements: Linux i915 driver (present on any stock Ubuntu) and
+# /dev/dri existing on the host. Everything else ships in the image.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.n97.yml \
+#                  -f docker-compose.n97-igpu.yml up -d
+
+services:
+
+  vllm:
+    image: ghcr.io/ggml-org/llama.cpp:server-vulkan
+    devices:
+      - /dev/dri:/dev/dri
+    # command is replaced wholesale by compose, so it repeats the n97 one
+    # and adds --gpu-layers to offload the whole model to the iGPU
+    command:
+      - -m
+      - /models/${N97_MODEL_FILE:-qwen2.5-3b-instruct-q4_k_m.gguf}
+      - --alias
+      - ${N97_MODEL_NAME:-qwen2.5-3b}
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --ctx-size
+      - "${N97_CTX:-8192}"
+      - --threads
+      - "${N97_THREADS:-4}"
+      - --parallel
+      - "1"
+      - --jinja
+      - --gpu-layers
+      - "${N97_GPU_LAYERS:-99}"

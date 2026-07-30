@@ -1,21 +1,65 @@
-# CPU-only override — use with:  make up-cpu
-# Replaces the vLLM GPU service with a smaller CPU-friendly model
+# vLLM-on-CPU override — use with:  make up-cpu
+#
+# Runs the real vLLM engine on CPU via the official vllm/vllm-openai-cpu
+# image (the plain vllm/vllm-openai image is a CUDA build and cannot start
+# without an NVIDIA GPU). Default model is Qwen2.5-1.5B-Instruct in bf16.
+#
+# NOTE for AVX2-only CPUs (Intel N97/N100 class): vLLM's x86 CPU backend
+# officially lists avx2 as "limited features" — it works, but is slower and
+# uses more RAM than the llama.cpp profile. Prefer `make up-n97` on such
+# boxes unless you specifically need vLLM.
+#
+# Requires Docker Compose >= 2.24.4 (for the !override YAML tag).
 #
 # Usage:
 #   docker compose -f docker-compose.yml -f docker-compose.cpu.yml up -d
 
-version: '3.8'
-
 services:
+
   vllm:
+    # Pin a specific tag via .env if :latest misbehaves on your CPU
+    image: ${VLLM_CPU_IMAGE:-vllm/vllm-openai-cpu:latest}
     command:
       - --model
-      - Qwen/Qwen2.5-0.5B-Instruct
+      - ${CPU_CHAT_MODEL:-Qwen/Qwen2.5-1.5B-Instruct}
       - --served-model-name
-      - qwen2.5-0.5b
+      - ${CPU_CHAT_MODEL_NAME:-qwen2.5-1.5b}
       - --max-model-len
-      - "2048"
-      - --device
-      - cpu
-    deploy:
-      resources: {}   # removes GPU requirement
+      - "${CPU_MAX_MODEL_LEN:-2048}"
+      # torch's float16 support on CPU is unstable — vLLM docs recommend bf16.
+      # On AVX2-only chips without native bf16 (N97/N100), bf16 is emulated;
+      # if warmup or generation is pathologically slow, try CPU_DTYPE=float32
+      # in .env (uses ~2x model RAM — consider CPU_MEM_LIMIT=12g too).
+      - --dtype
+      - ${CPU_DTYPE:-bfloat16}
+      # OpenWebUI sends tool definitions with tool_choice "auto"; without
+      # these vLLM rejects the request (Qwen2.5 uses the hermes format,
+      # same as the GPU profile)
+      - --enable-auto-tool-choice
+      - --tool-call-parser
+      - hermes
+    environment:
+      # GiB reserved for the KV cache (vLLM CPU default is 4; 2 is plenty
+      # for a single user at 2048 context and saves RAM on 16 GB boxes)
+      - VLLM_CPU_KVCACHE_SPACE=${VLLM_CPU_KVCACHE_SPACE:-2}
+    # Lets vLLM's NUMA memory-binding syscalls through Docker's default
+    # seccomp profile (harmless on single-socket machines)
+    cap_add:
+      - SYS_NICE
+    # !override replaces the whole deploy section from docker-compose.yml —
+    # a plain merge would keep the NVIDIA GPU reservation and the container
+    # would fail to start on a box without the NVIDIA runtime.
+    deploy: !override
+      resources:
+        limits:
+          memory: ${CPU_MEM_LIMIT:-10g}
+
+  # Route the CPU model name instead of qwen2.5-7b
+  litellm:
+    volumes:
+      - ./config/litellm-config.cpu.yaml:/app/config.yaml:ro
+
+  monitor:
+    environment:
+      - LLM_SERVICE_NAME=vLLM (CPU)
+      - LLM_SERVICE_DESC=LLM inference (CPU, bf16)

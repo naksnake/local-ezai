@@ -10,6 +10,8 @@ networks:
 volumes:
   openwebui-data:
   qdrant-data:
+  mcpo-memory:
+  vllm-cache:
 
 services:
 
@@ -22,11 +24,29 @@ services:
     container_name: openwebui
     restart: unless-stopped
     ports:
-      - "3000:8080"
+      - "${OPENWEBUI_PORT:-3000}:8080"
     environment:
       - OPENAI_API_BASE_URL=http://litellm:4000/v1
       - OPENAI_API_KEY=${LITELLM_MASTER_KEY:-sk-ai-service-2024}
       - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-change-this-secret}
+      # Web search in chat via the bundled SearXNG (toggle the globe icon in
+      # the message box). Both env spellings cover old and new OpenWebUI.
+      - ENABLE_WEB_SEARCH=${ENABLE_WEB_SEARCH:-true}
+      - WEB_SEARCH_ENGINE=searxng
+      - ENABLE_RAG_WEB_SEARCH=${ENABLE_WEB_SEARCH:-true}
+      - RAG_WEB_SEARCH_ENGINE=searxng
+      - SEARXNG_QUERY_URL=http://searxng:8080/search?q=<query>
+      # keep web-search injections small — page content eats the context
+      # window fast on small models (raise on GPU-class machines)
+      - WEB_SEARCH_RESULT_COUNT=${WEB_SEARCH_RESULT_COUNT:-2}
+      - RAG_WEB_SEARCH_RESULT_COUNT=${WEB_SEARCH_RESULT_COUNT:-2}
+      # Auto-register the mcpo tool servers at boot (Admin Panel > Settings >
+      # Tools shows them without manual setup). OpenWebUI's FRONTEND fetches
+      # these specs from the browser, so the URLs must be reachable from the
+      # user's machine — set LAN_HOST in .env (e.g. 192.168.100.1) when you
+      # access the UI from other devices. NOTE: once an admin edits the tool
+      # list in the UI, the UI-saved value wins over this env default.
+      - 'TOOL_SERVER_CONNECTIONS=[{"url":"http://${LAN_HOST:-localhost}:${MCPO_PORT:-8200}/qdrant-rag","path":"openapi.json","auth_type":"bearer","key":"${MCP_API_KEY:-local-tools-key}","config":{"enable":true},"info":{"id":"qdrant-rag","name":"Knowledge Base Search"}},{"url":"http://${LAN_HOST:-localhost}:${MCPO_PORT:-8200}/fetch","path":"openapi.json","auth_type":"bearer","key":"${MCP_API_KEY:-local-tools-key}","config":{"enable":true},"info":{"id":"fetch","name":"Web Fetch"}},{"url":"http://${LAN_HOST:-localhost}:${MCPO_PORT:-8200}/memory","path":"openapi.json","auth_type":"bearer","key":"${MCP_API_KEY:-local-tools-key}","config":{"enable":true},"info":{"id":"memory","name":"Memory"}},{"url":"http://${LAN_HOST:-localhost}:${MCPO_PORT:-8200}/filesystem","path":"openapi.json","auth_type":"bearer","key":"${MCP_API_KEY:-local-tools-key}","config":{"enable":true},"info":{"id":"filesystem","name":"Filesystem"}}]'
     volumes:
       - openwebui-data:/app/backend/data
     networks:
@@ -43,10 +63,19 @@ services:
     container_name: litellm
     restart: unless-stopped
     ports:
-      - "4000:4000"
+      - "${LITELLM_PORT:-4000}:4000"
     volumes:
       - ./config/litellm-config.yaml:/app/config.yaml:ro
+      # Auto-RAG pre-call hook (module referenced by litellm_settings.callbacks)
+      - ./config/litellm_custom_callbacks.py:/app/litellm_custom_callbacks.py:ro
     command: ["--config", "/app/config.yaml", "--port", "4000"]
+    environment:
+      - EMBED_URL=http://embed-server:8001/v1
+      - QDRANT_URL=http://qdrant:6333
+      - RAG_COLLECTION=${RAG_COLLECTION:-my-knowledge-base}
+      - RAG_TOP_K=${RAG_TOP_K:-3}
+      - RAG_MIN_SCORE=${RAG_MIN_SCORE:-0.4}
+      - RAG_AUTO=${RAG_AUTO:-true}
     networks:
       - ai-net
     depends_on:
@@ -58,15 +87,24 @@ services:
   # URL: http://localhost:8000
   # ═══════════════════════════════════════════════════════════════════════
   vllm:
-    image: vllm/vllm-openai:latest
+    # Override for other architectures/registries, e.g. an arm64/Grace build
+    # or an NGC image on GB300-class machines: set VLLM_IMAGE in .env
+    image: ${VLLM_IMAGE:-vllm/vllm-openai:latest}
     container_name: vllm
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "${LLM_PORT:-8000}:8000"
     volumes:
-      - ${MODELS_DIR:-~/ai-models/hf-cache}:/root/.cache/huggingface
+      - ${MODELS_DIR:-./models/hf-cache}:/root/.cache/huggingface
+      # torch.compile artifacts — persisting this makes restarts take seconds
+      # instead of re-compiling for minutes (matters a lot on slow CPUs)
+      - vllm-cache:/root/.cache/vllm
     environment:
       - HF_HUB_OFFLINE=1
+      # 'hf download --cache-dir X' writes models--* directly under X, but the
+      # hub's default lookup is $HF_HOME/hub — point it at the mount root so
+      # the offline lookup matches the layout the download produces
+      - HF_HUB_CACHE=/root/.cache/huggingface
     command:
       - --model
       - ${CHAT_MODEL:-Qwen/Qwen2.5-7B-Instruct}
@@ -102,11 +140,16 @@ services:
     container_name: embed-server
     restart: unless-stopped
     ports:
-      - "8001:8001"
+      - "${EMBED_PORT:-8001}:8001"
     volumes:
-      - ${MODELS_DIR:-~/ai-models/hf-cache}:/root/.cache/huggingface
+      - ${MODELS_DIR:-./models/hf-cache}:/root/.cache/huggingface
     environment:
       - HF_HUB_OFFLINE=1
+      # keep the hub lookup path aligned with the mount root (see vllm above)
+      - HF_HUB_CACHE=/root/.cache/huggingface
+      # Swap the embedding model (e.g. BAAI/bge-m3 for multilingual RAG);
+      # download it first and re-embed into a fresh collection — see README
+      - EMBED_MODEL_ID=${CPU_EMBED_MODEL:-nomic-ai/nomic-embed-text-v1.5}
     networks:
       - ai-net
 
@@ -119,7 +162,7 @@ services:
     container_name: qdrant
     restart: unless-stopped
     ports:
-      - "6333:6333"
+      - "${QDRANT_PORT:-6333}:6333"
       # gRPC port 6334 intentionally not exposed to host — use REST API only
     volumes:
       - qdrant-data:/qdrant/storage
@@ -135,7 +178,7 @@ services:
     container_name: searxng
     restart: unless-stopped
     ports:
-      - "8090:8080"
+      - "${SEARXNG_PORT:-8090}:8080"
     environment:
       - SEARXNG_SECRET=${SEARXNG_SECRET:-searxng-local-secret-change-this}
     volumes:
@@ -155,9 +198,10 @@ services:
     container_name: mcpo
     restart: unless-stopped
     ports:
-      - "8200:8200"
+      - "${MCPO_PORT:-8200}:8200"
     volumes:
-      - ${DOCUMENTS_DIR:-~/documents}:/data/documents
+      - ${DOCUMENTS_DIR:-./documents}:/data/documents
+      - mcpo-memory:/data/memory
       - ./config/mcpo-config.json:/app/mcpo-config.json:ro
     environment:
       - MCP_API_KEY=${MCP_API_KEY:-local-tools-key}
@@ -176,11 +220,28 @@ services:
     container_name: monitor
     restart: unless-stopped
     ports:
-      - "8888:8888"
+      - "${MONITOR_PORT:-8888}:8888"
+    volumes:
+      # RAG uploads are also dropped here so the filesystem MCP tool sees them
+      - ${DOCUMENTS_DIR:-./documents}:/data/documents
     environment:
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-ai-service-2024}
       - MCP_API_KEY=${MCP_API_KEY:-local-tools-key}
+      - RAG_COLLECTION=${RAG_COLLECTION:-my-knowledge-base}
       - POLL_INTERVAL=15
+      # RBAC: browser users admin/viewer (HTTP Basic); Bearer MCP_API_KEY for
+      # scripts. MONITOR_AUTH=false disables authentication.
+      - MONITOR_AUTH=${MONITOR_AUTH:-true}
+      - MONITOR_ADMIN_PASSWORD=${MONITOR_ADMIN_PASSWORD:-admin}
+      - MONITOR_VIEWER_PASSWORD=${MONITOR_VIEWER_PASSWORD:-viewer}
+      # Host ports for the "Open" links on the dashboard cards
+      - OPENWEBUI_PORT=${OPENWEBUI_PORT:-3000}
+      - LITELLM_PORT=${LITELLM_PORT:-4000}
+      - LLM_PORT=${LLM_PORT:-8000}
+      - EMBED_PORT=${EMBED_PORT:-8001}
+      - QDRANT_PORT=${QDRANT_PORT:-6333}
+      - SEARXNG_PORT=${SEARXNG_PORT:-8090}
+      - MCPO_PORT=${MCPO_PORT:-8200}
     networks:
       - ai-net
     depends_on:

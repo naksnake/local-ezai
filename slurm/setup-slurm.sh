@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# slurm/setup-slurm.sh — Automated Slurm single-node setup for Ubuntu 24.04
+# slurm/setup-slurm.sh — Automated Slurm single-node setup for Ubuntu 24.04 / 26.04
 set -euo pipefail
 
 GREEN='\033[0;32m'; CYAN='\033[0;36m'; NC='\033[0m'

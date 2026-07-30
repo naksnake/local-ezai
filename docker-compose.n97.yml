@@ -1,0 +1,103 @@
+# Intel N97 / low-power mini-PC override — use with:  make up-n97
+#
+# Tuned for boxes like a Limyee Intel N97 (4 E-cores, 16 GB single-channel
+# DDR5, no NVIDIA GPU, no AVX-512). Replaces the vLLM GPU service with a
+# llama.cpp server running a small quantized GGUF model, and puts memory
+# caps on every service so the whole stack fits in 16 GB.
+#
+# Requires Docker Compose >= 2.24.4 (for the !override YAML tag).
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.n97.yml up -d
+#
+# Full guide: docs/DEPLOY-N97.md
+
+services:
+
+  # ── LLM: llama.cpp instead of vLLM ────────────────────────────────────────
+  # The service keeps the name "vllm" so LiteLLM's http://vllm:8000/v1 route
+  # and the published port stay the same. llama.cpp serves the identical
+  # OpenAI-compatible API and runs well on AVX2-only CPUs like the N97.
+  vllm:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    command:
+      - -m
+      - /models/${N97_MODEL_FILE:-qwen2.5-1.5b-instruct-q4_k_m.gguf}
+      - --alias
+      - ${N97_MODEL_NAME:-qwen2.5-1.5b}
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      # 8192 default: the mcpo tool schemas alone add ~2-3k tokens to every
+      # OpenWebUI request, so 4096 overflows in normal tool-enabled chats
+      - --ctx-size
+      - "${N97_CTX:-8192}"
+      - --threads
+      - "${N97_THREADS:-4}"
+      - --parallel
+      - "1"
+      - --jinja
+    volumes:
+      - ${N97_GGUF_DIR:-./models/gguf}:/models:ro
+    # !override replaces the whole deploy section from docker-compose.yml —
+    # a plain merge would keep the NVIDIA GPU reservation and the container
+    # would fail to start on a box without the NVIDIA runtime.
+    deploy: !override
+      resources:
+        limits:
+          memory: 6g
+    shm_size: '256mb'
+
+  # ── LiteLLM: route the small model name ───────────────────────────────────
+  litellm:
+    volumes:
+      - ./config/litellm-config.n97.yaml:/app/config.yaml:ro
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  # ── Embed server: don't fight llama.cpp for the 4 cores ──────────────────
+  embed-server:
+    environment:
+      - OMP_NUM_THREADS=2
+      - MKL_NUM_THREADS=2
+      - TOKENIZERS_PARALLELISM=false
+    deploy:
+      resources:
+        limits:
+          memory: 3g
+
+  openwebui:
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+
+  qdrant:
+    deploy:
+      resources:
+        limits:
+          memory: 1500m
+
+  searxng:
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  mcpo:
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  monitor:
+    environment:
+      - LLM_SERVICE_NAME=llama.cpp
+      - LLM_SERVICE_DESC=LLM inference (CPU, GGUF)
+    deploy:
+      resources:
+        limits:
+          memory: 256m
