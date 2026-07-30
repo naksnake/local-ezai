@@ -87,7 +87,7 @@ PY
 # empty here — and small models keep picking them over the real KB, then
 # report "no results". meta.builtinTools.knowledge=false removes them.
 [[ -f .env ]] && { set -a; source .env; set +a; }
-CHAT_MODELS="${N97_MODEL_NAME:-qwen2.5-3b} ${CPU_CHAT_MODEL_NAME:-qwen2.5-1.5b} ${CHAT_MODEL_NAME:-qwen2.5-7b} qwen2.5-3b qwen2.5-1.5b"
+CHAT_MODELS="${N97_MODEL_NAME:-qwen2.5-1.5b} ${CPU_CHAT_MODEL_NAME:-qwen2.5-1.5b} ${CHAT_MODEL_NAME:-qwen2.5-7b} qwen2.5-3b qwen2.5-1.5b qwen2.5-coder-1.5b"
 
 docker exec -e CHAT_MODELS="$CHAT_MODELS" openwebui python3 - <<'PY'
 import json, os, sqlite3, time

@@ -427,7 +427,10 @@ docker compose -f docker-compose.yml -f docker-compose.n97.yml up -d vllm
 # pick the new name in OpenWebUI's model selector
 ```
 
-Both Qwen sizes are pre-routed in LiteLLM; for a brand-new model name also
+A code-specialist variant is also pre-wired — **Qwen2.5-Coder-1.5B**
+(Apache-2.0), better at writing and explaining code than the chat model at
+the same speed; uncomment its block in `.env.example`'s N97 section the
+same way. All three Qwen names are pre-routed in LiteLLM; for a brand-new model name also
 add an entry in `config/litellm-config.n97.yaml` (copy an existing block,
 change the two name fields) and restart litellm. Keep ~2 GB headroom under
 the 6 GB memory cap; Q4_K_M quantizations of 1-4B models fit comfortably.
