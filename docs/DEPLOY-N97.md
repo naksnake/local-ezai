@@ -49,7 +49,7 @@ unchanged. If you specifically need vLLM, see
 
 Qwen2.5-7B-Instruct in FP16 is ~15 GB of weights alone; the OS, Docker, and
 seven other services also live in your 16 GB. The N97 profile uses
-**Qwen2.5-3B-Instruct quantized to 4-bit (Q4_K_M GGUF, ~2 GB)** and puts a
+**Qwen2.5-1.5B-Instruct quantized to 4-bit (Q4_K_M GGUF, ~1.1 GB)** and puts a
 memory limit on every container. Rough steady-state budget:
 
 | Component | RAM |
@@ -75,7 +75,7 @@ echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 Token generation is memory-bandwidth-bound. The N97's single-channel
 DDR5-4800 gives ~38 GB/s theoretical (~25–30 GB/s real), so expect roughly:
 
-- **Qwen2.5-3B Q4_K_M: ~6–10 tokens/sec** generation — usable for chat
+- **Qwen2.5-1.5B Q4_K_M: ~12-20 tokens/sec** generation (3B optional: ~6-10 tok/s, better quality)
 - Qwen2.5-1.5B Q4_K_M: ~12–16 tokens/sec — snappier, noticeably less capable
 - 7B Q4: ~3–4 tokens/sec — technically fits, painful in practice
 
@@ -177,7 +177,7 @@ make health      # all 8 checks should pass
 ```
 
 Then open **http://localhost:3000**, create your admin account, and pick
-`qwen2.5-3b` in the model dropdown. The monitor at **http://localhost:8888**
+`qwen2.5-1.5b` in the model dropdown. The monitor at **http://localhost:8888**
 will show the LLM card as "llama.cpp".
 
 Continue from **step 7 (Connect MCP agent tools)** of the main README —

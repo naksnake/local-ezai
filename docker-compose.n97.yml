@@ -22,9 +22,9 @@ services:
     image: ghcr.io/ggml-org/llama.cpp:server
     command:
       - -m
-      - /models/${N97_MODEL_FILE:-qwen2.5-3b-instruct-q4_k_m.gguf}
+      - /models/${N97_MODEL_FILE:-qwen2.5-1.5b-instruct-q4_k_m.gguf}
       - --alias
-      - ${N97_MODEL_NAME:-qwen2.5-3b}
+      - ${N97_MODEL_NAME:-qwen2.5-1.5b}
       - --host
       - 0.0.0.0
       - --port

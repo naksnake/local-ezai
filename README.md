@@ -19,12 +19,18 @@ Monitor:            Real-time dashboard (http://localhost:8888)
 The same stack runs on anything from a fanless mini-PC to a GPU server —
 you only swap the inference profile and the model:
 
-| Hardware tier | Profile | Chat model (default) | Example machines |
-|---|---|---|---|
-| Low-power x86 CPU (±16 GB RAM) | `make setup-n97` (llama.cpp) | Qwen2.5 1.5B/3B, 4-bit GGUF | Intel N97/N100 mini-PCs |
-| Same, using the Intel iGPU | `make up-n97-igpu` (llama.cpp + Vulkan) | same GGUF, ~2-3× faster prompt processing | Alder Lake-N UHD graphics |
-| Any x86 CPU with AVX2 | `make setup-cpu` (vLLM CPU) | Qwen2.5-1.5B bf16 | when you specifically need vLLM |
-| NVIDIA GPU, x86 or ARM | `make up` (vLLM CUDA) | Qwen2.5-7B (or far larger) | RTX workstation → HGX/MGX-class servers |
+| Hardware tier | One-command setup | Engine | Chat model (default) | Example machines |
+|---|---|---|---|---|
+| Low-power x86 CPU (±16 GB RAM) | `make setup-n97` | llama.cpp | Qwen2.5-1.5B 4-bit GGUF | Intel N97/N100 mini-PCs |
+| Same, using the Intel iGPU | `make setup-n97` then `make up-n97-igpu` | llama.cpp + Vulkan | same, ~2-3× faster prompt processing | Alder Lake-N UHD graphics |
+| Any x86 CPU with AVX2 | `make setup-cpu` | vLLM (CPU) | Qwen2.5-1.5B bf16 | when you specifically need vLLM |
+| NVIDIA GPU, x86 or ARM | `make setup-gpu` | vLLM (CUDA) | Qwen2.5-7B (or far larger) | RTX workstation → HGX/MGX-class servers |
+
+The inference service always answers on the same internal address with the
+same OpenAI-compatible API, whichever engine backs it — so switching
+hardware later means running a different `setup-*` command, not
+reconfiguring the stack. Your knowledge base, accounts and settings carry
+over untouched.
 
 OS: Ubuntu 24.04/26.04 LTS (any Linux with Docker ≥ 24 and Compose ≥ 2.24.4
 works). Disk: ~30 GB for the small profiles, 200 GB+ for large GPU models.
@@ -51,14 +57,12 @@ nano .env
 #    change: LITELLM_MASTER_KEY, WEBUI_SECRET_KEY, SEARXNG_SECRET,
 #            MONITOR_ADMIN_PASSWORD, MONITOR_VIEWER_PASSWORD
 #    set:    LAN_HOST=<this machine's IP>   (needed for browser-side tools)
-#    model:  add these three lines for the fast 1.5B (default is 3B):
-#            N97_GGUF_REPO=Qwen/Qwen2.5-1.5B-Instruct-GGUF
-#            N97_MODEL_FILE=qwen2.5-1.5b-instruct-q4_k_m.gguf
-#            N97_MODEL_NAME=qwen2.5-1.5b
+#    The default chat model is already Qwen2.5-1.5B — nothing else needed.
 
 # 4. Everything else in one command: pull, build, download models,
 #    start all 8 services, wait until healthy (~15-30 min first time)
 make setup-n97
+#    Occupied ports are relocated automatically and saved to .env.
 
 # 5. Optional: run inference on the Intel iGPU instead of the CPU
 #    (~2-3x faster prompt processing, frees the CPU cores)
@@ -233,7 +237,9 @@ make help        List all commands
 make setup       First-time system setup (Docker, NVIDIA, Python, Node)
 make build       Build embed-server, mcpo, and monitor images
 make pull        Pull official Docker images
-make up          Start all 8 services (GPU mode)
+make setup-gpu   GPU stack end-to-end: pull, build, download, start, health
+make up          Start all 8 services (GPU mode; auto-downloads models)
+make download-gpu  Download models for the GPU stack (~15 GB default)
 make setup-n97   N97 stack end-to-end: pull, build, download, start, health
 make up-n97      Start CPU-only via llama.cpp (auto-downloads models if missing)
 make up-n97-igpu Same, but llama.cpp runs on the Intel iGPU (Vulkan; faster prefill)
@@ -401,9 +407,32 @@ login entirely (not recommended beyond an isolated lab).
 
 ---
 
-## Changing the AI model
+## Adding & switching AI models
 
-Any vLLM-compatible model on HuggingFace works. Example — switch to Mistral 7B:
+Every profile follows the same pattern: **tell `.env` which model, download
+it, restart the inference service**. Nothing else in the stack changes.
+
+**N97 / llama.cpp profile** — models are single 4-bit GGUF files. Example:
+switch from the default 1.5B to the higher-quality 3B (non-commercial
+license), or any other GGUF on HuggingFace:
+
+```bash
+# .env
+N97_GGUF_REPO=Qwen/Qwen2.5-3B-Instruct-GGUF
+N97_MODEL_FILE=qwen2.5-3b-instruct-q4_k_m.gguf
+N97_MODEL_NAME=qwen2.5-3b
+
+make download-n97
+docker compose -f docker-compose.yml -f docker-compose.n97.yml up -d vllm
+# pick the new name in OpenWebUI's model selector
+```
+
+Both Qwen sizes are pre-routed in LiteLLM; for a brand-new model name also
+add an entry in `config/litellm-config.n97.yaml` (copy an existing block,
+change the two name fields) and restart litellm. Keep ~2 GB headroom under
+the 6 GB memory cap; Q4_K_M quantizations of 1-4B models fit comfortably.
+
+**GPU / vLLM profile** — models are HuggingFace safetensors repos:
 
 ```bash
 # 1. Download the model (runs in Docker, no host Python needed)
@@ -654,6 +683,7 @@ The embed job reads from `./documents` and writes to Qdrant on `localhost:6333`.
 | Symptom | Fix |
 |---------|-----|
 | `Bind for 0.0.0.0:XXXX failed: port is already allocated` | Shouldn't happen anymore — `make up*` auto-relocates conflicting ports and saves them to `.env`. If starting compose directly, run `bash scripts/check-ports.sh` first |
+| A service crash-loops with `ImportError: cannot import name …` | An upstream package broke compatibility. All images pin known-good versions — `git pull && make build && make up-<profile>` rebuilds with the pins; report the log if it persists |
 | Logging in to OpenWebUI logs out another session | Sessions on **different devices/browsers are independent** and never affect each other. One *browser* holds a single login per address — two accounts on the same machine need two browsers, profiles, or a private window |
 | All OpenWebUI users logged out after a restart | `WEBUI_SECRET_KEY` changed — set it to a fixed value in `.env` (sessions are signed with it) |
 | `ContextWindowExceededError: request (N tokens) exceeds …` | The chat outgrew the model's context: start a new chat for a new topic, turn web search off when not needed, disable unused tools — or raise `N97_CTX=16384` in `.env` and `docker compose … up -d vllm` (more RAM, slower prefill) |

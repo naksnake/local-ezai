@@ -1,7 +1,8 @@
 .PHONY: help setup build pull up up-cpu pull-cpu download-cpu update-cpu setup-cpu wait-ready \
         up-n97 pull-n97 download-n97 update-n97 setup-n97 up-n97-igpu bench \
+        setup-gpu download-gpu \
         down restart logs health status embed \
-        reset-webui reset-password \
+        reset-webui reset-password install-autorag \
         k8s k8s-delete update clean slurm-setup push-github monitor
 
 # Load .env if it exists
@@ -13,7 +14,7 @@ export
 # user runs it, and no host Python venv is needed anywhere.
 CPU_CHAT_MODEL  ?= Qwen/Qwen2.5-1.5B-Instruct
 CPU_EMBED_MODEL ?= nomic-ai/nomic-embed-text-v1.5
-N97_MODEL_FILE  ?= qwen2.5-3b-instruct-q4_k_m.gguf
+N97_MODEL_FILE  ?= qwen2.5-1.5b-instruct-q4_k_m.gguf
 # nomic-embed loads its custom modeling code (trust_remote_code) from this
 # separate repo at runtime — the offline cache must contain it too
 EMBED_CODE_REPO ?= nomic-ai/nomic-bert-2048
@@ -28,6 +29,9 @@ EMBED_MODEL_DIR = $(MODELS_DIR)/models--$(subst /,--,$(CPU_EMBED_MODEL))
 EMBED_CODE_DIR  = $(MODELS_DIR)/models--$(subst /,--,$(EMBED_CODE_REPO))
 
 COMPOSE_CPU = docker compose -f docker-compose.yml -f docker-compose.cpu.yml
+
+CHAT_MODEL     ?= Qwen/Qwen2.5-7B-Instruct
+GPU_MODEL_DIR   = $(MODELS_DIR)/models--$(subst /,--,$(CHAT_MODEL))
 
 help: ## Show all available commands
 	@echo ""
@@ -56,12 +60,26 @@ up: ## Start all services with GPU (auto-resolves port conflicts)
 	@$(MAKE) --no-print-directory up-run
 
 up-run:
+	@if [ ! -d "$(GPU_MODEL_DIR)/snapshots" ] || [ ! -d "$(EMBED_MODEL_DIR)/snapshots" ] || [ ! -d "$(EMBED_CODE_DIR)/snapshots" ]; then \
+		echo "Models not found in $(MODELS_DIR) — downloading them first..."; \
+		$(MAKE) download-gpu; \
+	fi
 	docker compose up -d
 	@echo ""
 	@echo "  Services starting... run 'make health' in 2-3 minutes"
 	@echo "  Chat UI:  http://localhost:$(or $(OPENWEBUI_PORT),3000)"
 	@echo "  Monitor:  http://localhost:$(or $(MONITOR_PORT),8888)"
 	@echo ""
+
+setup-gpu: ## One command for the NVIDIA GPU stack: pull, build, download models, start, wait until healthy
+	$(MAKE) pull
+	$(MAKE) build
+	$(MAKE) download-gpu
+	$(MAKE) up
+	$(MAKE) wait-ready
+
+download-gpu: ## Download models for the GPU stack (~15 GB default; runs in Docker, resumable)
+	@bash scripts/download-models.sh
 
 setup-cpu: ## One command for the vLLM CPU stack: pull, build, download models, start, wait until healthy
 	$(MAKE) pull-cpu
