@@ -35,7 +35,7 @@ services:
       - WEB_SEARCH_ENGINE=searxng
       - ENABLE_RAG_WEB_SEARCH=${ENABLE_WEB_SEARCH:-true}
       - RAG_WEB_SEARCH_ENGINE=searxng
-      - SEARXNG_QUERY_URL=http://searxng:8080/search?q=<query>
+      - SEARXNG_QUERY_URL=http://searxng:8080
       # keep web-search injections small — page content eats the context
       # window fast on small models (raise on GPU-class machines)
       - WEB_SEARCH_RESULT_COUNT=${WEB_SEARCH_RESULT_COUNT:-2}
@@ -171,14 +171,14 @@ services:
 
   # ═══════════════════════════════════════════════════════════════════════
   # SearXNG — Private self-hosted web search
-  # URL: http://localhost:8090
+  # URL: http://localhost:8092
   # ═══════════════════════════════════════════════════════════════════════
   searxng:
     image: searxng/searxng:latest
     container_name: searxng
     restart: unless-stopped
     ports:
-      - "${SEARXNG_PORT:-8090}:8080"
+      - "${SEARXNG_PORT:-8092}:8080"
     environment:
       - SEARXNG_SECRET=${SEARXNG_SECRET:-searxng-local-secret-change-this}
     volumes:

@@ -18,12 +18,6 @@ model_list:
       api_base: http://vllm:8000/v1
       api_key: "not-needed-locally"
 
-  - model_name: qwen2.5-coder-1.5b
-    litellm_params:
-      model: openai/qwen2.5-coder-1.5b
-      api_base: http://vllm:8000/v1
-      api_key: "not-needed-locally"
-
   # ── Embedding model ─────────────────────────────────────────────────────
   # Served by embed-server at http://embed-server:8001
   - model_name: nomic-embed

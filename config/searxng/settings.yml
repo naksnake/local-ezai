@@ -3,9 +3,40 @@ use_default_settings: true
 server:
   limiter: false          # disable rate limiting for local use
   image_proxy: true
+  bind_address: "0.0.0.0"
   secret_key: "${SEARXNG_SECRET:-searxng-local-secret-change-this}"
 
 search:
+  request_timeout: 8.0
   formats:
     - html
     - json              # REQUIRED: the agent tools use the JSON API
+
+engines:
+  - name: google
+    engine: google
+    disabled: true
+
+  - name: startpage
+    engine: startpage
+    disabled: true
+
+  - name: wikidata
+    engine: wikidata
+    disabled: true
+
+  - name: duckduckgo
+    engine: duckduckgo
+    disabled: false
+
+  - name: brave
+    engine: brave
+    disabled: false
+
+  - name: qwant
+    engine: qwant
+    disabled: false
+
+  - name: bing
+    engine: bing
+    disabled: false

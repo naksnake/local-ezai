@@ -38,6 +38,14 @@ services:
       - --parallel
       - "1"
       - --jinja
+
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
     volumes:
       - ${N97_GGUF_DIR:-./models/gguf}:/models:ro
     # !override replaces the whole deploy section from docker-compose.yml —
