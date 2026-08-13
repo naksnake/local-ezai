@@ -26,7 +26,7 @@ set -a; source .env; set +a
 OUR_CONTAINERS="openwebui litellm vllm embed-server qdrant searxng mcpo monitor"
 
 VARS=(OPENWEBUI_PORT LITELLM_PORT QDRANT_PORT LLM_PORT EMBED_PORT SEARXNG_PORT MCPO_PORT MONITOR_PORT)
-DEFAULTS=(3000 4000 6333 8000 8001 8090 8200 8888)
+DEFAULTS=(3000 4000 6333 8000 8001 8092 8200 8888)
 
 port_busy() {
     if command -v ss >/dev/null 2>&1; then

@@ -89,7 +89,7 @@ Useful afterwards: `make health` (all-service check), `make bench`
 ## Service map
 
 URLs below show the default ports. Every published port can be changed in
-`.env` (e.g. `SEARXNG_PORT=8095` if 8090 is taken) — see the *Host ports*
+`.env` (e.g. `SEARXNG_PORT=8095` if 8092 is taken) — see the *Host ports*
 section of `.env.example`.
 
 | Service | URL | Auth |
@@ -100,7 +100,7 @@ section of `.env.example`.
 | **vLLM** — LLM inference | http://localhost:8000 | none |
 | **Embed Server** — embedding API | http://localhost:8001 | none |
 | **Qdrant** — vector database | http://localhost:6333 | none |
-| **SearXNG** — private web search | http://localhost:8090 | none |
+| **SearXNG** — private web search | http://localhost:8092 | none |
 | **mcpo** — MCP tools proxy | http://localhost:8200 | `MCP_API_KEY` from `.env` |
 
 ---
@@ -134,7 +134,7 @@ section of `.env.example`.
                             │
 ┌───────────────────────────▼─────────────────────────────────┐
 │  DATA                                                        │
-│  Qdrant  :6333     SearXNG  :8090                           │
+│  Qdrant  :6333     SearXNG  :8092                           │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -597,7 +597,7 @@ in that file. The tool uses SearXNG's JSON API, which
 `config/searxng/settings.yml` already enables.
 
 Other paths to the web for agentic use: the mcpo `fetch` tool (model
-fetches a specific URL) and SearXNG's own UI at `http://localhost:8090`.
+fetches a specific URL) and SearXNG's own UI at `http://localhost:8092`.
 On small models, keep web search off for ordinary chats — retrieving and
 reading pages adds noticeable latency on low-power CPUs.
 

@@ -250,9 +250,9 @@ Run one LLM profile at a time (`make down` first) — both bind the same
 
 Already running other services on the box (lab containers, dashboards,
 etc.)? Every published host port is configurable in `.env` — the stack's
-defaults are 3000, 4000, 6333, 8000, 8001, 8090, 8200, and 8888. Only the
+defaults are 3000, 4000, 6333, 8000, 8001, 8092, 8200, and 8888. Only the
 host side changes; inter-service traffic uses the internal Docker network
-and is unaffected. Example: if 8090 is taken (the SearXNG default), set:
+and is unaffected. Example: if 8092 is taken (the SearXNG default), set:
 
 ```bash
 SEARXNG_PORT=8095
