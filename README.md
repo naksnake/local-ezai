@@ -89,7 +89,7 @@ Useful afterwards: `make health` (all-service check), `make bench`
 ## Service map
 
 URLs below show the default ports. Every published port can be changed in
-`.env` (e.g. `SEARXNG_PORT=8095` if 8090 is taken) — see the *Host ports*
+`.env` (e.g. `SEARXNG_PORT=8095` if 8092 is taken) — see the *Host ports*
 section of `.env.example`.
 
 | Service | URL | Auth |
@@ -100,7 +100,7 @@ section of `.env.example`.
 | **vLLM** — LLM inference | http://localhost:8000 | none |
 | **Embed Server** — embedding API | http://localhost:8001 | none |
 | **Qdrant** — vector database | http://localhost:6333 | none |
-| **SearXNG** — private web search | http://localhost:8090 | none |
+| **SearXNG** — private web search | http://localhost:8092 | none |
 | **mcpo** — MCP tools proxy | http://localhost:8200 | `MCP_API_KEY` from `.env` |
 
 ---
@@ -134,7 +134,7 @@ section of `.env.example`.
                             │
 ┌───────────────────────────▼─────────────────────────────────┐
 │  DATA                                                        │
-│  Qdrant  :6333     SearXNG  :8090                           │
+│  Qdrant  :6333     SearXNG  :8092                           │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -158,7 +158,9 @@ local-ezai/
 │   ├── litellm-config.n97.yaml Model routing for the N97/llama.cpp profile
 │   ├── litellm-config.cpu.yaml Model routing for the vLLM CPU profile
 │   ├── mcpo-config.json        MCP server list (reads from env)
-│   └── searxng/settings.yml    Search engine config
+│   ├── searxng/settings.yml    Search engine config
+│   └── prompts/
+│       └── web-search-assistant.md   System prompt for proactive web search
 │
 ├── embed-server/               Embedding API (FastAPI + sentence-transformers)
 │   ├── Dockerfile
@@ -184,7 +186,8 @@ local-ezai/
 │   └── embed_documents.py      Ingest documents into Qdrant
 │
 ├── tools/
-│   └── knowledge-base-search.py   OpenWebUI Python tool (paste into UI)
+│   ├── knowledge-base-search.py   OpenWebUI Python tool (paste into UI)
+│   └── web-search.py              OpenWebUI Python tool — SearXNG web search
 │
 ├── k8s/                        Kubernetes manifests (K3s)
 │   ├── namespace.yaml
@@ -563,16 +566,38 @@ Three independent layers control language support:
 
 The stack ships a private SearXNG metasearch engine — chat can use it to
 answer questions about current information, with no cloud search API and
-no tracking:
+no tracking. Two ways to use it:
+
+### Option 1 — Globe toggle (retrieval before answering)
 
 1. In the OpenWebUI message box, toggle the **globe icon (Web Search)**.
 2. Ask something time-sensitive: *"What is the latest Ubuntu LTS release?"*
 3. OpenWebUI queries SearXNG (`http://searxng:8080` internally), retrieves
    the top pages, and the model answers with citations.
 
-Enabled by default via `ENABLE_WEB_SEARCH=true` (see `.env.example`). Two
-other paths to the web exist for agentic use: the mcpo `fetch` tool (model
-fetches a specific URL) and SearXNG's own UI at `http://localhost:8090`.
+Enabled by default via `ENABLE_WEB_SEARCH=true` (see `.env.example`).
+Every message in that chat triggers retrieval, whether it needs the web
+or not.
+
+### Option 2 — Agentic search (model decides when to search)
+
+The **web-search** OpenWebUI tool lets the model call SearXNG itself, only
+when a question actually needs live data, and cite sources inline as
+`[Title](URL)`:
+
+1. Admin Panel → Tools → + New Tool
+2. Paste the contents of `tools/web-search.py` → Save
+3. Enable the **🔧 wrench** icon in a chat — the model can now search
+   the web on its own
+
+To make the model search *proactively* (and state clearly when live data
+is unavailable), apply the ready-made system prompt in
+`config/prompts/web-search-assistant.md` to your model — instructions are
+in that file. The tool uses SearXNG's JSON API, which
+`config/searxng/settings.yml` already enables.
+
+Other paths to the web for agentic use: the mcpo `fetch` tool (model
+fetches a specific URL) and SearXNG's own UI at `http://localhost:8092`.
 On small models, keep web search off for ordinary chats — retrieving and
 reading pages adds noticeable latency on low-power CPUs.
 

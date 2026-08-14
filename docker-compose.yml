@@ -240,7 +240,7 @@ services:
       - LLM_PORT=${LLM_PORT:-8000}
       - EMBED_PORT=${EMBED_PORT:-8001}
       - QDRANT_PORT=${QDRANT_PORT:-6333}
-      - SEARXNG_PORT=${SEARXNG_PORT:-8090}
+      - SEARXNG_PORT=${SEARXNG_PORT:-8092}
       - MCPO_PORT=${MCPO_PORT:-8200}
     networks:
       - ai-net

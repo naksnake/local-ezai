@@ -143,7 +143,7 @@ SERVICES: list[dict] = [
         "method":  "GET",
         "pattern": "results",
         "headers": {},
-        "link":    f"http://localhost:{_port('SEARXNG_PORT', '8090')}",
+        "link":    f"http://localhost:{_port('SEARXNG_PORT', '8092')}",
     },
     {
         "id":      "litellm",
