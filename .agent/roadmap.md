@@ -15,9 +15,9 @@ tests, self-reviews, and delivers a branch/PR — entirely on local hardware.
 | ID | Milestone | Phase | Status | Exit criterion (short) |
 |----|-----------|-------|--------|------------------------|
 | M0 | Architecture foundation | P0 | ✅ done (2026-08-14) | docs/ + .agent/ merged; ADR process active |
-| M1 | Agent runtime core | P1 | ⬜ not started | read-only research run over a repo via `ezai` CLI; resumable journal; CI green; fail-closed permission proof |
-| M2 | Execution plane | P2 | ⬜ not started | sandboxed edit+test+commit on `swe/<run>`; host untouched; egress default-deny; T3 asks |
-| M3 | First autonomous fix | P3 | ⬜ not started | seeded-bug fixture fixed end-to-end at A2 (GPU); clean BLOCKED behavior at A1 (N97) |
+| M1 | Agent runtime core | P1 | ✅ done (2026-08-14) — shipped as the `agentd/` MVP (Planner/Coder/Validator/Git agents, LangGraph graph, tool layer, journal, CLI, 87 offline tests, CI). Deviations recorded: ADR-013 (LangGraph), ADR-014 (interim isolation) | read-only research run over a repo via `ezai` CLI; resumable journal; CI green; fail-closed permission proof |
+| M2 | Execution plane | P2 | 🟡 partially (interim) — worktree isolation + policed host exec shipped ahead of schedule under ADR-014; **container sandboxing + egress policy still open** | sandboxed edit+test+commit on `swe/<run>`; host untouched; egress default-deny; T3 asks |
+| M3 | First autonomous fix | P3 | 🟡 partially — plan→code→validate→fix-loop→commit works end-to-end (scripted-LLM e2e tests); full gate/BLOCKED machine and journal-replay resume still open | seeded-bug fixture fixed end-to-end at A2 (GPU); clean BLOCKED behavior at A1 (N97) |
 | M4 | Multi-agent quality | P4 | ⬜ not started | measurable quality delta on 10-task fixture suite; reviewer catches seeded regression |
 | M5 | Code intelligence & memory | P5 | ⬜ not started | hybrid code retrieval live; tokens/run down vs M4; curator memory proposal merged via review |
 | M6 | Interfaces & A3 delivery | P6 | ⬜ not started | console gate approvals; chat-ops tools; PR opened on LAN forge at A3 |

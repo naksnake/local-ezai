@@ -41,6 +41,27 @@ openwebui:3000 · litellm:4000 (auto-RAG hook `config/litellm_custom_callbacks.p
 Profiles: GPU (base) / cpu / n97 / n97-igpu via compose overrides with
 `!override` on `deploy`. Config via `.env` (`.env.example` = schema).
 
+## Phase 1 MVP — shipped (agentd/)
+
+The `agentd/` sub-project implements the first slice of the target
+architecture (see [agentd/README.md](../agentd/README.md)):
+
+- **4 agents**: Planner (read-only tools → validated `Plan`), Coder
+  (fs/grep/exec tools, one plan task per invocation), Validator
+  (deterministic test/lint/build harness), Git (add/commit, T3-gated push).
+- **LangGraph graph** (ADR-013): plan → code↺ → validate → diagnose-fix loop
+  (bounded by `max_fix_attempts`) → git; routes never read LLM output.
+- **Tool layer**: `Tool`/`ToolRegistry` with tiers T0–T3, per-agent
+  allowlists, output caps, journaled permission decisions (fail-closed).
+- **Isolation (interim, ADR-014)**: git worktree per run on `swe/<run-id>`,
+  path containment, timeouts; container sandboxing remains Phase 2.
+- **Config**: defaults < YAML < `AGENTD_*` env; per-repo `.agentd.yaml`
+  (validation/limits only — a repo cannot self-grant push).
+- **Journal**: JSONL per run under `~/.agentd/runs/<run-id>/` + report.json.
+- Entry points: `ezai run|plan|version`; Make targets `swe-install`,
+  `swe-test`, `swe-lint`, `swe-run`, `swe-plan`. Tests are fully offline
+  (ScriptedLLM); CI in `.github/workflows/agentd-ci.yml`.
+
 ## Target additions (control/execution/knowledge planes)
 
 - **agentd** — agent runtime + workflow engine + permission engine (FastAPI).

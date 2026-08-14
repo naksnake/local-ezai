@@ -8,6 +8,7 @@
 Index: [001](#adr-001) [002](#adr-002) [003](#adr-003) [004](#adr-004)
 [005](#adr-005) [006](#adr-006) [007](#adr-007) [008](#adr-008)
 [009](#adr-009) [010](#adr-010) [011](#adr-011) [012](#adr-012)
+[013](#adr-013) [014](#adr-014)
 
 ---
 
@@ -159,3 +160,40 @@ docs-as-code. Curator-proposed changes to any memory file are T3-gated diffs
 through normal review.
 **Consequences:** Agents working on any repo get durable conventions;
 memory stays reviewable and versioned with the code it describes.
+
+## ADR-013 — LangGraph as the orchestration substrate for the workflow engine
+**Date:** 2026-08-14 · **Status:** Accepted
+**Context:** Phase 1 required an orchestration framework. ADR-010 mandates
+deterministic control flow; the question was build-vs-use for the state
+machine executor. Hand-rolled loop (rejected: re-implements graph routing,
+retries and future checkpointing), heavyweight workflow engines like
+Temporal (rejected: infrastructure cost on N97-class hardware).
+**Decision:** The workflow engine is implemented as a **LangGraph
+StateGraph** inside agentd: nodes call agents, conditional edges route on
+typed state, cycle budgets and a recursion limit bound execution. LLM output
+never selects edges — routes read only validated state fields (preserving
+ADR-010). LangGraph's checkpointing is the intended substrate for Phase 3
+resume, alongside the journal.
+**Consequences:** Graph topology is declarative and testable; we accept the
+langchain-core dependency tree in agentd only (the chat stack is
+unaffected); the Phase 3 full state machine extends this graph rather than
+replacing it.
+
+## ADR-014 — Interim execution isolation: git worktrees + policed host subprocesses (pre-sandboxd)
+**Date:** 2026-08-14 · **Status:** Accepted (interim — superseded when
+Phase 2 sandboxd lands)
+**Context:** ADR-004 gates mutating tools on container sandboxing, but the
+Phase 1 MVP mandate requires a working edit-test-commit loop now.
+**Decision:** MVP mutating tools operate under four compensating controls:
+(1) all writes confined to a **git worktree** on branch `swe/<run-id>` —
+the user's checkout is never touched and rollback is branch deletion;
+(2) **path containment** enforced at resolve time (traversal + symlink
+escapes rejected); (3) `exec_run`/validation commands run as host
+subprocesses with wall-clock timeouts and output caps, cwd-pinned to the
+workspace; (4) **T3 fail-closed**: `git_push` denied unless explicitly
+enabled per run. Residual risk is documented in agentd/README.md
+("Safety model"): shell commands can read host state and reach the LAN.
+**Consequences:** Useful autonomy ships in Phase 1 with an honest risk
+statement; the exec contract (`run_command`) is the seam where sandboxd's
+container executor replaces the host executor in Phase 2 without changing
+tool or agent code. A2+ autonomy defaults remain gated on Phase 2.

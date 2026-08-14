@@ -250,6 +250,31 @@ clean: ## Remove all containers, images, and volumes (WARNING: deletes data)
 	docker compose down -v
 	docker system prune -af
 
+# ═══════════════════════════════════════════════════════════════════════════
+# Autonomous SWE runtime (agentd) — additive targets, see agentd/README.md
+# ═══════════════════════════════════════════════════════════════════════════
+.PHONY: swe-install swe-test swe-lint swe-run swe-plan
+
+swe-install: ## Install the agentd runtime into ./.venv-agentd (editable, with dev tools)
+	python3 -m venv .venv-agentd
+	.venv-agentd/bin/pip install --upgrade pip -q
+	.venv-agentd/bin/pip install -e './agentd[dev]'
+	@echo ""
+	@echo "  agentd installed. Try:  .venv-agentd/bin/ezai run \"...\" --repo /path/to/repo"
+	@echo ""
+
+swe-test: ## Run the agentd test suite (offline — no models needed)
+	cd agentd && ../.venv-agentd/bin/python -m pytest tests
+
+swe-lint: ## Lint the agentd runtime with ruff
+	cd agentd && ../.venv-agentd/bin/python -m ruff check src tests
+
+swe-run: ## Autonomous run: make swe-run TASK="fix the bug" REPO=/path/to/repo
+	.venv-agentd/bin/ezai run "$(TASK)" --repo "$(REPO)"
+
+swe-plan: ## Dry-run (plan only): make swe-plan TASK="..." REPO=/path/to/repo
+	.venv-agentd/bin/ezai plan "$(TASK)" --repo "$(REPO)"
+
 push-github: ## Initialize git and push to GitHub (run after cloning)
 	@echo "Enter your GitHub username:"
 	@read USERNAME; \
