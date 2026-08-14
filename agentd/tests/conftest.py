@@ -150,35 +150,68 @@ def happy_path_script() -> list[dict]:
     ]
 
 
-def fix_loop_script() -> list[dict]:
-    """Coder botches the first fix; validation fails; second attempt lands."""
+def coder_edit(old: str, new: str, path: str = "calculator.py") -> dict:
+    return {
+        "tool_calls": [
+            {
+                "name": "fs_edit",
+                "arguments": {"path": path, "old_string": old, "new_string": new},
+            }
+        ]
+    }
+
+
+def bad_first_attempt() -> list[dict]:
+    """Planner + a Coding Agent attempt that introduces the wrong operator."""
     return [
         planner_response(),
-        {
-            "tool_calls": [
-                {
-                    "name": "fs_edit",
-                    "arguments": {
-                        "path": "calculator.py",
-                        "old_string": "return a - b",
-                        "new_string": "return a * b",
-                    },
-                }
-            ]
-        },
+        coder_edit("return a - b", "return a * b"),
         {"content": "Changed the operator."},
-        # FIX1 task after validation failure:
+    ]
+
+
+def debug_report_json(
+    root_cause: str = "add() uses the wrong arithmetic operator at its "
+                      "definition site in calculator.py",
+    approach: str = "correct the operator in add() to addition",
+    steps: list[str] | None = None,
+    files: list[str] | None = None,
+    category: str = "assertion",
+    confidence: str = "high",
+) -> str:
+    return json.dumps(
         {
-            "tool_calls": [
-                {
-                    "name": "fs_edit",
-                    "arguments": {
-                        "path": "calculator.py",
-                        "old_string": "return a * b",
-                        "new_string": "return a + b",
-                    },
-                }
-            ]
-        },
-        {"content": "Corrected the operator to addition."},
+            "root_cause": root_cause,
+            "category": category,
+            "confidence": confidence,
+            "why_root_cause": (
+                "the check's expectation matches the stated goal; the value "
+                "diverges at the operator in add(), not in the check"
+            ),
+            "evidence": [
+                "reproduced the failing check with exec_run",
+                "calculator.py defines add() with a non-addition operator",
+            ],
+            "affected_files": files or ["calculator.py"],
+            "fix_strategy": {
+                "approach": approach,
+                "steps": steps or ["edit calculator.py so add() returns a + b"],
+                "files_to_change": files or ["calculator.py"],
+                "risk": "low",
+            },
+        }
+    )
+
+
+def debug_response(**kwargs) -> dict:
+    return {"content": debug_report_json(**kwargs)}
+
+
+def healing_script() -> list[dict]:
+    """One self-healing iteration: bad attempt → DEBUG → FIX → REVALIDATE ok."""
+    return [
+        *bad_first_attempt(),
+        debug_response(),
+        coder_edit("return a * b", "return a + b"),
+        {"content": "Applied the diagnosed fix: add() now uses addition."},
     ]

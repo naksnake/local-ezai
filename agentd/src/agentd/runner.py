@@ -7,13 +7,20 @@ import secrets
 import time
 from pathlib import Path
 
-from agentd.agents import CoderAgent, GitAgent, PlannerAgent, ValidationAgent
+from agentd.agents import (
+    CoderAgent,
+    DebuggerAgent,
+    GitAgent,
+    PlannerAgent,
+    ValidationAgent,
+)
 from agentd.config import AgentdConfig, load_repo_overrides, merge_repo_overrides
 from agentd.graph import Orchestrator
 from agentd.journal import Journal
 from agentd.llm import LLMClient, build_llm
 from agentd.logging_setup import get_logger
 from agentd.permissions import PermissionPolicy
+from agentd.rca import RcaEngine
 from agentd.schemas import Plan, RunReport
 from agentd.tools import ALL_TOOL_CLASSES
 from agentd.tools.base import ToolRegistry
@@ -69,6 +76,8 @@ def execute_run(
         coder=CoderAgent(config, llm, registry, journal),
         validator=ValidationAgent(config, llm, registry, journal),
         git_agent=GitAgent(config, llm, registry, journal),
+        debugger=DebuggerAgent(config, llm, registry, journal),
+        rca_engine=RcaEngine(config.limits.stall_threshold),
     )
     log.info("run %s starting in %s (branch %s)", run_id, workspace.root, workspace.branch)
     report = orchestrator.run(run_id, request)

@@ -2,16 +2,19 @@
 
     ezai run  "add a --verbose flag"  --repo /path/to/repo [--push] [--in-place]
     ezai plan "add a --verbose flag"  --repo /path/to/repo
+    ezai runs                       # list recent runs (observability)
+    ezai journal <run-id>           # pretty-print a run's event journal
     ezai version
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 from agentd import __version__
-from agentd.config import load_config
+from agentd.config import AgentdConfig, load_config
 from agentd.logging_setup import get_logger, setup_logging
 from agentd.schemas import RunReport
 
@@ -25,13 +28,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    def common(p: argparse.ArgumentParser) -> None:
-        p.add_argument("request", help="The change request, in natural language")
-        p.add_argument("--repo", required=True, help="Path to the target git repository")
-        p.add_argument("--config", default=None, help="Path to an agentd YAML config file")
+    def common(p: argparse.ArgumentParser, with_request: bool = True) -> None:
+        if with_request:
+            p.add_argument("request", help="The change request, in natural language")
+            p.add_argument("--repo", required=True,
+                           help="Path to the target git repository")
+        p.add_argument("--config", default=None,
+                       help="Path to an agentd YAML config file")
         p.add_argument("--verbose", action="store_true", help="Debug logging")
 
-    run_p = sub.add_parser("run", help="Plan, implement, validate, and commit")
+    run_p = sub.add_parser("run", help="Plan, implement, validate, self-heal, commit")
     common(run_p)
     run_p.add_argument("--push", action="store_true",
                        help="Allow pushing the run branch (T3 action, off by default)")
@@ -39,9 +45,19 @@ def build_parser() -> argparse.ArgumentParser:
                        help="Edit the repo directly instead of a git worktree")
     run_p.add_argument("--json", action="store_true", dest="as_json",
                        help="Print the full run report as JSON")
+    run_p.add_argument("--max-iterations", type=int, default=None,
+                       help="Override limits.max_heal_iterations for this run")
 
     plan_p = sub.add_parser("plan", help="Dry-run: produce the plan only (A0)")
     common(plan_p)
+
+    runs_p = sub.add_parser("runs", help="List recent runs and their outcomes")
+    common(runs_p, with_request=False)
+    runs_p.add_argument("--limit", type=int, default=20)
+
+    journal_p = sub.add_parser("journal", help="Pretty-print a run's event journal")
+    journal_p.add_argument("run_id", help="Run id (see 'ezai runs')")
+    common(journal_p, with_request=False)
 
     sub.add_parser("version", help="Print the version")
     return parser
@@ -59,6 +75,11 @@ def main(argv: list[str] | None = None) -> int:
         config.log_level = "DEBUG"
     setup_logging(config.log_level)
 
+    if args.command == "runs":
+        return _cmd_runs(config, args.limit)
+    if args.command == "journal":
+        return _cmd_journal(config, args.run_id)
+
     repo = Path(args.repo).expanduser().resolve()
 
     from agentd.runner import execute_run, plan_only  # deferred: heavy imports
@@ -74,6 +95,8 @@ def main(argv: list[str] | None = None) -> int:
             config.git.allow_push = True
         if args.in_place:
             config.workspace.mode = "in-place"
+        if args.max_iterations is not None:
+            config.limits.max_heal_iterations = max(0, args.max_iterations)
 
         report = execute_run(config, repo, args.request)
         _print_report(report, as_json=args.as_json)
@@ -84,6 +107,56 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         log.error("interrupted")
         return 130
+
+
+# ── observability commands ────────────────────────────────────────────────────
+
+
+def _cmd_runs(config: AgentdConfig, limit: int) -> int:
+    runs_dir = Path(config.runs_dir)
+    if not runs_dir.is_dir():
+        print("(no runs yet)")
+        return 0
+    rows = []
+    for run_dir in sorted(runs_dir.iterdir(), reverse=True)[: max(1, limit)]:
+        report_file = run_dir / "report.json"
+        if report_file.is_file():
+            data = json.loads(report_file.read_text(encoding="utf-8"))
+            goal = (data.get("plan") or {}).get("goal") or data.get("request", "")
+            rows.append(
+                f"{run_dir.name:24} {data.get('status', '?'):9} "
+                f"iters={data.get('iterations_used', 0):<2} "
+                f"branch={data.get('branch', '?'):22} {goal[:60]}"
+            )
+        elif run_dir.is_dir():
+            rows.append(f"{run_dir.name:24} (no report — in progress or crashed)")
+    print("\n".join(rows) if rows else "(no runs yet)")
+    return 0
+
+
+def _cmd_journal(config: AgentdConfig, run_id: str) -> int:
+    journal_file = Path(config.runs_dir) / run_id / "journal.jsonl"
+    if not journal_file.is_file():
+        log.error("no journal for run '%s' under %s", run_id, config.runs_dir)
+        return 2
+    for line in journal_file.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        event = json.loads(line)
+        payload = event.get("payload", {})
+        detail = ", ".join(
+            f"{k}={_short(v)}" for k, v in payload.items() if v not in (None, [], "")
+        )
+        print(f"{event['seq']:4}  {event['type']:24} {detail[:160]}")
+    return 0
+
+
+def _short(value: object) -> str:
+    text = str(value)
+    return text if len(text) <= 60 else text[:57] + "..."
+
+
+# ── report rendering ──────────────────────────────────────────────────────────
 
 
 def _print_report(report: RunReport, as_json: bool = False) -> None:
@@ -103,6 +176,14 @@ def _print_report(report: RunReport, as_json: bool = False) -> None:
                          f"{result.summary.splitlines()[0][:90]}")
     if report.validation:
         lines.append(f"validation: {report.validation.summary}")
+    if report.healing:
+        lines.append(f"healing:    {report.iterations_used} debug/fix iteration(s)")
+        for h in report.healing:
+            lines.append(
+                f"  iter {h.iteration}: [{'/'.join(h.categories) or '?'}] "
+                f"{h.root_cause[:70]} → fix {h.fix_task_id} ({h.fix_status}), "
+                f"revalidation {'PASSED' if h.revalidation_passed else 'failed'}"
+            )
     if report.commit and report.commit.sha:
         push_state = "pushed" if report.commit.pushed else (
             f"not pushed ({report.commit.push_error})" if report.commit.push_error

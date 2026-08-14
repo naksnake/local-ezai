@@ -8,7 +8,7 @@
 Index: [001](#adr-001) [002](#adr-002) [003](#adr-003) [004](#adr-004)
 [005](#adr-005) [006](#adr-006) [007](#adr-007) [008](#adr-008)
 [009](#adr-009) [010](#adr-010) [011](#adr-011) [012](#adr-012)
-[013](#adr-013) [014](#adr-014)
+[013](#adr-013) [014](#adr-014) [015](#adr-015)
 
 ---
 
@@ -197,3 +197,44 @@ enabled per run. Residual risk is documented in agentd/README.md
 statement; the exec contract (`run_command`) is the seam where sandboxd's
 container executor replaces the host executor in Phase 2 without changing
 tool or agent code. A2+ autonomy defaults remain gated on Phase 2.
+
+## ADR-015 — Self-healing workflow: read-only Debug Agent + deterministic RCA engine, bounded by iterations and stall detection
+**Date:** 2026-08-14 · **Status:** Accepted (supersedes the Phase-1
+diagnose node; realizes WORKFLOW_DESIGN's inner DIAGNOSE loop and pulls the
+Debugger agent forward from roadmap Phase 4)
+**Context:** Blind retry loops on validation failures either thrash (small
+models re-trying the same broken idea) or "succeed" by patching symptoms —
+weakening tests, swallowing exceptions. The platform mandate is that the
+Debug Agent identify root causes instead. Prompting alone cannot guarantee
+that; the guarantee must be structural. Alternatives considered: letting the
+Coder self-diagnose inline (rejected: the agent that wrote the bug re-reads
+it with the same blind spot, and diagnosis quality is unobservable); an
+LLM-based error classifier (rejected: categorization must be deterministic
+to be trustworthy for routing and stall detection).
+**Decision:** Validation failures enter a DEBUG → FIX → REVALIDATE loop
+built from three separated responsibilities:
+(1) a **deterministic RCA engine** (`rca.py`) categorizes every failing
+check (syntax/import/assertion/exception/timeout/environment/lint/build/
+unknown) by ordered regex rules, extracts locations and a stable **error
+signature**, and seeds a per-category fix strategy;
+(2) a **read-only Debug Agent** (reproduce/read/grep/diff only — no write
+tools) that must produce a schema-validated `DebugReport`: root cause,
+confidence, cause-vs-symptom justification (`why_root_cause`), evidence,
+and a concrete `fix_strategy`, with all prior iterations in its context so
+failed strategies are never repeated;
+(3) the **Coding Agent** applies the strategy as a `HEAL-n` task.
+Loop integrity is code (ADR-010): a hard cap of
+`limits.max_heal_iterations` (default **10**) cycles, and **stall
+detection** — the identical combined failure signature persisting for
+`stall_threshold` (default 3) consecutive validations aborts the run with a
+"no progress" verdict. A failed fix attempt does not abort; it becomes
+history for the next iteration. Every step is journaled (`RCA_REPORT`,
+`DEBUG_REPORT`, `FIX_APPLIED`, `HEAL_ITERATION`) and surfaced in the run
+report (`healing[]`, `iterations_used`) and the `ezai runs`/`ezai journal`
+commands.
+**Consequences:** Symptom-patching cannot loop (the stall detector converts
+it into a fast, explained failure); diagnosis quality is observable and
+auditable per iteration; the diagnose/repair separation costs one extra LLM
+call per iteration, accepted for the audit trail. The failure taxonomy in
+WORKFLOW_DESIGN §7 gains a deterministic implementation that later phases
+(Reviewer, BLOCKED-state routing) can reuse.

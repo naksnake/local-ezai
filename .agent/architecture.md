@@ -41,26 +41,35 @@ openwebui:3000 · litellm:4000 (auto-RAG hook `config/litellm_custom_callbacks.p
 Profiles: GPU (base) / cpu / n97 / n97-igpu via compose overrides with
 `!override` on `deploy`. Config via `.env` (`.env.example` = schema).
 
-## Phase 1 MVP — shipped (agentd/)
+## Phases 1–2 — shipped (agentd/)
 
-The `agentd/` sub-project implements the first slice of the target
+The `agentd/` sub-project implements the first slices of the target
 architecture (see [agentd/README.md](../agentd/README.md)):
 
-- **4 agents**: Planner (read-only tools → validated `Plan`), Coder
+- **5 agents**: Planner (read-only tools → validated `Plan`), Coder
   (fs/grep/exec tools, one plan task per invocation), Validator
-  (deterministic test/lint/build harness), Git (add/commit, T3-gated push).
-- **LangGraph graph** (ADR-013): plan → code↺ → validate → diagnose-fix loop
-  (bounded by `max_fix_attempts`) → git; routes never read LLM output.
+  (deterministic test/lint/build harness), **Debugger** (read-only
+  root-cause analysis → structured `DebugReport`, ADR-015), Git
+  (add/commit, T3-gated push).
+- **Self-healing LangGraph machine** (ADR-013/ADR-015): PLAN → CODE↺ →
+  VALIDATE → (fail) DEBUG → FIX → REVALIDATE loop — max
+  `limits.max_heal_iterations` (10) cycles + stall detection
+  (`stall_threshold` identical failure signatures → abort); routes never
+  read LLM output.
+- **RCA engine** (`rca.py`, deterministic): error categorization
+  (syntax/import/assertion/exception/timeout/environment/lint/build/
+  unknown), locations, stable signatures, strategy seeds.
 - **Tool layer**: `Tool`/`ToolRegistry` with tiers T0–T3, per-agent
   allowlists, output caps, journaled permission decisions (fail-closed).
 - **Isolation (interim, ADR-014)**: git worktree per run on `swe/<run-id>`,
-  path containment, timeouts; container sandboxing remains Phase 2.
+  path containment, timeouts; container sandboxing remains open.
 - **Config**: defaults < YAML < `AGENTD_*` env; per-repo `.agentd.yaml`
   (validation/limits only — a repo cannot self-grant push).
-- **Journal**: JSONL per run under `~/.agentd/runs/<run-id>/` + report.json.
-- Entry points: `ezai run|plan|version`; Make targets `swe-install`,
-  `swe-test`, `swe-lint`, `swe-run`, `swe-plan`. Tests are fully offline
-  (ScriptedLLM); CI in `.github/workflows/agentd-ci.yml`.
+- **Journal**: JSONL per run under `~/.agentd/runs/<run-id>/` + report.json
+  incl. `healing[]` records; `ezai runs` / `ezai journal` for inspection.
+- Entry points: `ezai run|plan|runs|journal|version`; Make targets
+  `swe-install`, `swe-test`, `swe-lint`, `swe-run`, `swe-plan`. Tests are
+  fully offline (ScriptedLLM); CI in `.github/workflows/agentd-ci.yml`.
 
 ## Target additions (control/execution/knowledge planes)
 

@@ -5,7 +5,7 @@ import subprocess
 
 from agentd.llm import ScriptedLLM
 from agentd.runner import execute_run
-from tests.conftest import fix_loop_script, git, happy_path_script
+from tests.conftest import bad_first_attempt, git, happy_path_script, healing_script
 
 
 def test_happy_path_run(config, tmp_repo):
@@ -16,7 +16,8 @@ def test_happy_path_run(config, tmp_repo):
 
     assert report.status == "completed"
     assert report.branch == "swe/itest1"
-    assert report.fix_attempts == 0
+    assert report.iterations_used == 0
+    assert report.healing == []
 
     # plan / tasks / validation / commit envelopes are all populated
     assert report.plan and report.plan.tasks[0].id == "T1"
@@ -72,27 +73,27 @@ def test_happy_path_journal_and_report(config, tmp_repo):
     assert report.journal_path == str(run_dir / "journal.jsonl")
 
 
-def test_fix_loop_recovers_from_validation_failure(config, tmp_repo):
+def test_healing_loop_recovers_from_validation_failure(config, tmp_repo):
     report = execute_run(
         config, tmp_repo, "fix the add bug",
-        llm=ScriptedLLM(fix_loop_script()), run_id="itest3",
+        llm=ScriptedLLM(healing_script()), run_id="itest3",
     )
     assert report.status == "completed"
-    assert report.fix_attempts == 1
-    assert [r.task_id for r in report.task_results] == ["T1", "FIX1"]
+    assert report.iterations_used == 1
+    assert [r.task_id for r in report.task_results] == ["T1", "HEAL1"]
     assert report.validation and report.validation.passed
     assert "return a + b" in git(tmp_repo, "show", "swe/itest3:calculator.py")
 
 
-def test_fix_budget_exhaustion_fails_cleanly(config, tmp_repo):
-    config.limits.max_fix_attempts = 0
-    script = fix_loop_script()[:3]  # plan + one bad coder attempt only
+def test_healing_budget_zero_fails_cleanly(config, tmp_repo):
+    config.limits.max_heal_iterations = 0
+    script = bad_first_attempt()  # plan + one bad coder attempt only
     report = execute_run(
         config, tmp_repo, "fix the add bug",
         llm=ScriptedLLM(script), run_id="itest4",
     )
     assert report.status == "failed"
-    assert "validation still failing" in (report.error or "")
+    assert "self-healing budget exhausted" in (report.error or "")
     assert report.commit is None  # nothing was committed
     # workspace preserved for autopsy
     assert (config.workspace.root / "itest4" / "calculator.py").is_file()

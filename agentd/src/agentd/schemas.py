@@ -90,6 +90,70 @@ class ValidationReport(BaseModel):
         return text[-max_chars:] if len(text) > max_chars else text
 
 
+# ── Self-healing: RCA + Debug Agent envelopes (Phase 2) ─────────────────────
+
+ErrorCategory = Literal[
+    "syntax", "import", "assertion", "exception", "timeout",
+    "environment", "lint", "build", "unknown",
+]
+
+
+class ErrorAnalysis(BaseModel):
+    """One failing check, categorized by the deterministic RCA engine."""
+
+    check_name: str
+    category: ErrorCategory
+    exception: str = ""
+    message: str = ""
+    locations: list[str] = Field(default_factory=list)
+    signature: str
+    suggested_strategy: str = ""
+    evidence: str = ""
+
+
+class FixStrategy(BaseModel):
+    """How the diagnosed root cause will be repaired."""
+
+    approach: str
+    steps: list[str] = Field(min_length=1)
+    files_to_change: list[str] = Field(default_factory=list)
+    risk: Literal["low", "medium", "high"] = "low"
+
+
+class DebugReport(BaseModel):
+    """Debug Agent output — `DebugReport v1` (structured debugging report).
+
+    The contract enforces root-cause discipline: the report must name the
+    cause, justify why it is the cause rather than the symptom, and carry a
+    concrete fix strategy. The Debug Agent cannot edit files — repair is the
+    Coding Agent's job, driven by this report.
+    """
+
+    root_cause: str
+    category: ErrorCategory
+    confidence: Literal["high", "medium", "low"]
+    why_root_cause: str = Field(
+        default="",
+        description="Why this is the origin of the failure, not a symptom",
+    )
+    evidence: list[str] = Field(default_factory=list)
+    affected_files: list[str] = Field(default_factory=list)
+    fix_strategy: FixStrategy
+
+
+class HealingIteration(BaseModel):
+    """Observability record for one DEBUG → FIX → REVALIDATE cycle."""
+
+    iteration: int
+    error_signature: str = ""
+    categories: list[str] = Field(default_factory=list)
+    root_cause: str = ""
+    confidence: str = ""
+    fix_task_id: str = ""
+    fix_status: str = ""
+    revalidation_passed: bool = False
+
+
 # ── Git ──────────────────────────────────────────────────────────────────────
 
 
@@ -120,7 +184,8 @@ class RunReport(BaseModel):
     validation: ValidationReport | None = None
     commit: CommitInfo | None = None
     journal_path: str = ""
-    fix_attempts: int = 0
+    healing: list[HealingIteration] = Field(default_factory=list)
+    iterations_used: int = 0
 
 
 # ── JSON extraction (LLM structured output) ─────────────────────────────────

@@ -1,13 +1,14 @@
-# agentd — Local Autonomous Software Engineering Runtime (Phase 1 MVP)
+# agentd — Local Autonomous Software Engineering Runtime
 
 `agentd` turns [local-ezai](../README.md) into a minimum viable **autonomous
 software engineer**: give it a change request and a git repository, and it
 plans the work, edits the code on an isolated branch, runs the project's
-tests/lint/build, retries on failures within a budget, and commits (and
-optionally pushes) the result — using **only the local models already served
-by the stack**.
+tests/lint/build, **debugs its own failures down to the root cause** and
+self-heals within a bounded iteration budget, then commits (and optionally
+pushes) the result — using **only the local models already served by the
+stack**.
 
-It is the Phase 1 implementation of the architecture defined in
+It implements Phases 1–2 of the architecture defined in
 [docs/TARGET_ARCHITECTURE.md](../docs/TARGET_ARCHITECTURE.md) /
 [docs/MIGRATION_PLAN.md](../docs/MIGRATION_PLAN.md), and it changes nothing
 about the existing 8-service chat stack (ADR-002: additive evolution).
@@ -18,15 +19,19 @@ ezai run "fix the off-by-one in pagination and add a regression test" \
 ```
 
 ```
-            ┌────────────────────── LangGraph state machine ─────────────────────┐
-request ──► │ plan ──► code (task loop) ──► validate ──► git ──► report          │
-            │            ▲                     │ fail (≤ max_fix_attempts)        │
-            │            └───── diagnose ◄─────┘                                  │
-            └──────────────── every step journaled (JSONL) ──────────────────────┘
-                 │                │                │
-             Planner           Coding          Validation + Git agents
-             (read-only     (fs/edit/grep/     (deterministic: your test,
-              repo tools)    exec tools)        lint, build commands + git)
+        ┌──────────────── LangGraph state machine (self-healing) ─────────────┐
+request │  PLAN ──► CODE (task loop) ──► VALIDATE ──passed──► GIT ──► SUCCESS │
+   ────►│                                   │ failed                          │
+        │                                   ▼                                 │
+        │            RCA engine ──────►  DEBUG   (root cause, not symptom)    │
+        │        (error categorization,    │                                  │
+        │         signatures, stalls)      ▼                                  │
+        │                                 FIX    (Coding Agent applies the    │
+        │                                   │     diagnosed strategy)         │
+        │                                   ▼                                 │
+        │                              REVALIDATE ──► loop, max 10 iterations │
+        │                                             + stall detection       │
+        └───────────────── every step journaled (JSONL) ──────────────────────┘
 ```
 
 ---
@@ -35,15 +40,16 @@ request ──► │ plan ──► code (task loop) ──► validate ──�
 
 1. [Quick start](#quick-start)
 2. [How a run works](#how-a-run-works)
-3. [The four agents](#the-four-agents)
-4. [CLI reference](#cli-reference)
-5. [Configuration](#configuration)
-6. [Tool layer & permissions](#tool-layer--permissions)
-7. [Safety model & limitations](#safety-model--limitations)
-8. [Observability: journal & report](#observability-journal--report)
-9. [Development & testing](#development--testing)
-10. [Extending](#extending)
-11. [Architecture mapping](#architecture-mapping)
+3. [The agents](#the-agents)
+4. [Self-healing: Debug Agent + RCA engine](#self-healing-debug-agent--rca-engine)
+5. [CLI reference](#cli-reference)
+6. [Configuration](#configuration)
+7. [Tool layer & permissions](#tool-layer--permissions)
+8. [Safety model & limitations](#safety-model--limitations)
+9. [Observability: journal & report](#observability-journal--report)
+10. [Development & testing](#development--testing)
+11. [Extending](#extending)
+12. [Architecture mapping](#architecture-mapping)
 
 ---
 
@@ -104,36 +110,81 @@ journaled, budgeted, clean outcome, not a hang.
 4. **validate** — the Validation Agent runs the project's configured
    `test` / `lint` / `build` commands (see [Configuration](#configuration));
    verdicts come from exit codes, never from model claims.
-5. **diagnose** — on failure, the failing evidence becomes a bounded `FIX-n`
-   task and the loop returns to **code** (at most
-   `limits.max_fix_attempts` times).
+5. **debug → fix → revalidate** (self-healing) — on failure, the RCA engine
+   categorizes every failing check, the Debug Agent identifies the root
+   cause and emits a structured `DebugReport` with a fix strategy, the
+   Coding Agent applies it as a `HEAL-n` task, and validation re-runs.
+   Bounded by `limits.max_heal_iterations` (default **10**) plus stall
+   detection (identical failure signature `stall_threshold` times in a row →
+   abort instead of patching symptoms).
 6. **git** — the Git Agent stages everything, commits with a deterministic
    (or optionally LLM-written) message, and pushes only if allowed.
 7. **report** — a `RunReport` (also saved as `report.json` next to the
-   journal) summarizes plan, tasks, validation, commit, and errors.
+   journal) summarizes plan, tasks, validation, healing iterations, commit,
+   and errors.
 
 Every step appends to the run journal (`~/.agentd/runs/<run-id>/journal.jsonl`).
 
-## The four agents
+## The agents
 
-| Agent | Responsibilities (per the Phase 1 requirements) | LLM use | Tools (allowlist) |
+| Agent | Responsibilities | LLM use | Tools (allowlist) |
 |---|---|---|---|
 | **Planner** | requirement analysis · task decomposition · execution-plan generation | yes (`planner` role) | `fs_ls`, `fs_read`, `fs_glob`, `code_grep` (all read-only) |
-| **Coding** | read repository · modify files · create files · generate tests | yes (`coder` role) | `fs_read`, `fs_write`, `fs_edit`, `fs_ls`, `fs_glob`, `code_grep`, `exec_run`, `git_status`, `git_diff` |
+| **Coding** | read repository · modify files · create files · generate tests · apply diagnosed fixes | yes (`coder` role) | `fs_read`, `fs_write`, `fs_edit`, `fs_ls`, `fs_glob`, `code_grep`, `exec_run`, `git_status`, `git_diff` |
 | **Validation** | test execution · build validation · lint validation | no (deterministic harness) | direct command execution with timeouts |
+| **Debug** (Phase 2) | reproduce failures · root-cause identification · structured debugging reports · fix-strategy generation | yes (`debugger` role) | read-only + reproduce: `fs_read`, `fs_ls`, `fs_glob`, `code_grep`, `exec_run`, `git_diff`, `git_status` |
 | **Git** | `git add` · `git commit` · `git push` | optional (commit message only, off by default) | `git_status`, `git_diff`, `git_add`, `git_commit`, `git_push` |
 
 Agents exchange **validated envelopes** (`Plan`, `TaskResult`,
-`ValidationReport`, `CommitInfo` — see `schemas.py`), never transcripts.
-Tool allowlists are enforced by the registry regardless of what a model
-asks for; the Planner physically cannot write, the Reviewer-style guarantees
-arrive with later phases.
+`ValidationReport`, `DebugReport`, `CommitInfo` — see `schemas.py`), never
+transcripts. Tool allowlists are enforced by the registry regardless of what
+a model asks for: the Planner physically cannot write — and neither can the
+Debug Agent, which is the point (see below).
+
+## Self-healing: Debug Agent + RCA engine
+
+When validation fails, the run does not blindly retry — it debugs itself:
+
+1. **RCA engine** (`rca.py`, fully deterministic): categorizes every failing
+   check into `syntax / import / assertion / exception / timeout /
+   environment / lint / build / unknown` via ordered regex rules, extracts
+   the exception, message, and `file:line` locations, computes a stable
+   **error signature**, and seeds a category-appropriate fix strategy.
+   Journaled as `RCA_REPORT`.
+2. **Debug Agent**: receives the failing evidence, the RCA output, and the
+   history of previous iterations (so it never repeats a failed strategy).
+   It reproduces the failure (`exec_run`), reads the code and diff, traces
+   the symptom back to its origin, and emits a **structured debugging
+   report** (`DebugReport`): root cause, category, confidence,
+   `why_root_cause` (cause-vs-symptom justification), evidence, and a
+   concrete `fix_strategy` (approach / steps / files / risk).
+3. **Fix**: the Coding Agent — not the Debug Agent — applies the strategy as
+   a `HEAL-n` task whose prompt carries the root cause and the hard rules
+   (never weaken or delete tests, never silence errors).
+4. **Revalidate**: the same validation harness re-runs; the outcome closes
+   the iteration's `HealingIteration` observability record.
+
+**Root cause, not symptom — enforced structurally, not just by prompt:**
+
+- the Debug Agent is **read-only**: it cannot "fix" anything by hacking the
+  workspace; its only output is a diagnosis that must justify itself
+  (`why_root_cause` is part of the schema);
+- **stall detection**: if the identical failure signature survives
+  `stall_threshold` (default 3) consecutive validations, the run aborts with
+  a "no progress" verdict — symptom-patching cannot loop;
+- **hard iteration cap**: at most `max_heal_iterations` (default **10**)
+  DEBUG→FIX→REVALIDATE cycles per run, enforced by the graph, not the model;
+- a **failed fix attempt does not abort the run** — the next debugging
+  iteration sees it in history and must explain what it missed.
 
 ## CLI reference
 
 ```
-ezai run  <request> --repo PATH [--push] [--in-place] [--config FILE] [--json] [--verbose]
+ezai run  <request> --repo PATH [--push] [--in-place] [--max-iterations N]
+                                [--config FILE] [--json] [--verbose]
 ezai plan <request> --repo PATH [--config FILE] [--verbose]
+ezai runs    [--config FILE] [--limit N]     # list recent runs + outcomes
+ezai journal <run-id> [--config FILE]        # pretty-print a run's journal
 ezai version
 ```
 
@@ -142,6 +193,7 @@ ezai version
 | `--repo PATH` | Target git repository (must have at least one commit) |
 | `--push` | Enable the T3 `git_push` action for this run (default: denied) |
 | `--in-place` | Edit the repo directly instead of a worktree (opt-in) |
+| `--max-iterations N` | Override `limits.max_heal_iterations` for this run |
 | `--config FILE` | YAML config file (see below) |
 | `--json` | Print the full `RunReport` as JSON |
 | `--verbose` | Debug logging |
@@ -171,11 +223,13 @@ llm:
     coder: qwen2.5-7b           # e.g. qwen2.5-coder-1.5b on the N97 profile
     validator: qwen2.5-7b
     git: qwen2.5-7b
+    debugger: qwen2.5-7b        # give this the strongest reasoning model you have
 
 limits:
   max_plan_tasks: 8
   max_agent_turns: 24           # per agent invocation
-  max_fix_attempts: 2           # validate-fail → fix cycles
+  max_heal_iterations: 10       # DEBUG→FIX→REVALIDATE cycles per run (hard cap)
+  stall_threshold: 3            # identical failure signature N× in a row → abort
   tool_output_max_chars: 8000
   recursion_limit: 150          # LangGraph safety net
 
@@ -257,11 +311,19 @@ Honest statement of the MVP's isolation level (ADR-014):
 ## Observability: journal & report
 
 - `~/.agentd/runs/<run-id>/journal.jsonl` — append-only event stream
-  (ADR-006): `RUN_SUBMITTED`, `STATE_ENTERED`, `AGENT_SPAWNED`, `LLM_CALL`,
-  `TOOL_CALLED`/`TOOL_RESULT` (with permission decisions), `CHECK_STARTED`/
-  `CHECK_FINISHED`, `PLAN_READY`, `TASK_RESULT`, `VALIDATION`,
-  `GIT_DELIVERY`, `RUN_TERMINAL`.
-- `~/.agentd/runs/<run-id>/report.json` — the final `RunReport`.
+  (ADR-006): `RUN_SUBMITTED`, `STATE_ENTERED` (states `PLAN`, `CODE`,
+  `VALIDATE`, `DEBUG`, `FIX`, `REVALIDATE`, `GIT`), `AGENT_SPAWNED`,
+  `LLM_CALL`, `TOOL_CALLED`/`TOOL_RESULT` (with permission decisions),
+  `CHECK_STARTED`/`CHECK_FINISHED`, `PLAN_READY`, `TASK_RESULT`,
+  `VALIDATION`, `RCA_REPORT` (categories, signature, stall flag),
+  `DEBUG_REPORT` (root cause, confidence, approach), `FIX_APPLIED`,
+  `HEAL_ITERATION` (per-cycle outcome), `GIT_DELIVERY`, `RUN_TERMINAL`.
+- `~/.agentd/runs/<run-id>/report.json` — the final `RunReport`, including
+  the full `healing` history (one record per DEBUG→FIX→REVALIDATE cycle:
+  signature, categories, root cause, confidence, fix status, revalidation
+  outcome) and `iterations_used`.
+- `ezai runs` lists recent runs with status/iterations/branch; `ezai journal
+  <run-id>` pretty-prints the event stream.
 - Console logging is operator-facing (`--verbose` for debug); the journal is
   the machine-readable truth.
 
@@ -285,13 +347,15 @@ Layout:
 agentd/
 ├── pyproject.toml            packaging, pytest, ruff
 ├── src/agentd/
-│   ├── cli.py                ezai entry point
+│   ├── cli.py                ezai entry point (run/plan/runs/journal)
 │   ├── config.py             layered configuration system
-│   ├── graph.py              LangGraph orchestration (state machine)
+│   ├── graph.py              LangGraph orchestration (self-healing machine)
+│   ├── rca.py                Root Cause Analysis engine (deterministic)
 │   ├── runner.py             run assembly (workspace+journal+agents+graph)
 │   ├── journal.py            append-only JSONL event journal
 │   ├── llm.py                OpenAI-compatible + scripted LLM clients
-│   ├── schemas.py            Plan / TaskResult / ValidationReport / CommitInfo
+│   ├── schemas.py            Plan / TaskResult / ValidationReport /
+│   │                         DebugReport / HealingIteration / CommitInfo
 │   ├── permissions.py        risk tiers + fail-closed policy
 │   ├── workspace.py          git worktree management + path containment
 │   ├── logging_setup.py
@@ -306,6 +370,7 @@ agentd/
 │       ├── planner.py        Planner Agent
 │       ├── coder.py          Coding Agent
 │       ├── validator.py      Validation Agent
+│       ├── debugger.py       Debug Agent (read-only root-cause analysis)
 │       ├── git_agent.py      Git Agent
 │       └── prompts/          versioned role prompts (*.md)
 └── tests/
@@ -328,15 +393,18 @@ agentd/
 
 ## Architecture mapping
 
-| This MVP | Target architecture | Phase |
+| This runtime | Target architecture | Remaining gap |
 |---|---|---|
-| `graph.py` (LangGraph) | Workflow Engine in agentd (WORKFLOW_DESIGN.md) | P3 completes gates/BLOCKED/resume |
-| `tools/` + `permissions.py` | toolgw with tiers T0–T4 | P2 adds MCP hub + per-run scoping |
-| `workspace.py` (worktrees) | sandboxd execution plane | P2 adds runner containers + egress policy |
-| `journal.py` (JSONL) | event-sourced runs (ADR-006) | P1 adds SQLite index + resume |
-| 4 agents | AGENT_DESIGN.md roster subset | P4 adds Reviewer/Debugger/Context/Curator |
-| `llm.py` roles | model role tiering (ADR-007) | P1 adds LiteLLM `swe-*` aliases per profile |
+| `graph.py` (LangGraph, self-healing loop) | Workflow Engine (WORKFLOW_DESIGN.md) — DEBUG/FIX/REVALIDATE realizes the inner APPLY/CHECK/DIAGNOSE loop | gates/BLOCKED/journal-replay resume |
+| `rca.py` + `agents/debugger.py` | Debugger agent + failure taxonomy (AGENT_DESIGN §3.6) | — (pulled forward, ADR-015) |
+| `tools/` + `permissions.py` | toolgw with tiers T0–T4 | MCP hub + per-run scoping |
+| `workspace.py` (worktrees) | sandboxd execution plane | runner containers + egress policy (ADR-014 interim) |
+| `journal.py` (JSONL) + `ezai runs/journal` | event-sourced runs (ADR-006) | SQLite index + resume |
+| 5 agents | AGENT_DESIGN.md roster subset | Reviewer / Context / Curator |
+| `llm.py` roles | model role tiering (ADR-007) | LiteLLM `swe-*` aliases per profile |
 
-Decisions introduced by this MVP: **ADR-013** (LangGraph as orchestration
-substrate) and **ADR-014** (interim isolation: worktrees + host subprocess
-execution until sandboxd) in [.agent/decisions.md](../.agent/decisions.md).
+Decisions introduced by this runtime: **ADR-013** (LangGraph as orchestration
+substrate), **ADR-014** (interim isolation: worktrees + host subprocess
+execution until sandboxd), and **ADR-015** (self-healing workflow: read-only
+Debug Agent + deterministic RCA engine + bounded iterations + stall
+detection) in [.agent/decisions.md](../.agent/decisions.md).

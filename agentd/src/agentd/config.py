@@ -54,6 +54,7 @@ class LLMConfig(BaseModel):
             "coder": "qwen2.5-7b",
             "validator": "qwen2.5-7b",
             "git": "qwen2.5-7b",
+            "debugger": "qwen2.5-7b",
         }
     )
 
@@ -66,7 +67,11 @@ class LimitsConfig(BaseModel):
 
     max_plan_tasks: int = 8
     max_agent_turns: int = 24
-    max_fix_attempts: int = 2
+    #: Hard cap on DEBUG → FIX → REVALIDATE self-healing cycles per run.
+    max_heal_iterations: int = 10
+    #: Abort early when the identical failure signature persists for this
+    #: many consecutive validations (symptom-patching detector, ADR-015).
+    stall_threshold: int = 3
     tool_output_max_chars: int = 8_000
     recursion_limit: int = 150
 

@@ -63,6 +63,18 @@ report and no EXECUTING phase writes.
 | **BLOCKED** | human | package full context (state, evidence, options) to interfaces; park runner (paused container, workspace intact) | human action or timeout |
 | **DONE / FAILED / REJECTED / CANCELLED** | terminal | final report event; runner torn down; workspace retained per retention policy (FAILED keeps everything for autopsy) | — |
 
+> **Implementation status (Phase 2, ADR-015).** The runtime in `agentd/`
+> realizes the PLANNING/EXECUTING/VERIFYING/FINALIZING core of this machine
+> as a LangGraph graph, with the inner DIAGNOSE loop implemented as an
+> explicit **self-healing sub-machine**:
+> `PLAN → CODE → VALIDATE → (failed) DEBUG → FIX → REVALIDATE → …`,
+> bounded by `max_heal_iterations` (default 10) and a signature-based
+> **stall detector** (`stall_threshold`, default 3) that aborts
+> symptom-patching loops. DEBUG combines a deterministic RCA engine (error
+> categorization per §7's taxonomy) with a read-only Debug Agent emitting
+> structured `DebugReport`s. PLAN_GATE, CLARIFYING, REVIEWING, BLOCKED, and
+> journal-replay resume remain future phases of this design.
+
 ## 3. Inner task loop (within EXECUTING, per plan task)
 
 ```mermaid

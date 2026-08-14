@@ -14,7 +14,9 @@ def test_defaults():
     assert cfg.llm.api_key == "sk-ai-service-2024"  # .env.example convention
     assert cfg.git.allow_push is False
     assert cfg.workspace.mode == "worktree"
-    assert cfg.limits.max_fix_attempts == 2
+    assert cfg.limits.max_heal_iterations == 10  # Phase 2 requirement
+    assert cfg.limits.stall_threshold == 3
+    assert "debugger" in cfg.llm.roles
 
 
 def test_litellm_master_key_fallback():
@@ -55,14 +57,14 @@ def test_env_config_pointer(tmp_path: Path):
 def test_repo_overrides_only_allowed_sections(tmp_path: Path):
     (tmp_path / ".agentd.yaml").write_text(
         "validation:\n  commands:\n    test: ['echo ok']\n"
-        "limits:\n  max_fix_attempts: 5\n"
+        "limits:\n  max_heal_iterations: 5\n"
         "git:\n  allow_push: true\n",  # must be ignored — repo cannot self-grant push
         encoding="utf-8",
     )
     base = AgentdConfig()
     merged = merge_repo_overrides(base, load_repo_overrides(tmp_path))
     assert merged.validation.commands == {"test": ["echo ok"]}
-    assert merged.limits.max_fix_attempts == 5
+    assert merged.limits.max_heal_iterations == 5
     assert merged.git.allow_push is False
 
 
