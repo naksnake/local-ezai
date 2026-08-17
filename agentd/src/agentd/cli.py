@@ -176,6 +176,19 @@ def _print_report(report: RunReport, as_json: bool = False) -> None:
                          f"{result.summary.splitlines()[0][:90]}")
     if report.validation:
         lines.append(f"validation: {report.validation.summary}")
+        browser = report.validation.browser
+        if browser and browser.enabled:
+            for wf in browser.workflows:
+                mark = "ok" if wf.passed else "FAILED"
+                extra = ""
+                if wf.console_errors:
+                    extra = f", {len(wf.console_errors)} console error(s)"
+                if wf.failed_step:
+                    extra += f", {wf.failed_step[:60]}"
+                lines.append(f"  browser {wf.name}: {mark} "
+                             f"({len(wf.steps)} steps{extra})")
+            if browser.error:
+                lines.append(f"  browser setup: FAILED — {browser.error[:100]}")
     if report.healing:
         lines.append(f"healing:    {report.iterations_used} debug/fix iteration(s)")
         for h in report.healing:

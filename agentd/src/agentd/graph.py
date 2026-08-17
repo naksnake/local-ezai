@@ -31,12 +31,14 @@ from typing import Any, Literal, TypedDict
 from langgraph.graph import END, START, StateGraph
 
 from agentd.agents import (
+    BrowserQAAgent,
     CoderAgent,
     DebuggerAgent,
     GitAgent,
     PlannerAgent,
     ValidationAgent,
 )
+from agentd.browser_qa import merge_validation, skipped_report
 from agentd.config import AgentdConfig
 from agentd.journal import Journal
 from agentd.logging_setup import get_logger
@@ -91,6 +93,7 @@ class Orchestrator:
         validator: ValidationAgent,
         git_agent: GitAgent,
         debugger: DebuggerAgent,
+        browser_qa: BrowserQAAgent | None = None,
         rca_engine: RcaEngine | None = None,
     ) -> None:
         self.config = config
@@ -101,6 +104,7 @@ class Orchestrator:
         self.validator = validator
         self.git_agent = git_agent
         self.debugger = debugger
+        self.browser_qa = browser_qa
         self.rca = rca_engine or RcaEngine(config.limits.stall_threshold)
         self.graph = self._build()
 
@@ -178,6 +182,18 @@ class Orchestrator:
         self.journal.append("STATE_ENTERED", state=state_name, iteration=iteration)
         try:
             report = self.validator.run(self.workspace)
+            # ── Browser QA stage (Phase 3): merged into the same verdict, so
+            # the git gate and the self-healing loop cover UI failures too.
+            if self.browser_qa is not None and self.config.browser_qa.enabled:
+                if report.passed:
+                    browser = self.browser_qa.run(self.workspace)
+                else:
+                    # Fail fast: don't launch the app on broken code. The
+                    # stage still counts as NOT succeeded (commits blocked).
+                    browser = skipped_report("command checks failed")
+                    self.journal.append("BROWSER_QA", passed=False, skipped=True,
+                                        summary=browser.summary)
+                report = merge_validation(report, browser)
         except Exception as exc:  # noqa: BLE001
             return {"error": f"validation crashed: {exc}", "status": "failed"}
         log.info("%s: %s", state_name.lower(), report.summary)

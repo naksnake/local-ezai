@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 
 from agentd.agents import (
+    BrowserQAAgent,
     CoderAgent,
     DebuggerAgent,
     GitAgent,
@@ -77,6 +78,7 @@ def execute_run(
         validator=ValidationAgent(config, llm, registry, journal),
         git_agent=GitAgent(config, llm, registry, journal),
         debugger=DebuggerAgent(config, llm, registry, journal),
+        browser_qa=BrowserQAAgent(config, llm, registry, journal),
         rca_engine=RcaEngine(config.limits.stall_threshold),
     )
     log.info("run %s starting in %s (branch %s)", run_id, workspace.root, workspace.branch)

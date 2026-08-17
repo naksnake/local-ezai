@@ -79,6 +79,13 @@ _STRATEGY_SEEDS: dict[str, str] = {
         "Fix the FIRST build/compile error; subsequent errors are usually "
         "cascades of the first."
     ),
+    "browser": (
+        "A real-browser workflow failed. Read the failed step, the console/"
+        "page errors, and the app log tail; fix the application code (route, "
+        "handler, template, script) so the workflow's expectations hold. "
+        "Never change the workflow spec to match broken behavior, and never "
+        "silence console errors — remove their cause."
+    ),
     "unknown": (
         "Reproduce the failing command, capture its full output, and identify "
         "the first point where behavior diverges from the expectation."
@@ -121,6 +128,10 @@ class RcaEngine:
 
     @staticmethod
     def _categorize(check_name: str, output: str, exit_code: int | None) -> str:
+        # Browser checks are categorized by pipeline stage, not by content —
+        # their output may quote arbitrary app tracebacks/console text.
+        if check_name.startswith("browser"):
+            return "browser"
         if exit_code is None:
             return "timeout"
         if exit_code == 127:

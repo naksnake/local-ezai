@@ -85,6 +85,50 @@ class ValidationConfig(BaseModel):
     command_timeout: float = 600.0
 
 
+class BrowserAppConfig(BaseModel):
+    """How to launch the application under test."""
+
+    #: Shell command started in the workspace root; the literal ``{port}``
+    #: is replaced by a free port. Empty → the app is assumed to already be
+    #: running at ``url`` (externally managed).
+    start: str = ""
+    #: Base URL of the app; ``{port}`` is replaced like in ``start``.
+    url: str = "http://127.0.0.1:{port}"
+    #: Path polled until it answers with HTTP < 400.
+    ready_path: str = "/"
+    startup_timeout: float = 30.0
+
+
+class BrowserWorkflowSpec(BaseModel):
+    """One declarative user workflow (e.g. login, create-customer)."""
+
+    name: str
+    steps: list[dict] = Field(min_length=1)
+
+
+class BrowserQAConfig(BaseModel):
+    """Browser QA stage of the validation pipeline (Phase 3, ADR-016).
+
+    Typically supplied per-repo via ``.agentd.yaml``. When enabled, git
+    commits are blocked until every workflow passes with zero console
+    errors.
+    """
+
+    enabled: bool = False
+    app: BrowserAppConfig = Field(default_factory=BrowserAppConfig)
+    workflows: list[BrowserWorkflowSpec] = Field(default_factory=list)
+    headless: bool = True
+    #: Per-action timeout in seconds (click/fill/expect_* retries).
+    step_timeout: float = 10.0
+    #: Explicit Chromium binary. Empty → Playwright's managed browser, with
+    #: an automatic fallback to $PLAYWRIGHT_BROWSERS_PATH/chromium when the
+    #: managed download is missing (pre-provisioned environments).
+    chromium_executable: str = ""
+    #: Regexes for console errors to IGNORE (e.g. a known-noisy 404 on an
+    #: optional asset). Default empty: ANY console error fails validation.
+    ignore_console_patterns: list[str] = Field(default_factory=list)
+
+
 class GitConfig(BaseModel):
     branch_prefix: str = "swe/"
     remote: str = "origin"
@@ -108,6 +152,7 @@ class AgentdConfig(BaseModel):
     llm: LLMConfig = Field(default_factory=LLMConfig)
     limits: LimitsConfig = Field(default_factory=LimitsConfig)
     validation: ValidationConfig = Field(default_factory=ValidationConfig)
+    browser_qa: BrowserQAConfig = Field(default_factory=BrowserQAConfig)
     git: GitConfig = Field(default_factory=GitConfig)
     workspace: WorkspaceConfig = Field(default_factory=WorkspaceConfig)
     runs_dir: Path = Field(default_factory=lambda: Path.home() / ".agentd" / "runs")
@@ -187,8 +232,13 @@ def load_repo_overrides(repo_path: Path) -> dict[str, Any]:
 
 
 def merge_repo_overrides(config: AgentdConfig, overrides: dict[str, Any]) -> AgentdConfig:
-    """Apply a repo's ``validation:`` / ``limits:`` sections onto the config."""
-    allowed = {k: v for k, v in overrides.items() if k in ("validation", "limits")}
+    """Apply a repo's ``validation:`` / ``limits:`` / ``browser_qa:``
+    sections onto the config (never ``git:`` — a repo cannot self-grant
+    push or change delivery behavior)."""
+    allowed = {
+        k: v for k, v in overrides.items()
+        if k in ("validation", "limits", "browser_qa")
+    }
     if not allowed:
         return config
     merged = _deep_merge(config.model_dump(mode="python"), allowed)

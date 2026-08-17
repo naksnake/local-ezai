@@ -69,12 +69,61 @@ class CheckResult(BaseModel):
     output_tail: str = ""
 
 
+# ── Browser QA (Phase 3) ─────────────────────────────────────────────────────
+
+
+class BrowserStepResult(BaseModel):
+    """One executed workflow step."""
+
+    index: int
+    action: str
+    detail: str = ""
+    ok: bool
+    error: str | None = None
+    duration_ms: int = 0
+
+
+class BrowserWorkflowResult(BaseModel):
+    """One executed user workflow (login, create-customer, ...).
+
+    ``passed`` requires BOTH: every step succeeded (including expect_*
+    verifications) AND zero console/page errors — per the Phase 3 rule that
+    validation fails on browser test failure, console errors, or workflow
+    verification failure.
+    """
+
+    name: str
+    passed: bool
+    steps_passed: bool
+    steps: list[BrowserStepResult] = Field(default_factory=list)
+    failed_step: str | None = None
+    console_errors: list[str] = Field(default_factory=list)
+    page_errors: list[str] = Field(default_factory=list)
+    screenshots: list[str] = Field(default_factory=list)
+    duration_ms: int = 0
+
+
+class BrowserQAReport(BaseModel):
+    """Browser QA Agent output — the validation report for the UI layer."""
+
+    enabled: bool
+    passed: bool
+    skipped: bool = False
+    workflows: list[BrowserWorkflowResult] = Field(default_factory=list)
+    app_url: str = ""
+    app_log_tail: str = ""
+    error: str | None = None  # setup/launch failure (browser missing, app dead)
+    summary: str = ""
+
+
 class ValidationReport(BaseModel):
     """Validation Agent output — `Verification v1`."""
 
     passed: bool
     checks: list[CheckResult] = Field(default_factory=list)
     summary: str = ""
+    #: Browser QA stage outcome (None when the stage never ran/not configured).
+    browser: BrowserQAReport | None = None
 
     def failure_evidence(self, max_chars: int = 4000) -> str:
         """Concise failing-check evidence for a fix task / the report."""
@@ -94,7 +143,7 @@ class ValidationReport(BaseModel):
 
 ErrorCategory = Literal[
     "syntax", "import", "assertion", "exception", "timeout",
-    "environment", "lint", "build", "unknown",
+    "environment", "lint", "build", "browser", "unknown",
 ]
 
 

@@ -29,6 +29,16 @@ class GitAgent(BaseAgent):
         validation: ValidationReport,
         run_id: str,
     ) -> CommitInfo:
+        # Hard gate (Phase 3, defense-in-depth beyond the graph route):
+        # no git action of any kind until validation — including the Browser
+        # QA stage when configured — has succeeded.
+        if not validation.passed:
+            self.journal.append("COMMIT_BLOCKED", reason=validation.summary)
+            raise RuntimeError(
+                "commit blocked: validation has not passed "
+                f"({validation.summary}) — git actions require a fully green "
+                "validation, including browser QA when configured"
+            )
         status = self.registry.execute(
             "git_status", {}, workspace, agent=self.agent_name, allowlist=self.tool_names
         )

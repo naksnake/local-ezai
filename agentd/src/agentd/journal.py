@@ -44,6 +44,10 @@ class Journal:
                 fh.write(json.dumps(record, ensure_ascii=False) + "\n")
             return self._seq
 
+    #: False for journals with no real directory (NullJournal) — consumers
+    #: that write artifacts next to the journal must check this first.
+    is_persistent: bool = True
+
     def read(self) -> list[dict[str, Any]]:
         """Read all events back (for reports, tests, and future resume)."""
         if not self.path.exists():
@@ -59,6 +63,8 @@ class Journal:
 
 class NullJournal(Journal):
     """Journal that records nothing (unit tests of components)."""
+
+    is_persistent = False
 
     def __init__(self) -> None:  # noqa: D107 — intentionally no directory
         self._seq = 0

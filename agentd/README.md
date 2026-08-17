@@ -8,7 +8,7 @@ self-heals within a bounded iteration budget, then commits (and optionally
 pushes) the result — using **only the local models already served by the
 stack**.
 
-It implements Phases 1–2 of the architecture defined in
+It implements Phases 1–3 of the architecture defined in
 [docs/TARGET_ARCHITECTURE.md](../docs/TARGET_ARCHITECTURE.md) /
 [docs/MIGRATION_PLAN.md](../docs/MIGRATION_PLAN.md), and it changes nothing
 about the existing 8-service chat stack (ADR-002: additive evolution).
@@ -42,7 +42,8 @@ request │  PLAN ──► CODE (task loop) ──► VALIDATE ──passed─�
 2. [How a run works](#how-a-run-works)
 3. [The agents](#the-agents)
 4. [Self-healing: Debug Agent + RCA engine](#self-healing-debug-agent--rca-engine)
-5. [CLI reference](#cli-reference)
+5. [Browser QA: real-browser validation](#browser-qa-real-browser-validation)
+6. [CLI reference](#cli-reference)
 6. [Configuration](#configuration)
 7. [Tool layer & permissions](#tool-layer--permissions)
 8. [Safety model & limitations](#safety-model--limitations)
@@ -133,7 +134,8 @@ Every step appends to the run journal (`~/.agentd/runs/<run-id>/journal.jsonl`).
 | **Coding** | read repository · modify files · create files · generate tests · apply diagnosed fixes | yes (`coder` role) | `fs_read`, `fs_write`, `fs_edit`, `fs_ls`, `fs_glob`, `code_grep`, `exec_run`, `git_status`, `git_diff` |
 | **Validation** | test execution · build validation · lint validation | no (deterministic harness) | direct command execution with timeouts |
 | **Debug** (Phase 2) | reproduce failures · root-cause identification · structured debugging reports · fix-strategy generation | yes (`debugger` role) | read-only + reproduce: `fs_read`, `fs_ls`, `fs_glob`, `code_grep`, `exec_run`, `git_diff`, `git_status` |
-| **Git** | `git add` · `git commit` · `git push` | optional (commit message only, off by default) | `git_status`, `git_diff`, `git_add`, `git_commit`, `git_push` |
+| **Browser QA** (Phase 3) | launch application · run real user workflows · validate pages · detect console errors · capture screenshots · generate validation reports | no (deterministic Playwright harness) | app subprocess + headless Chromium |
+| **Git** | `git add` · `git commit` · `git push` — **blocked until validation incl. Browser QA succeeds** | optional (commit message only, off by default) | `git_status`, `git_diff`, `git_add`, `git_commit`, `git_push` |
 
 Agents exchange **validated envelopes** (`Plan`, `TaskResult`,
 `ValidationReport`, `DebugReport`, `CommitInfo` — see `schemas.py`), never
@@ -176,6 +178,57 @@ When validation fails, the run does not blindly retry — it debugs itself:
   DEBUG→FIX→REVALIDATE cycles per run, enforced by the graph, not the model;
 - a **failed fix attempt does not abort the run** — the next debugging
   iteration sees it in history and must explain what it missed.
+
+## Browser QA: real-browser validation
+
+When a repo declares `browser_qa:` in its `.agentd.yaml`, every validation
+pass (and every REVALIDATE of the self-healing loop) additionally:
+
+1. **launches the application** from the workspace on a free port
+   (`{port}` substitution, HTTP readiness polling, log capture, clean
+   process-group teardown — a fresh launch per validation, so revalidation
+   always tests the *edited* code);
+2. **runs the declared user workflows** in a real headless Chromium via
+   Playwright — e.g. login, create customer, update customer, delete
+   customer (see [examples/browser-qa.customer-crud.yaml](examples/browser-qa.customer-crud.yaml)
+   for a complete, tested configuration);
+3. **validates pages** with auto-retrying `expect_*` assertions;
+4. **detects console errors** (`console.error` and uncaught page errors) on
+   every page of every workflow;
+5. **captures screenshots** — on explicit `screenshot` steps and
+   automatically on failure — into `~/.agentd/runs/<run-id>/browser-qa/`;
+6. **generates a validation report**: per-workflow step results, console
+   errors, screenshots, and app log tail, merged into the run's
+   ValidationReport and persisted in `report.json`.
+
+**Failure rules (all three enforced):** validation is FAILED when a browser
+step fails, when workflow verification (`expect_*`) fails, **or when any
+console error exists** — even if every step succeeded. A configured-but-
+unusable stage (Playwright missing, app won't start, invalid workflow spec)
+is also a failure, never a silent skip.
+
+**Git commits are blocked until Browser QA succeeds** — twice over: the
+workflow route only reaches the git state on a fully green validation, and
+the Git Agent itself refuses (journaling `COMMIT_BLOCKED`) if handed a
+failing validation. Browser failures feed the same RCA → DEBUG → FIX →
+REVALIDATE self-healing loop as any other check (category `browser`), so
+the runtime can fix a UI bug it discovered in the browser and only then
+commit.
+
+Step vocabulary: `goto`, `click`, `fill`, `select`, `expect_text`,
+`expect_no_text`, `expect_visible`, `expect_url`, `expect_title`,
+`wait_for`, `screenshot`.
+
+Setup: `pip install -e './agentd[browser]'` and `playwright install
+chromium` (or `make swe-install && make swe-browsers`). In environments
+with a pre-provisioned browser, the harness falls back to
+`$PLAYWRIGHT_BROWSERS_PATH/chromium` automatically; pin one explicitly with
+`browser_qa.chromium_executable`. `ignore_console_patterns` (regex list)
+can whitelist known-noisy console errors — the default is strict.
+
+Fail-fast ordering: command checks run first; the app is only launched on
+code that passes them (the skipped stage still counts as *not succeeded*,
+so commits stay blocked).
 
 ## CLI reference
 
@@ -238,6 +291,19 @@ validation:
   autodetect: true              # detect pytest/ruff for Python repos
   command_timeout: 600
 
+browser_qa:                     # usually set per-repo in .agentd.yaml
+  enabled: false
+  app:
+    start: "python3 app.py"     # {port} substituted; $PORT exported
+    url: "http://127.0.0.1:{port}"
+    ready_path: "/"
+    startup_timeout: 30
+  workflows: []                 # see examples/browser-qa.customer-crud.yaml
+  headless: true
+  step_timeout: 10
+  chromium_executable: ""       # empty → managed browser w/ env fallback
+  ignore_console_patterns: []   # strict by default: any console error fails
+
 git:
   branch_prefix: "swe/"
   remote: origin
@@ -255,8 +321,9 @@ log_level: INFO
 ```
 
 **Per-repository overrides** — a target repo may carry `.agentd.yaml` at its
-root; its `validation:` and `limits:` sections override the global config
-for runs against that repo:
+root; its `validation:`, `limits:`, and `browser_qa:` sections override the
+global config for runs against that repo (never `git:` — a repo cannot
+self-grant push):
 
 ```yaml
 # myapp/.agentd.yaml
@@ -317,7 +384,10 @@ Honest statement of the MVP's isolation level (ADR-014):
   `CHECK_STARTED`/`CHECK_FINISHED`, `PLAN_READY`, `TASK_RESULT`,
   `VALIDATION`, `RCA_REPORT` (categories, signature, stall flag),
   `DEBUG_REPORT` (root cause, confidence, approach), `FIX_APPLIED`,
-  `HEAL_ITERATION` (per-cycle outcome), `GIT_DELIVERY`, `RUN_TERMINAL`.
+  `HEAL_ITERATION` (per-cycle outcome), `BROWSER_QA_STARTED`,
+  `BROWSER_WORKFLOW` (per-workflow verdict, console-error count,
+  screenshots), `BROWSER_QA`, `COMMIT_BLOCKED`, `GIT_DELIVERY`,
+  `RUN_TERMINAL`.
 - `~/.agentd/runs/<run-id>/report.json` — the final `RunReport`, including
   the full `healing` history (one record per DEBUG→FIX→REVALIDATE cycle:
   signature, categories, root cause, confidence, fix status, revalidation
@@ -350,6 +420,7 @@ agentd/
 │   ├── cli.py                ezai entry point (run/plan/runs/journal)
 │   ├── config.py             layered configuration system
 │   ├── graph.py              LangGraph orchestration (self-healing machine)
+│   ├── browser_qa.py         Browser QA engine (Playwright harness + app launcher)
 │   ├── rca.py                Root Cause Analysis engine (deterministic)
 │   ├── runner.py             run assembly (workspace+journal+agents+graph)
 │   ├── journal.py            append-only JSONL event journal
@@ -371,7 +442,8 @@ agentd/
 │       ├── coder.py          Coding Agent
 │       ├── validator.py      Validation Agent
 │       ├── debugger.py       Debug Agent (read-only root-cause analysis)
-│       ├── git_agent.py      Git Agent
+│       ├── browser_qa.py     Browser QA Agent (deterministic harness)
+│       ├── git_agent.py      Git Agent (commit gate)
 │       └── prompts/          versioned role prompts (*.md)
 └── tests/
     ├── unit/                 per-module tests
@@ -397,14 +469,17 @@ agentd/
 |---|---|---|
 | `graph.py` (LangGraph, self-healing loop) | Workflow Engine (WORKFLOW_DESIGN.md) — DEBUG/FIX/REVALIDATE realizes the inner APPLY/CHECK/DIAGNOSE loop | gates/BLOCKED/journal-replay resume |
 | `rca.py` + `agents/debugger.py` | Debugger agent + failure taxonomy (AGENT_DESIGN §3.6) | — (pulled forward, ADR-015) |
+| `browser_qa.py` + `agents/browser_qa.py` | UI-level verification in the VERIFYING state | — (pulled forward, ADR-016) |
 | `tools/` + `permissions.py` | toolgw with tiers T0–T4 | MCP hub + per-run scoping |
 | `workspace.py` (worktrees) | sandboxd execution plane | runner containers + egress policy (ADR-014 interim) |
 | `journal.py` (JSONL) + `ezai runs/journal` | event-sourced runs (ADR-006) | SQLite index + resume |
-| 5 agents | AGENT_DESIGN.md roster subset | Reviewer / Context / Curator |
+| 6 agents | AGENT_DESIGN.md roster subset | Reviewer / Context / Curator |
 | `llm.py` roles | model role tiering (ADR-007) | LiteLLM `swe-*` aliases per profile |
 
 Decisions introduced by this runtime: **ADR-013** (LangGraph as orchestration
 substrate), **ADR-014** (interim isolation: worktrees + host subprocess
-execution until sandboxd), and **ADR-015** (self-healing workflow: read-only
+execution until sandboxd), **ADR-015** (self-healing workflow: read-only
 Debug Agent + deterministic RCA engine + bounded iterations + stall
-detection) in [.agent/decisions.md](../.agent/decisions.md).
+detection), and **ADR-016** (Browser QA: declarative Playwright harness,
+console-error strictness, commit gate) in
+[.agent/decisions.md](../.agent/decisions.md).

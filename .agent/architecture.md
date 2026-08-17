@@ -41,16 +41,24 @@ openwebui:3000 · litellm:4000 (auto-RAG hook `config/litellm_custom_callbacks.p
 Profiles: GPU (base) / cpu / n97 / n97-igpu via compose overrides with
 `!override` on `deploy`. Config via `.env` (`.env.example` = schema).
 
-## Phases 1–2 — shipped (agentd/)
+## Phases 1–3 — shipped (agentd/)
 
 The `agentd/` sub-project implements the first slices of the target
 architecture (see [agentd/README.md](../agentd/README.md)):
 
-- **5 agents**: Planner (read-only tools → validated `Plan`), Coder
+- **6 agents**: Planner (read-only tools → validated `Plan`), Coder
   (fs/grep/exec tools, one plan task per invocation), Validator
   (deterministic test/lint/build harness), **Debugger** (read-only
-  root-cause analysis → structured `DebugReport`, ADR-015), Git
-  (add/commit, T3-gated push).
+  root-cause analysis → structured `DebugReport`, ADR-015), **Browser QA**
+  (deterministic Playwright harness: app launch, declarative user
+  workflows, console-error detection, screenshots — ADR-016), Git
+  (add/commit, T3-gated push, **refuses failing validation** —
+  `COMMIT_BLOCKED`).
+- **Browser QA pipeline rules** (ADR-016): validation fails on step
+  failure, failed verification, or ANY console error; stage skipped-but-
+  not-succeeded when command checks fail; commits gated until green;
+  browser failures self-heal via the same DEBUG→FIX→REVALIDATE loop
+  (RCA category `browser`); app relaunched per revalidation.
 - **Self-healing LangGraph machine** (ADR-013/ADR-015): PLAN → CODE↺ →
   VALIDATE → (fail) DEBUG → FIX → REVALIDATE loop — max
   `limits.max_heal_iterations` (10) cycles + stall detection

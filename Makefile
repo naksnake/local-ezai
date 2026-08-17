@@ -253,15 +253,19 @@ clean: ## Remove all containers, images, and volumes (WARNING: deletes data)
 # ═══════════════════════════════════════════════════════════════════════════
 # Autonomous SWE runtime (agentd) — additive targets, see agentd/README.md
 # ═══════════════════════════════════════════════════════════════════════════
-.PHONY: swe-install swe-test swe-lint swe-run swe-plan
+.PHONY: swe-install swe-browsers swe-test swe-lint swe-run swe-plan
 
-swe-install: ## Install the agentd runtime into ./.venv-agentd (editable, with dev tools)
+swe-install: ## Install the agentd runtime into ./.venv-agentd (editable, dev + browser extras)
 	python3 -m venv .venv-agentd
 	.venv-agentd/bin/pip install --upgrade pip -q
-	.venv-agentd/bin/pip install -e './agentd[dev]'
+	.venv-agentd/bin/pip install -e './agentd[dev,browser]'
 	@echo ""
 	@echo "  agentd installed. Try:  .venv-agentd/bin/ezai run \"...\" --repo /path/to/repo"
+	@echo "  For Browser QA, also run:  make swe-browsers"
 	@echo ""
+
+swe-browsers: ## Download the Playwright Chromium used by Browser QA
+	.venv-agentd/bin/playwright install chromium
 
 swe-test: ## Run the agentd test suite (offline — no models needed)
 	cd agentd && ../.venv-agentd/bin/python -m pytest tests

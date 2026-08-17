@@ -8,7 +8,7 @@
 Index: [001](#adr-001) [002](#adr-002) [003](#adr-003) [004](#adr-004)
 [005](#adr-005) [006](#adr-006) [007](#adr-007) [008](#adr-008)
 [009](#adr-009) [010](#adr-010) [011](#adr-011) [012](#adr-012)
-[013](#adr-013) [014](#adr-014) [015](#adr-015)
+[013](#adr-013) [014](#adr-014) [015](#adr-015) [016](#adr-016)
 
 ---
 
@@ -238,3 +238,40 @@ auditable per iteration; the diagnose/repair separation costs one extra LLM
 call per iteration, accepted for the audit trail. The failure taxonomy in
 WORKFLOW_DESIGN §7 gains a deterministic implementation that later phases
 (Reviewer, BLOCKED-state routing) can reuse.
+
+## ADR-016 — Browser QA: declarative Playwright harness in the validation pipeline; console errors fail; commits gated
+**Date:** 2026-08-14 · **Status:** Accepted (pulls UI-level verification
+forward into the VERIFYING stage of WORKFLOW_DESIGN)
+**Context:** Unit/lint/build checks cannot see a broken login page or a
+runtime console error. The Phase 3 mandate: launch the real application,
+drive real user workflows (login, customer CRUD) in a real browser, and
+block delivery until they pass. An LLM-driven browser agent was considered
+and rejected for the validation path: verification must be deterministic
+and cheap to re-run every REVALIDATE iteration (ADR-010's philosophy —
+verdicts come from exit codes and assertions, never model judgment).
+Selenium was rejected in favor of Playwright (auto-waiting assertions,
+console/pageerror hooks, headless reliability).
+**Decision:** Browser QA is a **deterministic harness agent** executing
+**declarative workflow specs** from the target repo's ``.agentd.yaml``
+(step vocabulary: goto/click/fill/select/expect_text/expect_no_text/
+expect_visible/expect_url/expect_title/wait_for/screenshot). The engine
+launches the app per validation pass (free port, readiness poll, log
+capture, process-group teardown), runs every workflow in headless Chromium,
+records console.error + uncaught page errors on every page, and captures
+screenshots (explicit steps + automatically on failure). **Failure rules:**
+a workflow fails on step failure, failed verification, or ANY console error
+(``ignore_console_patterns`` is an explicit, per-repo escape hatch; default
+strict). A configured-but-unusable stage (Playwright missing, app dead,
+invalid spec) is a failure, never a skip. Browser results merge into the
+ValidationReport as ``browser[<workflow>]`` checks, so the RCA engine
+(category ``browser``) and the DEBUG→FIX→REVALIDATE loop self-heal UI bugs;
+each revalidation relaunches the app against the edited code. **Commits are
+gated twice:** the graph route reaches GIT only on green validation, and
+the Git Agent independently refuses a failing ValidationReport (journaling
+``COMMIT_BLOCKED``). Command checks run first; the app is only launched on
+code that passes them, and the skipped stage still counts as not-succeeded.
+**Consequences:** UI regressions block delivery mechanically; specs live
+with the repo and are refactor-stable evidence for the Debug Agent;
+per-validation app launches cost seconds (accepted for hermetic
+revalidation); dynamic exploratory browser testing (an LLM probing the app)
+remains future work outside the validation gate.

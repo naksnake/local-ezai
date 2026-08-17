@@ -19,8 +19,10 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install
-        run: pip install -e './agentd[dev]'
+        run: pip install -e './agentd[dev,browser]'
+      - name: Install Chromium for Browser QA tests
+        run: python -m playwright install --with-deps chromium
       - name: Lint
         run: cd agentd && ruff check src tests
-      - name: Test (offline — scripted LLM, real git/subprocesses)
+      - name: Test (offline — scripted LLM, real git/subprocesses/Chromium)
         run: cd agentd && python -m pytest tests -v
