@@ -83,12 +83,20 @@ class GitAdd(Tool):
         },
     }
 
+    #: The runtime's own project memory must never ride along in a run's
+    #: commit (relevant in in-place mode, where .agent/ sits inside the
+    #: workspace; in worktree mode memory lives in the origin repo anyway).
+    MEMORY_EXCLUDES = (
+        ":(exclude).agent/memory.db*",
+        ":(exclude).agent/lessons_learned.json",
+    )
+
     def run(self, workspace: Workspace, paths: list[str] | None = None) -> ToolResult:
         if paths:
             for p in paths:
                 workspace.resolve(p)  # containment check
             return git_run(workspace, "add", "--", *paths)
-        return git_run(workspace, "add", "-A")
+        return git_run(workspace, "add", "-A", "--", ".", *self.MEMORY_EXCLUDES)
 
 
 class GitCommit(Tool):

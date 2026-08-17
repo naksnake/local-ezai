@@ -26,6 +26,7 @@ class PlannerAgent(BaseAgent):
             f"Maximum number of tasks: {self.config.limits.max_plan_tasks}\n\n"
             f"Change request:\n{request}"
         )
+        user += self._memory_block(request)
         plan: Plan = self.ask_for_json(system, user, workspace, Plan.model_validate)
 
         max_tasks = self.config.limits.max_plan_tasks
@@ -42,3 +43,21 @@ class PlannerAgent(BaseAgent):
             risks=plan.risks,
         )
         return plan
+
+    def _memory_block(self, request: str) -> str:
+        """Project memory injected into planning (Phase 4, ADR-017)."""
+        if self.memory is None:
+            return ""
+        from agentd.memory import render_planner_context
+
+        block = render_planner_context(
+            self.memory, request, self.config.memory.max_context_items
+        )
+        if not block:
+            return ""
+        self.journal.append("MEMORY_INJECTED", agent=self.agent_name,
+                            chars=len(block))
+        return (
+            "\n\nProject memory (persisted knowledge from previous runs — "
+            "respect the rules and learn from the lessons):\n" + block
+        )

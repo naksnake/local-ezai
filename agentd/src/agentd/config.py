@@ -55,6 +55,7 @@ class LLMConfig(BaseModel):
             "validator": "qwen2.5-7b",
             "git": "qwen2.5-7b",
             "debugger": "qwen2.5-7b",
+            "memory": "qwen2.5-7b",
         }
     )
 
@@ -129,6 +130,21 @@ class BrowserQAConfig(BaseModel):
     ignore_console_patterns: list[str] = Field(default_factory=list)
 
 
+class MemoryConfig(BaseModel):
+    """Project memory (Phase 4, ADR-017) — persisted in the target repo's
+    ``.agent/`` directory (``memory.db`` + ``lessons_learned.json``)."""
+
+    enabled: bool = True
+    #: Directory inside the ORIGIN repository (not the worktree).
+    dir: str = ".agent"
+    #: Max records per section injected into planner/debugger prompts.
+    max_context_items: int = 5
+    #: After a completed run, ask the LLM to distill up to 3 durable
+    #: observations (coding styles / project rules / architecture decisions).
+    #: Off by default: recording from run outcomes is fully deterministic.
+    distill: bool = False
+
+
 class GitConfig(BaseModel):
     branch_prefix: str = "swe/"
     remote: str = "origin"
@@ -153,6 +169,7 @@ class AgentdConfig(BaseModel):
     limits: LimitsConfig = Field(default_factory=LimitsConfig)
     validation: ValidationConfig = Field(default_factory=ValidationConfig)
     browser_qa: BrowserQAConfig = Field(default_factory=BrowserQAConfig)
+    memory: MemoryConfig = Field(default_factory=MemoryConfig)
     git: GitConfig = Field(default_factory=GitConfig)
     workspace: WorkspaceConfig = Field(default_factory=WorkspaceConfig)
     runs_dir: Path = Field(default_factory=lambda: Path.home() / ".agentd" / "runs")

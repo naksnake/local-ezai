@@ -44,11 +44,13 @@ class BaseAgent:
         llm: LLMClient,
         registry: ToolRegistry,
         journal: Journal,
+        memory=None,  # MemoryStore | None — project memory (Phase 4)
     ) -> None:
         self.config = config
         self.llm = llm
         self.registry = registry
         self.journal = journal
+        self.memory = memory
         self.log = get_logger(f"agents.{self.agent_name}")
 
     # ── The loop ────────────────────────────────────────────────────────────

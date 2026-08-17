@@ -45,6 +45,7 @@ class DebuggerAgent(BaseAgent):
     ) -> DebugReport:
         system = load_prompt("debugger")
         user = self._render_case(goal, report, analyses, history)
+        user += self._memory_block(analyses)
         debug_report: DebugReport = self.ask_for_json(
             system, user, workspace, DebugReport.model_validate
         )
@@ -84,3 +85,22 @@ class DebuggerAgent(BaseAgent):
             "Investigate with your tools, then reply with the JSON debugging "
             "report."
         )
+
+    def _memory_block(self, analyses: list[ErrorAnalysis]) -> str:
+        """Persistent lessons from previous RUNS for this failure (Phase 4):
+        approaches that already failed must not be repeated."""
+        if self.memory is None:
+            return ""
+        from agentd.memory import render_debugger_context
+
+        block = render_debugger_context(
+            self.memory,
+            signatures=[a.signature for a in analyses],
+            categories=sorted({a.category for a in analyses}),
+            limit_each=self.config.memory.max_context_items,
+        )
+        if not block:
+            return ""
+        self.journal.append("MEMORY_INJECTED", agent=self.agent_name,
+                            chars=len(block))
+        return "\n\nProject memory from previous runs:\n" + block

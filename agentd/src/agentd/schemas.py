@@ -198,6 +198,7 @@ class HealingIteration(BaseModel):
     categories: list[str] = Field(default_factory=list)
     root_cause: str = ""
     confidence: str = ""
+    approach: str = ""
     fix_task_id: str = ""
     fix_status: str = ""
     revalidation_passed: bool = False

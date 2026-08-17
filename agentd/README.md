@@ -8,7 +8,7 @@ self-heals within a bounded iteration budget, then commits (and optionally
 pushes) the result — using **only the local models already served by the
 stack**.
 
-It implements Phases 1–3 of the architecture defined in
+It implements Phases 1–4 of the architecture defined in
 [docs/TARGET_ARCHITECTURE.md](../docs/TARGET_ARCHITECTURE.md) /
 [docs/MIGRATION_PLAN.md](../docs/MIGRATION_PLAN.md), and it changes nothing
 about the existing 8-service chat stack (ADR-002: additive evolution).
@@ -43,7 +43,8 @@ request │  PLAN ──► CODE (task loop) ──► VALIDATE ──passed─�
 3. [The agents](#the-agents)
 4. [Self-healing: Debug Agent + RCA engine](#self-healing-debug-agent--rca-engine)
 5. [Browser QA: real-browser validation](#browser-qa-real-browser-validation)
-6. [CLI reference](#cli-reference)
+6. [Project memory: the Memory Agent](#project-memory-the-memory-agent)
+7. [CLI reference](#cli-reference)
 6. [Configuration](#configuration)
 7. [Tool layer & permissions](#tool-layer--permissions)
 8. [Safety model & limitations](#safety-model--limitations)
@@ -135,6 +136,7 @@ Every step appends to the run journal (`~/.agentd/runs/<run-id>/journal.jsonl`).
 | **Validation** | test execution · build validation · lint validation | no (deterministic harness) | direct command execution with timeouts |
 | **Debug** (Phase 2) | reproduce failures · root-cause identification · structured debugging reports · fix-strategy generation | yes (`debugger` role) | read-only + reproduce: `fs_read`, `fs_ls`, `fs_glob`, `code_grep`, `exec_run`, `git_diff`, `git_status` |
 | **Browser QA** (Phase 3) | launch application · run real user workflows · validate pages · detect console errors · capture screenshots · generate validation reports | no (deterministic Playwright harness) | app subprocess + headless Chromium |
+| **Memory** (Phase 4) | persist architecture decisions, coding styles, project rules, failed/successful fixes, implementation history · learn from debugging attempts, validation failures, successful repairs | optional (distillation only, off by default) | SQLite store in the repo's `.agent/` |
 | **Git** | `git add` · `git commit` · `git push` — **blocked until validation incl. Browser QA succeeds** | optional (commit message only, off by default) | `git_status`, `git_diff`, `git_add`, `git_commit`, `git_push` |
 
 Agents exchange **validated envelopes** (`Plan`, `TaskResult`,
@@ -230,6 +232,56 @@ Fail-fast ordering: command checks run first; the app is only launched on
 code that passes them (the skipped stage still counts as *not succeeded*,
 so commits stay blocked).
 
+## Project memory: the Memory Agent
+
+Every repository the runtime works on accumulates **persistent memory** in
+its own `.agent/` directory:
+
+- **`.agent/memory.db`** — SQLite store, the single source of truth
+- **`.agent/lessons_learned.json`** — human-readable export, regenerated
+  after every recorded run
+
+Six kinds of knowledge are persisted: `architecture_decision`,
+`coding_style`, `project_rule`, `failed_fix`, `successful_fix`,
+`implementation` (history).
+
+**What it learns, automatically and deterministically, from every run:**
+
+- every **debugging attempt** — a DEBUG→FIX→REVALIDATE iteration whose
+  revalidation still failed becomes a `failed_fix` memory carrying the root
+  cause, the attempted approach, the error signature, and the category;
+- every **successful repair** becomes a `successful_fix` memory;
+- every run (completed or failed, including **validation-failure** aborts)
+  leaves an `implementation` history record: goal, status, files changed,
+  iterations, commit, final error.
+
+Curated knowledge is added explicitly (`ezai remember`, below) or — when
+`memory.distill: true` — distilled by the LLM from completed runs (up to 3
+durable observations, restricted to the curated kinds).
+
+**How memory feeds back into the workflows:**
+
+- **Planning**: the Planner's prompt carries project rules, coding styles,
+  architecture decisions, lessons relevant to the request (keyword search),
+  and recent implementation history (journaled as `MEMORY_INJECTED`).
+- **Debugging**: the Debug Agent is shown fix approaches that **already
+  failed for this exact error signature in previous runs** (with the
+  explicit instruction not to repeat them and to explain what they missed)
+  and repairs that previously succeeded on this kind of failure.
+- **Repeat-mistake detection** (deterministic): if a new diagnosis proposes
+  an approach effectively identical (normalized word-set similarity) to one
+  that already failed for the same signature, the runtime journals
+  `MEMORY_REPEAT_WARNING` and stamps a warning into the fix task.
+
+**Placement and hygiene:** memory lives in the **origin repository's**
+`.agent/` — outside run worktrees — so it persists across runs and branches
+and can never ride along in a run's diff; in in-place mode the Git Agent
+additionally excludes `memory.db*` / `lessons_learned.json` from staging.
+The store is lazily created (reading leaves zero traces; `ezai plan` stays
+traceless). Recommended: add `.agent/memory.db*` to the repo's `.gitignore`;
+`lessons_learned.json` may be committed deliberately if the team wants the
+knowledge in review. Disable entirely with `memory.enabled: false`.
+
 ## CLI reference
 
 ```
@@ -238,6 +290,8 @@ ezai run  <request> --repo PATH [--push] [--in-place] [--max-iterations N]
 ezai plan <request> --repo PATH [--config FILE] [--verbose]
 ezai runs    [--config FILE] [--limit N]     # list recent runs + outcomes
 ezai journal <run-id> [--config FILE]        # pretty-print a run's journal
+ezai remember <text> --repo PATH [--kind project_rule|coding_style|architecture_decision]
+ezai memory  --repo PATH [--kind K] [--search TERM] [--limit N]
 ezai version
 ```
 
@@ -303,6 +357,12 @@ browser_qa:                     # usually set per-repo in .agentd.yaml
   step_timeout: 10
   chromium_executable: ""       # empty → managed browser w/ env fallback
   ignore_console_patterns: []   # strict by default: any console error fails
+
+memory:
+  enabled: true
+  dir: ".agent"                 # inside the ORIGIN repo (not the worktree)
+  max_context_items: 5          # records per section in prompts
+  distill: false                # LLM-distilled observations after green runs
 
 git:
   branch_prefix: "swe/"
@@ -387,7 +447,9 @@ Honest statement of the MVP's isolation level (ADR-014):
   `HEAL_ITERATION` (per-cycle outcome), `BROWSER_QA_STARTED`,
   `BROWSER_WORKFLOW` (per-workflow verdict, console-error count,
   screenshots), `BROWSER_QA`, `COMMIT_BLOCKED`, `GIT_DELIVERY`,
-  `RUN_TERMINAL`.
+  `RUN_TERMINAL`, and memory events `MEMORY_INJECTED`,
+  `MEMORY_REPEAT_WARNING`, `MEMORY_RECORDED`, `MEMORY_DISTILLED`
+  (memory bookkeeping may follow `RUN_TERMINAL`).
 - `~/.agentd/runs/<run-id>/report.json` — the final `RunReport`, including
   the full `healing` history (one record per DEBUG→FIX→REVALIDATE cycle:
   signature, categories, root cause, confidence, fix status, revalidation
@@ -421,6 +483,8 @@ agentd/
 │   ├── config.py             layered configuration system
 │   ├── graph.py              LangGraph orchestration (self-healing machine)
 │   ├── browser_qa.py         Browser QA engine (Playwright harness + app launcher)
+│   ├── memory.py             project memory: SQLite store, lessons export,
+│   │                         retrieval renderers, repeat detection
 │   ├── rca.py                Root Cause Analysis engine (deterministic)
 │   ├── runner.py             run assembly (workspace+journal+agents+graph)
 │   ├── journal.py            append-only JSONL event journal
@@ -443,6 +507,7 @@ agentd/
 │       ├── validator.py      Validation Agent
 │       ├── debugger.py       Debug Agent (read-only root-cause analysis)
 │       ├── browser_qa.py     Browser QA Agent (deterministic harness)
+│       ├── memory_agent.py   Memory Agent (learning + optional distillation)
 │       ├── git_agent.py      Git Agent (commit gate)
 │       └── prompts/          versioned role prompts (*.md)
 └── tests/
@@ -470,16 +535,18 @@ agentd/
 | `graph.py` (LangGraph, self-healing loop) | Workflow Engine (WORKFLOW_DESIGN.md) — DEBUG/FIX/REVALIDATE realizes the inner APPLY/CHECK/DIAGNOSE loop | gates/BLOCKED/journal-replay resume |
 | `rca.py` + `agents/debugger.py` | Debugger agent + failure taxonomy (AGENT_DESIGN §3.6) | — (pulled forward, ADR-015) |
 | `browser_qa.py` + `agents/browser_qa.py` | UI-level verification in the VERIFYING state | — (pulled forward, ADR-016) |
+| `memory.py` + `agents/memory_agent.py` | procedural/episodic memory layers + Memory Curator (TARGET §6) | Qdrant semantic layer (codeidx) |
 | `tools/` + `permissions.py` | toolgw with tiers T0–T4 | MCP hub + per-run scoping |
 | `workspace.py` (worktrees) | sandboxd execution plane | runner containers + egress policy (ADR-014 interim) |
 | `journal.py` (JSONL) + `ezai runs/journal` | event-sourced runs (ADR-006) | SQLite index + resume |
-| 6 agents | AGENT_DESIGN.md roster subset | Reviewer / Context / Curator |
+| 7 agents | AGENT_DESIGN.md roster subset | Reviewer / Context |
 | `llm.py` roles | model role tiering (ADR-007) | LiteLLM `swe-*` aliases per profile |
 
 Decisions introduced by this runtime: **ADR-013** (LangGraph as orchestration
 substrate), **ADR-014** (interim isolation: worktrees + host subprocess
 execution until sandboxd), **ADR-015** (self-healing workflow: read-only
 Debug Agent + deterministic RCA engine + bounded iterations + stall
-detection), and **ADR-016** (Browser QA: declarative Playwright harness,
-console-error strictness, commit gate) in
-[.agent/decisions.md](../.agent/decisions.md).
+detection), **ADR-016** (Browser QA: declarative Playwright harness,
+console-error strictness, commit gate), and **ADR-017** (project memory:
+SQLite in the origin repo's `.agent/`, deterministic learning, repeat-
+mistake detection) in [.agent/decisions.md](../.agent/decisions.md).

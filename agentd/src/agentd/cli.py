@@ -59,6 +59,23 @@ def build_parser() -> argparse.ArgumentParser:
     journal_p.add_argument("run_id", help="Run id (see 'ezai runs')")
     common(journal_p, with_request=False)
 
+    remember_p = sub.add_parser(
+        "remember", help="Persist curated project knowledge into .agent/memory.db")
+    remember_p.add_argument("content", help="The rule/style/decision to remember")
+    remember_p.add_argument("--repo", required=True)
+    remember_p.add_argument("--kind", default="project_rule",
+                            choices=["project_rule", "coding_style",
+                                     "architecture_decision"])
+    remember_p.add_argument("--title", default="")
+    common(remember_p, with_request=False)
+
+    memory_p = sub.add_parser("memory", help="Inspect a repo's project memory")
+    memory_p.add_argument("--repo", required=True)
+    memory_p.add_argument("--kind", default=None)
+    memory_p.add_argument("--search", default=None)
+    memory_p.add_argument("--limit", type=int, default=20)
+    common(memory_p, with_request=False)
+
     sub.add_parser("version", help="Print the version")
     return parser
 
@@ -79,6 +96,10 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_runs(config, args.limit)
     if args.command == "journal":
         return _cmd_journal(config, args.run_id)
+    if args.command == "remember":
+        return _cmd_remember(config, args)
+    if args.command == "memory":
+        return _cmd_memory(config, args)
 
     repo = Path(args.repo).expanduser().resolve()
 
@@ -154,6 +175,54 @@ def _cmd_journal(config: AgentdConfig, run_id: str) -> int:
 def _short(value: object) -> str:
     text = str(value)
     return text if len(text) <= 60 else text[:57] + "..."
+
+
+def _memory_store(config: AgentdConfig, repo: str):
+    from agentd.memory import MemoryStore
+    from agentd.workspace import ensure_git_repo
+
+    repo_path = Path(repo).expanduser().resolve()
+    ensure_git_repo(repo_path)
+    return MemoryStore(repo_path / config.memory.dir)
+
+
+def _cmd_remember(config: AgentdConfig, args) -> int:
+    store = _memory_store(config, args.repo)
+    record_id = store.record(
+        kind=args.kind,
+        title=args.title or args.content[:60],
+        content=args.content,
+        run_id="manual",
+    )
+    store.export_lessons()
+    store.close()
+    print(f"remembered #{record_id} [{args.kind}] — "
+          f"{store.db_path} / {store.lessons_path.name}")
+    return 0
+
+
+def _cmd_memory(config: AgentdConfig, args) -> int:
+    store = _memory_store(config, args.repo)
+    if not store.exists:
+        print("(no memory yet for this repository)")
+        return 0
+    if args.search:
+        kinds = [args.kind] if args.kind else None
+        records = store.search(args.search, kinds=kinds, limit=args.limit)
+    else:
+        kinds = [args.kind] if args.kind else None
+        records = store.recent(kinds, limit=args.limit)
+    for record in records:
+        line_1 = (f"#{record.id:<4} {record.created_at}  [{record.kind}]"
+                  f"  (run {record.run_id or '-'})")
+        print(line_1)
+        print(f"      {record.title}")
+        first_line = record.content.splitlines()[0] if record.content else ""
+        if first_line and first_line not in record.title:
+            print(f"      {first_line[:120]}")
+    print(f"\n{store.count()} total memories — {store.db_path}")
+    store.close()
+    return 0
 
 
 # ── report rendering ──────────────────────────────────────────────────────────

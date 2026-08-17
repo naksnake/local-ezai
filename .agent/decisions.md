@@ -9,6 +9,7 @@ Index: [001](#adr-001) [002](#adr-002) [003](#adr-003) [004](#adr-004)
 [005](#adr-005) [006](#adr-006) [007](#adr-007) [008](#adr-008)
 [009](#adr-009) [010](#adr-010) [011](#adr-011) [012](#adr-012)
 [013](#adr-013) [014](#adr-014) [015](#adr-015) [016](#adr-016)
+[017](#adr-017)
 
 ---
 
@@ -275,3 +276,45 @@ with the repo and are refactor-stable evidence for the Debug Agent;
 per-validation app launches cost seconds (accepted for hermetic
 revalidation); dynamic exploratory browser testing (an LLM probing the app)
 remains future work outside the validation gate.
+
+## ADR-017 — Project memory: SQLite in the origin repo's `.agent/`, deterministic learning, repeat-mistake detection
+**Date:** 2026-08-14 · **Status:** Accepted (implements the
+procedural/episodic slices of TARGET_ARCHITECTURE §6 and the Memory Curator
+role of AGENT_DESIGN §3.10, per-repository)
+**Context:** The runtime forgot everything between runs: it could re-attempt
+a fix that already failed yesterday, and had no channel for project rules or
+conventions. Requirements: persist architecture decisions, coding styles,
+project rules, failed/successful fixes, and implementation history in the
+repo's ``.agent/`` using SQLite; learn from debugging attempts, validation
+failures, and successful repairs; avoid repeating previous mistakes; feed
+planning and debugging. Alternatives considered: Qdrant vectors (rejected
+for this layer: exact signature matching, not semantic recall, is what
+prevents repeated mistakes — semantic memory remains the codeidx phase);
+LLM-summarized learning as the primary channel (rejected: recording from
+run outcomes must be deterministic to be trustworthy; LLM distillation is
+an optional, curated-kinds-only addition).
+**Decision:** A **MemoryStore** (``.agent/memory.db``, SQLite, six kinds)
+plus a regenerated human-readable export (``.agent/lessons_learned.json``).
+The **Memory Agent** records deterministically at every terminal run: each
+failed healing iteration → ``failed_fix`` (root cause, approach, error
+signature, category); each successful one → ``successful_fix``; every run →
+``implementation`` history (validation-failure aborts included). Curated
+kinds enter via ``ezai remember`` or optional LLM distillation
+(``memory.distill``, off by default). **Read-side integration:** the
+Planner receives rules/styles/decisions/relevant lessons/history; the Debug
+Agent receives approaches that already failed for the exact error signature
+(instructed never to repeat them) and previously successful repairs;
+additionally a **deterministic repeat detector** (normalized word-set
+similarity vs. failed approaches for the same signature) journals
+``MEMORY_REPEAT_WARNING`` and stamps the warning into the fix task.
+**Placement:** memory lives in the ORIGIN repository's ``.agent/`` — outside
+run worktrees — so it persists across runs/branches and cannot enter a
+run's diff; the Git Agent additionally excludes ``memory.db*`` and
+``lessons_learned.json`` from staging (in-place mode); the store is lazily
+created so read-only operations (``ezai plan``, ``ezai memory``) leave zero
+traces.
+**Consequences:** Cross-run learning with a full audit trail
+(``MEMORY_INJECTED/RECORDED/REPEAT_WARNING/DISTILLED`` events); memory is
+inspectable (SQLite + JSON) and per-repo portable; teams should gitignore
+``.agent/memory.db*``; unbounded growth is deferred to a retention policy
+(revisit when stores exceed practical prompt-selection sizes).

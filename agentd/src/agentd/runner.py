@@ -15,11 +15,13 @@ from agentd.agents import (
     PlannerAgent,
     ValidationAgent,
 )
+from agentd.agents.memory_agent import MemoryAgent
 from agentd.config import AgentdConfig, load_repo_overrides, merge_repo_overrides
 from agentd.graph import Orchestrator
 from agentd.journal import Journal
 from agentd.llm import LLMClient, build_llm
 from agentd.logging_setup import get_logger
+from agentd.memory import MemoryStore
 from agentd.permissions import PermissionPolicy
 from agentd.rca import RcaEngine
 from agentd.schemas import Plan, RunReport
@@ -56,6 +58,14 @@ def prepare_run(
     return config, workspace, journal
 
 
+def build_memory_store(config: AgentdConfig, workspace: Workspace) -> MemoryStore | None:
+    """Project memory lives in the ORIGIN repo's .agent/ — outside worktrees,
+    persistent across runs (Phase 4, ADR-017)."""
+    if not config.memory.enabled:
+        return None
+    return MemoryStore(workspace.repo_path / config.memory.dir)
+
+
 def execute_run(
     config: AgentdConfig,
     repo: Path,
@@ -68,21 +78,30 @@ def execute_run(
     config, workspace, journal = prepare_run(config, repo, run_id)
     llm = llm or build_llm(config.llm)
     registry = build_registry(config, journal)
+    store = build_memory_store(config, workspace)
 
-    orchestrator = Orchestrator(
-        config=config,
-        workspace=workspace,
-        journal=journal,
-        planner=PlannerAgent(config, llm, registry, journal),
-        coder=CoderAgent(config, llm, registry, journal),
-        validator=ValidationAgent(config, llm, registry, journal),
-        git_agent=GitAgent(config, llm, registry, journal),
-        debugger=DebuggerAgent(config, llm, registry, journal),
-        browser_qa=BrowserQAAgent(config, llm, registry, journal),
-        rca_engine=RcaEngine(config.limits.stall_threshold),
-    )
-    log.info("run %s starting in %s (branch %s)", run_id, workspace.root, workspace.branch)
-    report = orchestrator.run(run_id, request)
+    try:
+        orchestrator = Orchestrator(
+            config=config,
+            workspace=workspace,
+            journal=journal,
+            planner=PlannerAgent(config, llm, registry, journal, memory=store),
+            coder=CoderAgent(config, llm, registry, journal),
+            validator=ValidationAgent(config, llm, registry, journal),
+            git_agent=GitAgent(config, llm, registry, journal),
+            debugger=DebuggerAgent(config, llm, registry, journal, memory=store),
+            browser_qa=BrowserQAAgent(config, llm, registry, journal),
+            rca_engine=RcaEngine(config.limits.stall_threshold),
+            memory_agent=(MemoryAgent(config, llm, registry, journal, memory=store)
+                          if store is not None else None),
+            memory_store=store,
+        )
+        log.info("run %s starting in %s (branch %s)", run_id, workspace.root,
+                 workspace.branch)
+        report = orchestrator.run(run_id, request)
+    finally:
+        if store is not None:
+            store.close()
     (journal.run_dir / "report.json").write_text(
         report.model_dump_json(indent=2), encoding="utf-8"
     )
@@ -107,8 +126,14 @@ def plan_only(
     config, workspace, journal = prepare_run(config, repo, run_id)
     llm = llm or build_llm(config.llm)
     registry = build_registry(config, journal)
-    planner = PlannerAgent(config, llm, registry, journal)
+    # Memory is read-only here (lazy store: no .agent/ is created by reads).
+    store = build_memory_store(config, workspace)
+    planner = PlannerAgent(config, llm, registry, journal, memory=store)
     journal.append("RUN_SUBMITTED", run_id=run_id, request=request, mode="plan-only")
-    plan = planner.run(request, workspace)
+    try:
+        plan = planner.run(request, workspace)
+    finally:
+        if store is not None:
+            store.close()
     journal.append("RUN_TERMINAL", status="completed", mode="plan-only")
     return plan

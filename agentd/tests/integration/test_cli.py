@@ -53,10 +53,11 @@ def test_cli_plan_only_leaves_no_traces(tmp_repo, tmp_path, capsys, monkeypatch)
     assert code == 0
     plan = json.loads(capsys.readouterr().out)
     assert plan["tasks"][0]["id"] == "T1"
-    # no branch, no changes, no worktree
+    # no branch, no changes, no worktree, no memory files (lazy store)
     assert git(tmp_repo, "branch", "--list", "swe/*") == ""
     assert git(tmp_repo, "status", "--porcelain") == ""
     assert not (tmp_path / "ws").exists()
+    assert not (tmp_repo / ".agent").exists()
 
 
 def test_cli_rejects_non_repo(tmp_path, monkeypatch, capsys):

@@ -38,10 +38,12 @@ from agentd.agents import (
     PlannerAgent,
     ValidationAgent,
 )
+from agentd.agents.memory_agent import MemoryAgent
 from agentd.browser_qa import merge_validation, skipped_report
 from agentd.config import AgentdConfig
 from agentd.journal import Journal
 from agentd.logging_setup import get_logger
+from agentd.memory import MemoryStore, find_repeated_approach
 from agentd.rca import RcaEngine
 from agentd.schemas import (
     CommitInfo,
@@ -78,6 +80,7 @@ class RunState(TypedDict, total=False):
     signatures: list[str]  # combined signature per failed validation
     stalled: bool
     last_debug: dict[str, Any] | None  # DebugReport of the latest DEBUG
+    repeat_warning: str | None  # memory: proposed fix repeats a failed one
 
 
 class Orchestrator:
@@ -95,6 +98,8 @@ class Orchestrator:
         debugger: DebuggerAgent,
         browser_qa: BrowserQAAgent | None = None,
         rca_engine: RcaEngine | None = None,
+        memory_agent: MemoryAgent | None = None,
+        memory_store: MemoryStore | None = None,
     ) -> None:
         self.config = config
         self.workspace = workspace
@@ -106,6 +111,8 @@ class Orchestrator:
         self.debugger = debugger
         self.browser_qa = browser_qa
         self.rca = rca_engine or RcaEngine(config.limits.stall_threshold)
+        self.memory_agent = memory_agent
+        self.memory_store = memory_store
         self.graph = self._build()
 
     # ── graph wiring ─────────────────────────────────────────────────────────
@@ -243,6 +250,7 @@ class Orchestrator:
             categories=sorted({a.category for a in analyses}),
             root_cause=debug_report.root_cause,
             confidence=debug_report.confidence,
+            approach=debug_report.fix_strategy.approach,
             fix_task_id=f"HEAL{iteration}",
             fix_status=fix_results[-1]["status"] if fix_results else "missing",
             revalidation_passed=report.passed,
@@ -282,14 +290,41 @@ class Orchestrator:
                     "iteration": iteration}
         log.info("root cause (%s confidence): %s", debug_report.confidence,
                  debug_report.root_cause[:120])
-        return {"last_debug": debug_report.model_dump(), "iteration": iteration}
+        update: dict[str, Any] = {"last_debug": debug_report.model_dump(),
+                                  "iteration": iteration}
+        # "Avoid repeating previous mistakes": detect a proposed approach
+        # that already failed for this exact failure in a previous RUN.
+        if self.memory_store is not None:
+            signatures = [a.signature for a in analyses]
+            repeated = find_repeated_approach(
+                self.memory_store, signatures, debug_report.fix_strategy.approach
+            )
+            if repeated is not None:
+                warning = (
+                    f"WARNING: a nearly identical fix approach already FAILED "
+                    f"in run {repeated.run_id} "
+                    f"('{repeated.data.get('approach', repeated.title)[:150]}'). "
+                    "Re-examine the diagnosis before applying; if you proceed, "
+                    "the implementation must differ substantively."
+                )
+                self.journal.append(
+                    "MEMORY_REPEAT_WARNING",
+                    previous_run=repeated.run_id,
+                    previous_approach=repeated.data.get("approach", "")[:200],
+                    proposed_approach=debug_report.fix_strategy.approach[:200],
+                )
+                log.warning("memory: proposed fix repeats a failed approach "
+                            "from run %s", repeated.run_id)
+                update["repeat_warning"] = warning
+        return update
 
     def _fix_node(self, state: RunState) -> dict[str, Any]:
         iteration = state.get("iteration", 0)
         self.journal.append("STATE_ENTERED", state="FIX", iteration=iteration)
         plan = Plan.model_validate(state["plan"])
         debug_report = DebugReport.model_validate(state["last_debug"])
-        task = self._fix_task(iteration, debug_report)
+        task = self._fix_task(iteration, debug_report,
+                              state.get("repeat_warning"))
         plan = plan.model_copy(update={"tasks": list(plan.tasks) + [task]})
         log.info("applying fix %s: %s", task.id,
                  debug_report.fix_strategy.approach[:100])
@@ -307,10 +342,12 @@ class Orchestrator:
         # A failed fix attempt does NOT abort the run: revalidation will fail
         # and the next DEBUG iteration sees the failed attempt in its history
         # (bounded by max_heal_iterations / stall detection).
-        return {"plan": plan.model_dump(), "task_results": results}
+        return {"plan": plan.model_dump(), "task_results": results,
+                "repeat_warning": None}
 
     @staticmethod
-    def _fix_task(iteration: int, debug_report: DebugReport) -> PlanTask:
+    def _fix_task(iteration: int, debug_report: DebugReport,
+                  repeat_warning: str | None = None) -> PlanTask:
         strategy = debug_report.fix_strategy
         steps = "\n".join(f"- {s}" for s in strategy.steps)
         evidence = "\n".join(f"- {e}" for e in debug_report.evidence[:6])
@@ -327,6 +364,8 @@ class Orchestrator:
             "Fix the root cause exactly as diagnosed. Do NOT weaken or delete "
             "tests/checks, and do not silence errors."
         )
+        if repeat_warning:
+            intent += f"\n\n{repeat_warning}"
         return PlanTask(
             id=f"HEAL{iteration}",
             intent=intent,
@@ -438,6 +477,7 @@ class Orchestrator:
             "signatures": [],
             "stalled": False,
             "last_debug": None,
+            "repeat_warning": None,
         }
         final: RunState = self.graph.invoke(
             initial, config={"recursion_limit": self.config.limits.recursion_limit}
@@ -466,4 +506,11 @@ class Orchestrator:
                      for h in final.get("healing", [])],
             iterations_used=final.get("iteration", 0),
         )
+        # Memory Agent learns from every terminal run — debugging attempts,
+        # validation failures, successful repairs (Phase 4, ADR-017).
+        if self.memory_agent is not None:
+            try:
+                self.memory_agent.record_run(report, self.workspace)
+            except Exception as exc:  # noqa: BLE001 — memory must never fail a run
+                log.warning("memory recording failed: %s", exc)
         return report

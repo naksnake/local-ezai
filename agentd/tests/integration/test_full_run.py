@@ -32,10 +32,11 @@ def test_happy_path_run(config, tmp_repo):
     added_test = git(tmp_repo, "show", "swe/itest1:test_calculator.py")
     assert "test_add" in added_test
 
-    # ... while the user's checkout is untouched
+    # ... while the user's checkout is untouched (the only new thing in the
+    # origin repo is the untracked project-memory directory — by design)
     assert "return a - b" in (tmp_repo / "calculator.py").read_text()
     assert git(tmp_repo, "rev-parse", "--abbrev-ref", "HEAD") == "main"
-    assert git(tmp_repo, "status", "--porcelain") == ""
+    assert git(tmp_repo, "status", "--porcelain").splitlines() in ([], ["?? .agent/"])
 
 
 def test_happy_path_journal_and_report(config, tmp_repo):
@@ -60,8 +61,11 @@ def test_happy_path_journal_and_report(config, tmp_repo):
         "RUN_TERMINAL",
     ):
         assert expected in types, f"missing {expected} in journal"
-    assert types[-1] == "RUN_TERMINAL"
-    assert events[-1]["payload"]["status"] == "completed"
+    # RUN_TERMINAL closes the run; memory bookkeeping may follow it
+    terminal = [e for e in events if e["type"] == "RUN_TERMINAL"][-1]
+    assert terminal["payload"]["status"] == "completed"
+    assert all(e["type"].startswith("MEMORY_") for e in events
+               if e["seq"] > terminal["seq"])
     # seq numbers are strictly increasing from 1
     assert [e["seq"] for e in events] == list(range(1, len(events) + 1))
     # the denied push decision is in the audit trail
