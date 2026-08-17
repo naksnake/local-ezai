@@ -152,11 +152,14 @@ def test_validator_nothing_configured_warns(config, inplace_ws):
 
 
 def test_validator_autodetects_pytest_and_ruff(config, inplace_ws):
+    import sys
+
     (inplace_ws.root / "pyproject.toml").write_text("[tool.ruff]\n", encoding="utf-8")
     (inplace_ws.root / "tests").mkdir()
     detected = ValidationAgent._autodetect(inplace_ws)
-    assert detected["test"] == ["python3 -m pytest -q --color=no"]
-    assert detected["lint"] == ["python3 -m ruff check ."]
+    python = f'"{sys.executable}"'
+    assert detected["test"] == [f"{python} -m pytest -q --color=no"]
+    assert detected["lint"] == [f"{python} -m ruff check ."]
 
 
 # ── Git agent (deterministic path) ───────────────────────────────────────────

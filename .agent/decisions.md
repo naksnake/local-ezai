@@ -9,7 +9,7 @@ Index: [001](#adr-001) [002](#adr-002) [003](#adr-003) [004](#adr-004)
 [005](#adr-005) [006](#adr-006) [007](#adr-007) [008](#adr-008)
 [009](#adr-009) [010](#adr-010) [011](#adr-011) [012](#adr-012)
 [013](#adr-013) [014](#adr-014) [015](#adr-015) [016](#adr-016)
-[017](#adr-017)
+[017](#adr-017) [018](#adr-018)
 
 ---
 
@@ -318,3 +318,44 @@ traces.
 inspectable (SQLite + JSON) and per-repo portable; teams should gitignore
 ``.agent/memory.db*``; unbounded growth is deferred to a retention policy
 (revisit when stores exceed practical prompt-selection sizes).
+
+## ADR-018 — Production CLI `local-ezai`: path-first UX, pipeline subsets as commands, in-place vs. worktree semantics
+**Date:** 2026-08-17 · **Status:** Accepted (realizes the `ezai` CLI of
+TARGET_ARCHITECTURE §10; pulls the Reviewer agent forward from Phase 4 of
+the roadmap)
+**Context:** The Phase 1–4 `ezai` CLI was developer plumbing
+(`--repo` everywhere, run/plan only). Production use needs the Claude-Code
+shape: point the tool at a project (`local-ezai .`,
+`local-ezai /path/to/CRM`, or just the cwd), then chat, plan, run, code,
+test, fix, review, commit, inspect memory, or execute a whole sprint spec —
+cross-platform including Windows.
+**Decision:**
+(1) **Path-first selection**: a leading directory argument or git-style
+`-C` selects the project; commands default to the cwd; a bare path opens
+the memory-aware chat REPL.
+(2) **Commands are pipeline subsets over the existing agents**, not new
+machinery: `plan` (Planner), `code` (Planner+Coder, changes left
+uncommitted), `test` (Validator+Browser QA), `fix` (a second graph entry at
+VALIDATE with a synthetic task-less plan — the schema now permits empty
+task lists while the Planner still rejects them), `review` (a new read-only
+**Reviewer Agent** with structured verdict/findings, memory-style-aware),
+`commit` (validation-gated Git Agent), `memory`, `sprint`.
+(3) **In-place vs. worktree split**: commands that serve the user's own
+working tree (`test`, `fix`, `review`, `commit`) run in place on the
+current branch; generative commands (`run`, `code`, `sprint`) stay
+worktree-isolated.
+(4) **Sprint semantics**: a markdown spec (checklists > bullets > numbered)
+runs task-by-task as full pipelines **in place on one shared
+`sprint/<id>` worktree branch**, one commit per task, one LLM client shared
+across tasks, stop-on-failure by default.
+(5) **Cross-platform**: pathlib throughout; validation autodetection uses
+`sys.executable` (no `python3` assumption); Browser QA app processes use
+POSIX process groups or Windows `CREATE_NEW_PROCESS_GROUP`/`taskkill /T`;
+packaging via console-script shims (pipx/pip, INSTALL.md), verified wheel
+build.
+**Consequences:** One discoverable command with stable exit codes
+(0/1/2/3/130); the legacy `ezai` CLI remains for scripts and run
+inspection; the commit gate now guards *human* commits too
+(`local-ezai commit` refuses on red validation); a run_sprint bug class
+(per-task client rebuilds resetting scripted/stateful providers) is locked
+in by tests.

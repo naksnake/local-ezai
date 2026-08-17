@@ -26,9 +26,17 @@ def test_plan_duplicate_ids_rejected():
         Plan.model_validate(bad)
 
 
-def test_plan_requires_tasks():
-    with pytest.raises(ValidationError):
-        Plan.model_validate({"goal": "g", "tasks": []})
+def test_plan_allows_empty_tasks_for_synthetic_plans():
+    # fix/commit pipelines enter at VALIDATE with a taskless synthetic plan
+    plan = Plan.model_validate({"goal": "g", "tasks": []})
+    assert plan.tasks == []
+
+
+def test_planner_level_validation_rejects_empty_plans():
+    from agentd.agents.planner import _validate_plan
+
+    with pytest.raises(ValueError, match="at least one task"):
+        _validate_plan({"goal": "g", "tasks": []})
 
 
 def test_validation_failure_evidence():

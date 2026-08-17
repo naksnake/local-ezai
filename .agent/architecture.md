@@ -41,20 +41,31 @@ openwebui:3000 · litellm:4000 (auto-RAG hook `config/litellm_custom_callbacks.p
 Profiles: GPU (base) / cpu / n97 / n97-igpu via compose overrides with
 `!override` on `deploy`. Config via `.env` (`.env.example` = schema).
 
-## Phases 1–4 — shipped (agentd/)
+## Phases 1–5 — shipped (agentd/)
 
 The `agentd/` sub-project implements the first slices of the target
 architecture (see [agentd/README.md](../agentd/README.md)):
 
-- **7 agents**: Planner (read-only tools → validated `Plan`), Coder
+- **Production CLI `local-ezai`** (ADR-018): path-first selection
+  (`local-ezai .` / `-C path` / cwd; bare path opens chat); commands
+  chat · plan · run · code · test · fix · review · commit · memory ·
+  sprint, each a pipeline subset over the agents; in-place commands
+  (test/fix/review/commit) vs worktree commands (run/code/sprint);
+  sprint = markdown spec → sequential full pipelines on one shared
+  `sprint/<id>` branch; cross-platform (Windows: sys.executable
+  autodetect, process-group handling); packaging via pipx/pip
+  (agentd/INSTALL.md), legacy `ezai` CLI retained.
+- **8 agents**: Planner (read-only tools → validated `Plan`), Coder
   (fs/grep/exec tools, one plan task per invocation), Validator
   (deterministic test/lint/build harness), **Debugger** (read-only
   root-cause analysis → structured `DebugReport`, ADR-015), **Browser QA**
   (deterministic Playwright harness: app launch, declarative user
   workflows, console-error detection, screenshots — ADR-016), **Memory**
   (per-repo SQLite learning: `.agent/memory.db` + `lessons_learned.json`,
-  ADR-017), Git (add/commit, T3-gated push, **refuses failing validation**
-  — `COMMIT_BLOCKED`; never stages memory files).
+  ADR-017), **Reviewer** (read-only adversarial diff review → structured
+  verdict/findings, memory-style-aware, ADR-018), Git (add/commit,
+  T3-gated push, **refuses failing validation** — `COMMIT_BLOCKED`;
+  never stages memory files).
 - **Project memory rules** (ADR-017): six kinds (architecture_decision /
   coding_style / project_rule / failed_fix / successful_fix /
   implementation); deterministic recording from every terminal run; memory

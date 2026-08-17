@@ -273,6 +273,8 @@ def _print_report(report: RunReport, as_json: bool = False) -> None:
         )
         lines.append(f"commit:     {report.commit.sha[:12]} on {report.commit.branch} "
                      f"({push_state})")
+    elif report.commit:
+        lines.append(f"commit:     {report.commit.message}")
     if report.error:
         lines.append(f"error:      {report.error}")
     lines.append(f"journal:    {report.journal_path}")

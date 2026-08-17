@@ -14,8 +14,8 @@ It implements Phases 1–4 of the architecture defined in
 about the existing 8-service chat stack (ADR-002: additive evolution).
 
 ```
-ezai run "fix the off-by-one in pagination and add a regression test" \
-    --repo ~/code/myapp
+cd ~/code/myapp
+local-ezai run "fix the off-by-one in pagination and add a regression test"
 ```
 
 ```
@@ -59,23 +59,25 @@ request │  PLAN ──► CODE (task loop) ──► VALIDATE ──passed─�
 
 Requirements: Python ≥ 3.10, git ≥ 2.20, and a running local-ezai stack
 (any profile — the runtime talks to LiteLLM's OpenAI-compatible API).
+**Cross-platform: Linux, macOS, Windows** — full instructions incl. pipx
+and Windows PowerShell in [INSTALL.md](INSTALL.md).
 
 ```bash
-# from the local-ezai repo root
+# from the local-ezai repo root (Linux dev setup; see INSTALL.md for pipx/Windows)
 make swe-install          # creates ./.venv-agentd and installs agentd
+. .venv-agentd/bin/activate
 
 # point it at the stack (defaults shown; usually nothing to change)
 export AGENTD_LLM__BASE_URL="http://localhost:4000/v1"
 export LITELLM_MASTER_KEY="sk-..."          # same key as the stack's .env
 
-# dry run: plan only, nothing is written anywhere (autonomy A0)
-.venv-agentd/bin/ezai plan "add a --version flag to the CLI" --repo ~/code/myapp
+cd ~/code/myapp                     # commands work on the current directory
+local-ezai plan "add a --version flag"   # dry run — plan only, traceless
+local-ezai run  "add a --version flag"   # full pipeline on branch swe/<id>
+local-ezai run  "..." --push             # also push the branch (opt-in)
 
-# full run: worktree branch swe/<run-id>, edits, validation, local commit
-.venv-agentd/bin/ezai run "add a --version flag to the CLI" --repo ~/code/myapp
-
-# same, but also push the branch to origin (T3 action, explicit opt-in)
-.venv-agentd/bin/ezai run "..." --repo ~/code/myapp --push
+local-ezai /home/test/project/CRM        # a bare path opens chat there
+local-ezai sprint sprint28.md            # run a whole markdown spec
 ```
 
 The deliverable is a **branch** (`swe/<run-id>`) in your repository — your
@@ -137,6 +139,7 @@ Every step appends to the run journal (`~/.agentd/runs/<run-id>/journal.jsonl`).
 | **Debug** (Phase 2) | reproduce failures · root-cause identification · structured debugging reports · fix-strategy generation | yes (`debugger` role) | read-only + reproduce: `fs_read`, `fs_ls`, `fs_glob`, `code_grep`, `exec_run`, `git_diff`, `git_status` |
 | **Browser QA** (Phase 3) | launch application · run real user workflows · validate pages · detect console errors · capture screenshots · generate validation reports | no (deterministic Playwright harness) | app subprocess + headless Chromium |
 | **Memory** (Phase 4) | persist architecture decisions, coding styles, project rules, failed/successful fixes, implementation history · learn from debugging attempts, validation failures, successful repairs | optional (distillation only, off by default) | SQLite store in the repo's `.agent/` |
+| **Reviewer** (Phase 5) | adversarial diff review: correctness, regressions, check-weakening, scope creep, style-rule violations (from memory) | yes (`reviewer` role) | read-only: `fs_read`, `fs_ls`, `fs_glob`, `code_grep`, `git_status`, `git_diff` |
 | **Git** | `git add` · `git commit` · `git push` — **blocked until validation incl. Browser QA succeeds** | optional (commit message only, off by default) | `git_status`, `git_diff`, `git_add`, `git_commit`, `git_push` |
 
 Agents exchange **validated envelopes** (`Plan`, `TaskResult`,
@@ -284,29 +287,47 @@ knowledge in review. Disable entirely with `memory.enabled: false`.
 
 ## CLI reference
 
+The production CLI is **`local-ezai`** (Phase 5). It selects the project by
+path — `local-ezai <path> <command>`, git-style `-C <path>`, or simply the
+current directory — and a bare path opens chat:
+
 ```
-ezai run  <request> --repo PATH [--push] [--in-place] [--max-iterations N]
-                                [--config FILE] [--json] [--verbose]
-ezai plan <request> --repo PATH [--config FILE] [--verbose]
-ezai runs    [--config FILE] [--limit N]     # list recent runs + outcomes
-ezai journal <run-id> [--config FILE]        # pretty-print a run's journal
-ezai remember <text> --repo PATH [--kind project_rule|coding_style|architecture_decision]
-ezai memory  --repo PATH [--kind K] [--search TERM] [--limit N]
-ezai version
+local-ezai [PATH | -C PATH] COMMAND ...
+
+local-ezai .                                # chat for the current project
+local-ezai /home/test/project/CRM           # chat for that project
+local-ezai chat                             # interactive session (memory-aware)
+local-ezai plan "<task>"                    # execution plan (dry-run, traceless)
+local-ezai run  "<task>" [--push] [--in-place] [--max-iterations N] [--json]
+local-ezai code "<task>" [--in-place]       # plan + implement; NO commit
+local-ezai test [--json]                    # validation (commands + Browser QA)
+local-ezai fix  [--goal G] [--max-iterations N]   # repair in place, commit when green
+local-ezai review [--json]                  # adversarial diff review (Reviewer Agent)
+local-ezai commit [-m MSG] [--push]         # validate, then commit (gated)
+local-ezai memory [--add TEXT --kind K] [--search TERM] [--limit N]
+local-ezai sprint <spec-file> [--keep-going] [--push] [--json]
+local-ezai version
 ```
 
-| Flag | Meaning |
-|---|---|
-| `--repo PATH` | Target git repository (must have at least one commit) |
-| `--push` | Enable the T3 `git_push` action for this run (default: denied) |
-| `--in-place` | Edit the repo directly instead of a worktree (opt-in) |
-| `--max-iterations N` | Override `limits.max_heal_iterations` for this run |
-| `--config FILE` | YAML config file (see below) |
-| `--json` | Print the full `RunReport` as JSON |
-| `--verbose` | Debug logging |
+Command → agents: `plan`/`code` → Planner (+Coder); `run`/`sprint` → the
+full roster; `test` → Validator + Browser QA; `fix` → Validator + RCA +
+Debugger + Coder + Git (enters the workflow at VALIDATE — no planning);
+`review` → Reviewer (reads the working-tree diff, or the last commit when
+clean); `commit` → Validator + Browser QA + Git (the commit gate applies);
+`memory`/`chat` → Memory. `sprint` parses markdown checklists/bullets/
+numbered items and runs each task as a full pipeline **on one shared
+`sprint/<id>` branch**, so tasks build on each other (stops at the first
+failure unless `--keep-going`).
 
-Exit codes: `0` completed · `1` run failed (see report/journal) ·
-`2` workspace error (not a git repo, no commits) · `130` interrupted.
+Exit codes: `0` success · `1` run/validation/review failed · `2` usage or
+workspace error · `3` model unreachable (chat) · `130` interrupted.
+
+The Phase 1–4 `ezai` CLI (`run/plan/runs/journal/remember/memory` with
+`--repo`) remains available for scripts; `ezai runs` and `ezai journal`
+are the run-inspection tools for both CLIs.
+
+Installation and packaging (pipx, pip venvs on Linux/macOS/**Windows**,
+wheel builds): **[INSTALL.md](INSTALL.md)**.
 
 ## Configuration
 
@@ -479,6 +500,8 @@ Layout:
 agentd/
 ├── pyproject.toml            packaging, pytest, ruff
 ├── src/agentd/
+│   ├── main_cli.py           local-ezai — the production CLI (Phase 5)
+│   ├── sprint.py             markdown sprint-spec parsing
 │   ├── cli.py                ezai entry point (run/plan/runs/journal)
 │   ├── config.py             layered configuration system
 │   ├── graph.py              LangGraph orchestration (self-healing machine)
@@ -508,6 +531,7 @@ agentd/
 │       ├── debugger.py       Debug Agent (read-only root-cause analysis)
 │       ├── browser_qa.py     Browser QA Agent (deterministic harness)
 │       ├── memory_agent.py   Memory Agent (learning + optional distillation)
+│       ├── reviewer.py       Reviewer Agent (adversarial diff review)
 │       ├── git_agent.py      Git Agent (commit gate)
 │       └── prompts/          versioned role prompts (*.md)
 └── tests/
@@ -539,7 +563,8 @@ agentd/
 | `tools/` + `permissions.py` | toolgw with tiers T0–T4 | MCP hub + per-run scoping |
 | `workspace.py` (worktrees) | sandboxd execution plane | runner containers + egress policy (ADR-014 interim) |
 | `journal.py` (JSONL) + `ezai runs/journal` | event-sourced runs (ADR-006) | SQLite index + resume |
-| 7 agents | AGENT_DESIGN.md roster subset | Reviewer / Context |
+| `main_cli.py` (local-ezai) | `ezai` CLI interface (TARGET §10) | web console, chat-ops MCP tools |
+| 8 agents | AGENT_DESIGN.md roster subset | Context/Research agent |
 | `llm.py` roles | model role tiering (ADR-007) | LiteLLM `swe-*` aliases per profile |
 
 Decisions introduced by this runtime: **ADR-013** (LangGraph as orchestration

@@ -113,11 +113,14 @@ class Orchestrator:
         self.rca = rca_engine or RcaEngine(config.limits.stall_threshold)
         self.memory_agent = memory_agent
         self.memory_store = memory_store
-        self.graph = self._build()
+        self.graph = self._build("plan")
+        #: entry at VALIDATE with a synthetic plan — the `fix` pipeline:
+        #: no planning/coding, straight into VALIDATE → DEBUG → FIX loop.
+        self.heal_graph = self._build("validate")
 
     # ── graph wiring ─────────────────────────────────────────────────────────
 
-    def _build(self):
+    def _build(self, entry: str):
         builder = StateGraph(RunState)
         builder.add_node("plan", self._plan_node)
         builder.add_node("code", self._code_node)
@@ -127,7 +130,7 @@ class Orchestrator:
         builder.add_node("git", self._git_node)
         builder.add_node("abort", self._abort_node)
 
-        builder.add_edge(START, "plan")
+        builder.add_edge(START, entry)
         builder.add_conditional_edges(
             "plan", self._route_after_plan, {"code": "code", "abort": "abort"}
         )
@@ -456,18 +459,22 @@ class Orchestrator:
 
     # ── entry point ──────────────────────────────────────────────────────────
 
-    def run(self, run_id: str, request: str) -> RunReport:
+    def run(self, run_id: str, request: str,
+            initial_plan: Plan | None = None,
+            entry: str = "plan") -> RunReport:
         self.journal.append("RUN_SUBMITTED", run_id=run_id, request=request,
                             workspace=str(self.workspace.root),
-                            branch=self.workspace.branch,
+                            branch=self.workspace.branch, entry=entry,
                             max_heal_iterations=self.config.limits.max_heal_iterations)
+        if entry == "validate" and initial_plan is None:
+            raise ValueError("entry='validate' requires a synthetic initial_plan")
         initial: RunState = {
             "run_id": run_id,
             "request": request,
             "status": "running",
             "error": None,
-            "plan": None,
-            "task_index": 0,
+            "plan": initial_plan.model_dump() if initial_plan else None,
+            "task_index": len(initial_plan.tasks) if initial_plan else 0,
             "task_results": [],
             "validation": None,
             "commit": None,
@@ -479,7 +486,8 @@ class Orchestrator:
             "last_debug": None,
             "repeat_warning": None,
         }
-        final: RunState = self.graph.invoke(
+        graph = self.heal_graph if entry == "validate" else self.graph
+        final: RunState = graph.invoke(
             initial, config={"recursion_limit": self.config.limits.recursion_limit}
         )
         status = "completed" if final.get("status") == "completed" else "failed"

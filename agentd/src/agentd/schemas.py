@@ -26,11 +26,16 @@ class PlanTask(BaseModel):
 
 
 class Plan(BaseModel):
-    """Planner output — `Plan v1` envelope."""
+    """Planner output — `Plan v1` envelope.
+
+    Empty task lists are structurally allowed for synthetic plans (the
+    ``fix``/``commit`` pipelines enter the workflow at VALIDATE with no
+    implementation tasks); the Planner Agent itself rejects empty plans.
+    """
 
     goal: str
     assumptions: list[str] = Field(default_factory=list)
-    tasks: list[PlanTask] = Field(min_length=1)
+    tasks: list[PlanTask] = Field(default_factory=list)
     risks: list[str] = Field(default_factory=list)
 
     @field_validator("tasks")
@@ -216,6 +221,51 @@ class CommitInfo(BaseModel):
     files_committed: int = 0
     pushed: bool = False
     push_error: str | None = None
+
+
+# ── Reviewer (Phase 5) ───────────────────────────────────────────────────────
+
+
+class ReviewFinding(BaseModel):
+    severity: Literal["high", "medium", "low"]
+    file: str = ""
+    line: int | None = None
+    issue: str
+    suggestion: str = ""
+
+
+class ReviewReport(BaseModel):
+    """Reviewer Agent output — `Review v1` (adversarial pass over a diff)."""
+
+    verdict: Literal["approve", "request_changes"]
+    summary: str = ""
+    findings: list[ReviewFinding] = Field(default_factory=list)
+
+
+# ── Sprint (Phase 5) ─────────────────────────────────────────────────────────
+
+
+class SprintTaskResult(BaseModel):
+    index: int
+    task: str
+    run_id: str
+    status: Literal["completed", "failed", "skipped"]
+    commit_sha: str = ""
+    error: str | None = None
+    iterations_used: int = 0
+
+
+class SprintReport(BaseModel):
+    sprint_id: str
+    status: Literal["completed", "failed"]
+    branch: str
+    workspace_path: str
+    spec_file: str = ""
+    tasks: list[SprintTaskResult] = Field(default_factory=list)
+
+    @property
+    def completed_count(self) -> int:
+        return sum(1 for t in self.tasks if t.status == "completed")
 
 
 # ── Run report ───────────────────────────────────────────────────────────────

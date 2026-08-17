@@ -15,6 +15,8 @@ warning in ``summary`` (journaled), so "green" is never silently vacuous.
 
 from __future__ import annotations
 
+import sys
+
 from agentd.agents.base import BaseAgent
 from agentd.schemas import CheckResult, ValidationReport
 from agentd.tools.shell import run_command
@@ -92,6 +94,10 @@ class ValidationAgent(BaseAgent):
 
     @staticmethod
     def _autodetect(workspace: Workspace) -> dict[str, list[str]]:
+        # Use the running interpreter, not a hardcoded binary name:
+        # 'python3' does not exist on Windows, and the interpreter running
+        # agentd is the one whose environment carries pytest/ruff.
+        python = f'"{sys.executable}"'
         root = workspace.root
         detected: dict[str, list[str]] = {}
         has_pytest_layout = (
@@ -101,10 +107,10 @@ class ValidationAgent(BaseAgent):
             or any(root.glob("test_*.py"))
         )
         if has_pytest_layout:
-            detected["test"] = ["python3 -m pytest -q --color=no"]
+            detected["test"] = [f"{python} -m pytest -q --color=no"]
         pyproject = root / "pyproject.toml"
         if pyproject.is_file() and "[tool.ruff]" in pyproject.read_text(
             encoding="utf-8", errors="replace"
         ):
-            detected["lint"] = ["python3 -m ruff check ."]
+            detected["lint"] = [f"{python} -m ruff check ."]
         return detected

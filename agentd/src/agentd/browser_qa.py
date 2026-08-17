@@ -147,6 +147,13 @@ class AppLauncher:
             env["PYTHONUNBUFFERED"] = "1"
             env["PORT"] = str(port)
             log_handle = self._log_file.open("wb")
+            # Own process group so teardown kills the whole app tree —
+            # start_new_session on POSIX, CREATE_NEW_PROCESS_GROUP on Windows.
+            popen_kwargs: dict = {}
+            if os.name == "nt":  # pragma: no cover — Windows-only branch
+                popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+            else:
+                popen_kwargs["start_new_session"] = True
             self._proc = subprocess.Popen(  # noqa: S602 — repo-configured command
                 command,
                 shell=True,
@@ -154,7 +161,7 @@ class AppLauncher:
                 stdout=log_handle,
                 stderr=subprocess.STDOUT,
                 env=env,
-                start_new_session=True,  # own process group → clean teardown
+                **popen_kwargs,
             )
             log.info("app starting: %s (port %d)", command, port)
 
@@ -186,13 +193,21 @@ class AppLauncher:
         if self._proc is None:
             return
         try:
-            os.killpg(self._proc.pid, signal.SIGTERM)
-            self._proc.wait(timeout=5)
+            if os.name == "nt":  # pragma: no cover — Windows-only branch
+                subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", str(self._proc.pid)],
+                    capture_output=True, check=False,
+                )
+                self._proc.wait(timeout=5)
+            else:
+                os.killpg(self._proc.pid, signal.SIGTERM)
+                self._proc.wait(timeout=5)
         except (ProcessLookupError, PermissionError):
             pass
         except subprocess.TimeoutExpired:
             try:
-                os.killpg(self._proc.pid, signal.SIGKILL)
+                if os.name != "nt":
+                    os.killpg(self._proc.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
             self._proc.wait(timeout=5)

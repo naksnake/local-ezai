@@ -3,4 +3,4 @@
 Part of local-ezai. See agentd/README.md and docs/TARGET_ARCHITECTURE.md.
 """
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"

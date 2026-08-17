@@ -56,6 +56,8 @@ class LLMConfig(BaseModel):
             "git": "qwen2.5-7b",
             "debugger": "qwen2.5-7b",
             "memory": "qwen2.5-7b",
+            "reviewer": "qwen2.5-7b",
+            "chat": "qwen2.5-7b",
         }
     )
 

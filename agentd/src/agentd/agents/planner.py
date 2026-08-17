@@ -13,6 +13,15 @@ from agentd.schemas import Plan
 from agentd.workspace import Workspace
 
 
+def _validate_plan(data: dict) -> Plan:
+    """The schema permits empty task lists (synthetic fix/commit plans);
+    a PLANNER, however, must always produce at least one task."""
+    plan = Plan.model_validate(data)
+    if not plan.tasks:
+        raise ValueError("the plan must contain at least one task")
+    return plan
+
+
 class PlannerAgent(BaseAgent):
     agent_name = "planner"
     role = "planner"
@@ -27,7 +36,7 @@ class PlannerAgent(BaseAgent):
             f"Change request:\n{request}"
         )
         user += self._memory_block(request)
-        plan: Plan = self.ask_for_json(system, user, workspace, Plan.model_validate)
+        plan: Plan = self.ask_for_json(system, user, workspace, _validate_plan)
 
         max_tasks = self.config.limits.max_plan_tasks
         if len(plan.tasks) > max_tasks:
