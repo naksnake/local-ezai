@@ -9,7 +9,7 @@ Index: [001](#adr-001) [002](#adr-002) [003](#adr-003) [004](#adr-004)
 [005](#adr-005) [006](#adr-006) [007](#adr-007) [008](#adr-008)
 [009](#adr-009) [010](#adr-010) [011](#adr-011) [012](#adr-012)
 [013](#adr-013) [014](#adr-014) [015](#adr-015) [016](#adr-016)
-[017](#adr-017) [018](#adr-018)
+[017](#adr-017) [018](#adr-018) [019](#adr-019)
 
 ---
 
@@ -359,3 +359,50 @@ inspection; the commit gate now guards *human* commits too
 (`local-ezai commit` refuses on red validation); a run_sprint bug class
 (per-task client rebuilds resetting scripted/stateful providers) is locked
 in by tests.
+
+## ADR-019 — Autonomous sprint execution: Sprint Agent DAG + deterministic wave scheduler + worktree-per-task parallelism
+**Date:** 2026-08-17 · **Status:** Accepted (realizes the sub-agent
+parallelism of TARGET_ARCHITECTURE §4 / AGENT_DESIGN §4 at sprint
+granularity)
+**Context:** Phase 5 sprints ran a spec's checklist items sequentially with
+no requirement analysis and no parallelism. Phase 6 requires requirement
+analysis, task breakdown, a dependency graph, parallel agent execution,
+validation + Browser QA, documentation, and git commits from one
+``sprint.md``. The central risk of parallel autonomous coding is
+git-level interference between concurrent agents.
+**Decision:**
+(1) A **Sprint Agent** (read-only tools) performs requirement analysis and
+task breakdown into a schema-validated ``SprintPlan`` with explicit
+``depends_on`` edges. **DAG integrity is code, not trust** (ADR-010):
+duplicate ids, unknown/self dependencies and cycles are detected
+deterministically (Kahn) and fed back to the model through the bounded
+structured-output retry loop.
+(2) A **deterministic wave scheduler** groups tasks into topological
+waves. Single-task waves run in place on the sprint worktree; multi-task
+waves give **each task its own worktree + branch forked from the sprint
+tip**, execute them concurrently (thread pool bounded by
+``sprint.max_parallel``), then **merge task branches back in plan order**
+(``--no-ff``). A merge conflict marks that task failed and aborts cleanly —
+parallel tasks are expected to touch disjoint files, and the dependency
+graph is the mechanism that encodes that expectation. Task worktrees and
+branches are removed after merging.
+(3) **Every task is the full pipeline** (Planner→Coder→Validation→Browser
+QA→self-healing→Memory→gated commit); dependents of failed tasks are
+skipped (precise reason recorded); project memory resolves through
+worktrees to the origin repo, so parallel tasks share one store
+(SQLite write-lock timeout added).
+(4) **Documentation as a deliverable**: ``docs/sprints/sprint-<id>.md``
+(goal, requirements, mermaid dependency graph, per-task outcomes with
+validation summaries) is generated deterministically from the run reports
+and committed as the sprint's final commit only when the sprint is green.
+(5) LLM concurrency: one shared client by default (HTTP clients are
+thread-safe); an ``llm_factory(task)`` seam provides per-task clients —
+required for scripted/stateful providers in parallel waves and used by the
+test suite. ``--simple`` preserves the Phase 5 sequential path.
+**Consequences:** Independent tasks genuinely execute in parallel with
+isolation inherited from the worktree model (ADR-014); merge conflicts are
+surfaced as task failures rather than corrupted branches; sprint-level
+observability lands in a dedicated journal (SPRINT_PLAN/WAVES/
+WAVE_STARTED/TASK/MERGE_CONFLICT/DOC). Cross-task semantic conflicts that
+merge cleanly remain undetected until validation of later waves — a
+Reviewer-over-the-whole-sprint gate is future work.

@@ -41,11 +41,21 @@ openwebui:3000 · litellm:4000 (auto-RAG hook `config/litellm_custom_callbacks.p
 Profiles: GPU (base) / cpu / n97 / n97-igpu via compose overrides with
 `!override` on `deploy`. Config via `.env` (`.env.example` = schema).
 
-## Phases 1–5 — shipped (agentd/)
+## Phases 1–6 — shipped (agentd/)
 
 The `agentd/` sub-project implements the first slices of the target
 architecture (see [agentd/README.md](../agentd/README.md)):
 
+- **Autonomous sprint execution** (ADR-019): Sprint Agent analyzes
+  `sprint.md` → requirements + task breakdown + validated dependency DAG
+  (cycles/unknown deps rejected deterministically, fed back for retry);
+  topological waves; **parallel task execution** in per-task worktrees
+  forked from the sprint tip (thread pool, `sprint.max_parallel`),
+  ordered merge-back (`--no-ff`; conflict → task failed); dependents of
+  failed tasks skipped; every task = full pipeline incl. validation,
+  Browser QA, self-healing, memory, gated commit; sprint documentation
+  `docs/sprints/sprint-<id>.md` (mermaid DAG + outcomes) committed when
+  green; `--simple` keeps the Phase 5 sequential path.
 - **Production CLI `local-ezai`** (ADR-018): path-first selection
   (`local-ezai .` / `-C path` / cwd; bare path opens chat); commands
   chat · plan · run · code · test · fix · review · commit · memory ·
@@ -55,7 +65,7 @@ architecture (see [agentd/README.md](../agentd/README.md)):
   `sprint/<id>` branch; cross-platform (Windows: sys.executable
   autodetect, process-group handling); packaging via pipx/pip
   (agentd/INSTALL.md), legacy `ezai` CLI retained.
-- **8 agents**: Planner (read-only tools → validated `Plan`), Coder
+- **9 agents**: Planner (read-only tools → validated `Plan`), Coder
   (fs/grep/exec tools, one plan task per invocation), Validator
   (deterministic test/lint/build harness), **Debugger** (read-only
   root-cause analysis → structured `DebugReport`, ADR-015), **Browser QA**
@@ -63,7 +73,8 @@ architecture (see [agentd/README.md](../agentd/README.md)):
   workflows, console-error detection, screenshots — ADR-016), **Memory**
   (per-repo SQLite learning: `.agent/memory.db` + `lessons_learned.json`,
   ADR-017), **Reviewer** (read-only adversarial diff review → structured
-  verdict/findings, memory-style-aware, ADR-018), Git (add/commit,
+  verdict/findings, memory-style-aware, ADR-018), **Sprint** (requirement
+  analysis → task DAG for parallel execution, ADR-019), Git (add/commit,
   T3-gated push, **refuses failing validation** — `COMMIT_BLOCKED`;
   never stages memory files).
 - **Project memory rules** (ADR-017): six kinds (architecture_decision /

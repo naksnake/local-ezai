@@ -283,7 +283,8 @@ def test_sprint_runs_tasks_on_one_branch(tmp_repo, cli, capsys):
         *sprint_task_script("create the feature-two module", "feature_two.py",
                             "TWO = 2\n"),
     ]
-    code, out = cli(script, str(tmp_repo), "sprint", str(spec), capsys=capsys)
+    code, out = cli(script, str(tmp_repo), "sprint", str(spec), "--simple",
+                    capsys=capsys)
     assert code == 0
     assert "[DONE] 1." in out and "[DONE] 2." in out
     assert "2/2 task(s)" in out
@@ -313,7 +314,8 @@ def test_sprint_stops_on_failure_by_default(tmp_repo, cli, capsys):
         {"content": "FAILED: cannot implement"},  # coder gives up
         # task two must never be asked for — script would be exhausted
     ]
-    code, out = cli(script, str(tmp_repo), "sprint", str(spec), capsys=capsys)
+    code, out = cli(script, str(tmp_repo), "sprint", str(spec), "--simple",
+                    capsys=capsys)
     assert code == 1
     assert "[FAIL] 1." in out
     assert "[SKIP] 2." in out

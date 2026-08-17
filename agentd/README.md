@@ -140,6 +140,7 @@ Every step appends to the run journal (`~/.agentd/runs/<run-id>/journal.jsonl`).
 | **Browser QA** (Phase 3) | launch application · run real user workflows · validate pages · detect console errors · capture screenshots · generate validation reports | no (deterministic Playwright harness) | app subprocess + headless Chromium |
 | **Memory** (Phase 4) | persist architecture decisions, coding styles, project rules, failed/successful fixes, implementation history · learn from debugging attempts, validation failures, successful repairs | optional (distillation only, off by default) | SQLite store in the repo's `.agent/` |
 | **Reviewer** (Phase 5) | adversarial diff review: correctness, regressions, check-weakening, scope creep, style-rule violations (from memory) | yes (`reviewer` role) | read-only: `fs_read`, `fs_ls`, `fs_glob`, `code_grep`, `git_status`, `git_diff` |
+| **Sprint** (Phase 6) | requirement analysis · task breakdown · dependency graph for parallel multi-agent execution | yes (`sprint` role) | read-only: `fs_ls`, `fs_read`, `fs_glob`, `code_grep` |
 | **Git** | `git add` · `git commit` · `git push` — **blocked until validation incl. Browser QA succeeds** | optional (commit message only, off by default) | `git_status`, `git_diff`, `git_add`, `git_commit`, `git_push` |
 
 Agents exchange **validated envelopes** (`Plan`, `TaskResult`,
@@ -314,10 +315,41 @@ full roster; `test` → Validator + Browser QA; `fix` → Validator + RCA +
 Debugger + Coder + Git (enters the workflow at VALIDATE — no planning);
 `review` → Reviewer (reads the working-tree diff, or the last commit when
 clean); `commit` → Validator + Browser QA + Git (the commit gate applies);
-`memory`/`chat` → Memory. `sprint` parses markdown checklists/bullets/
-numbered items and runs each task as a full pipeline **on one shared
-`sprint/<id>` branch**, so tasks build on each other (stops at the first
-failure unless `--keep-going`).
+`memory`/`chat` → Memory.
+
+### Autonomous sprint execution (Phase 6)
+
+`local-ezai sprint sprint.md` is a full multi-agent collaboration:
+
+1. **Requirement analysis + task breakdown + dependency graph** — the
+   **Sprint Agent** reads the spec, explores the repo read-only, and emits
+   a validated `SprintPlan` (requirements, self-contained tasks, explicit
+   `depends_on` edges). DAG integrity — unique ids, known deps, no cycles —
+   is checked by code and structurally broken graphs are sent back to the
+   model for correction.
+2. **Wave scheduling** (deterministic): tasks are grouped into topological
+   waves; tasks inside a wave are independent.
+3. **Parallel agent execution**: a multi-task wave runs each task in its
+   own worktree branched from the sprint tip, concurrently (bounded by
+   `sprint.max_parallel`, `--max-parallel`); completed task branches merge
+   back into the shared `sprint/<id>` branch in plan order (a merge
+   conflict fails that task — the dependency graph is what should keep
+   parallel tasks on disjoint files). Single-task waves run directly on the
+   sprint worktree.
+4. Every task is the **full pipeline** — Planner, Coder, **Validation**,
+   **Browser QA**, self-healing, Memory, and the commit gate — so nothing
+   merges without passing its checks; tasks whose dependencies failed are
+   skipped.
+5. **Documentation**: `docs/sprints/sprint-<id>.md` (goal, requirements,
+   mermaid dependency graph, per-task outcomes incl. validation summaries)
+   is generated and, when the sprint is green, committed as the final
+   commit on the sprint branch.
+
+Output: implementation + tests (enforced per task) + documentation +
+commits, all on one branch. `--simple` skips the analysis and runs
+checklist items sequentially (the Phase 5 behavior); `--keep-going`
+continues scheduling after failures (dependents of failed tasks are always
+skipped).
 
 Exit codes: `0` success · `1` run/validation/review failed · `2` usage or
 workspace error · `3` model unreachable (chat) · `130` interrupted.
@@ -501,7 +533,9 @@ agentd/
 ├── pyproject.toml            packaging, pytest, ruff
 ├── src/agentd/
 │   ├── main_cli.py           local-ezai — the production CLI (Phase 5)
-│   ├── sprint.py             markdown sprint-spec parsing
+│   ├── sprint.py             sprint-spec parsing + dependency graph (DAG)
+│   ├── sprint_exec.py        autonomous sprint executor (parallel waves,
+│   │                         merge-back, sprint documentation)
 │   ├── cli.py                ezai entry point (run/plan/runs/journal)
 │   ├── config.py             layered configuration system
 │   ├── graph.py              LangGraph orchestration (self-healing machine)
@@ -532,6 +566,7 @@ agentd/
 │       ├── browser_qa.py     Browser QA Agent (deterministic harness)
 │       ├── memory_agent.py   Memory Agent (learning + optional distillation)
 │       ├── reviewer.py       Reviewer Agent (adversarial diff review)
+│       ├── sprint_agent.py   Sprint Agent (requirements → task DAG)
 │       ├── git_agent.py      Git Agent (commit gate)
 │       └── prompts/          versioned role prompts (*.md)
 └── tests/
@@ -564,7 +599,8 @@ agentd/
 | `workspace.py` (worktrees) | sandboxd execution plane | runner containers + egress policy (ADR-014 interim) |
 | `journal.py` (JSONL) + `ezai runs/journal` | event-sourced runs (ADR-006) | SQLite index + resume |
 | `main_cli.py` (local-ezai) | `ezai` CLI interface (TARGET §10) | web console, chat-ops MCP tools |
-| 8 agents | AGENT_DESIGN.md roster subset | Context/Research agent |
+| `sprint_exec.py` (parallel waves) | sub-agent scheduling / multi-agent collaboration (TARGET §4, AGENT_DESIGN §4) | in-run sub-agent spawning |
+| 9 agents | AGENT_DESIGN.md roster subset | Context/Research agent |
 | `llm.py` roles | model role tiering (ADR-007) | LiteLLM `swe-*` aliases per profile |
 
 Decisions introduced by this runtime: **ADR-013** (LangGraph as orchestration

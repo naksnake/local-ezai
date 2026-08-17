@@ -58,6 +58,7 @@ class LLMConfig(BaseModel):
             "memory": "qwen2.5-7b",
             "reviewer": "qwen2.5-7b",
             "chat": "qwen2.5-7b",
+            "sprint": "qwen2.5-7b",
         }
     )
 
@@ -132,6 +133,13 @@ class BrowserQAConfig(BaseModel):
     ignore_console_patterns: list[str] = Field(default_factory=list)
 
 
+class SprintConfig(BaseModel):
+    """Autonomous sprint execution (Phase 6, ADR-019)."""
+
+    #: Concurrent task runs within one dependency wave.
+    max_parallel: int = 3
+
+
 class MemoryConfig(BaseModel):
     """Project memory (Phase 4, ADR-017) — persisted in the target repo's
     ``.agent/`` directory (``memory.db`` + ``lessons_learned.json``)."""
@@ -172,6 +180,7 @@ class AgentdConfig(BaseModel):
     validation: ValidationConfig = Field(default_factory=ValidationConfig)
     browser_qa: BrowserQAConfig = Field(default_factory=BrowserQAConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
+    sprint: SprintConfig = Field(default_factory=SprintConfig)
     git: GitConfig = Field(default_factory=GitConfig)
     workspace: WorkspaceConfig = Field(default_factory=WorkspaceConfig)
     runs_dir: Path = Field(default_factory=lambda: Path.home() / ".agentd" / "runs")

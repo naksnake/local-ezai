@@ -137,12 +137,17 @@ def build_parser() -> argparse.ArgumentParser:
     memory_p.add_argument("--search", default=None)
     memory_p.add_argument("--limit", type=int, default=20)
 
-    sprint_p = sub.add_parser("sprint", help="Run a markdown spec's tasks",
+    sprint_p = sub.add_parser("sprint", help="Autonomous sprint execution",
                               parents=[common])
     sprint_p.add_argument("spec_file")
     sprint_p.add_argument("--keep-going", action="store_true",
                           help="Continue with remaining tasks after a failure")
     sprint_p.add_argument("--push", action="store_true")
+    sprint_p.add_argument("--simple", action="store_true",
+                          help="Skip requirement analysis: parse checklist "
+                               "items and run them sequentially (Phase 5 mode)")
+    sprint_p.add_argument("--max-parallel", type=int, default=None,
+                          help="Concurrent tasks per dependency wave")
     sprint_p.add_argument("--json", action="store_true", dest="as_json")
 
     sub.add_parser("version", help="Print the version")
@@ -399,31 +404,54 @@ def cmd_sprint(config: AgentdConfig, project: Path, args) -> int:
     if not spec.is_file():
         log.error("sprint spec not found: %s", args.spec_file)
         return 2
-    try:
-        tasks = load_sprint_tasks(spec)
-    except ValueError as exc:
-        log.error("%s", exc)
-        return 2
 
     if args.push:
         config.git.allow_push = True
-    print(f"sprint: {len(tasks)} task(s) from {spec.name}")
-    report = run_sprint(config, project, tasks, spec_file=str(spec),
-                        keep_going=args.keep_going)
+    if args.max_parallel is not None:
+        config.sprint.max_parallel = max(1, args.max_parallel)
+
+    if args.simple:
+        try:
+            tasks = load_sprint_tasks(spec)
+        except ValueError as exc:
+            log.error("%s", exc)
+            return 2
+        print(f"sprint (simple): {len(tasks)} task(s) from {spec.name}")
+        report = run_sprint(config, project, tasks, spec_file=str(spec),
+                            keep_going=args.keep_going)
+    else:
+        from agentd.sprint_exec import run_sprint_autonomous
+
+        print(f"sprint: analyzing {spec.name} ...")
+        report = run_sprint_autonomous(
+            config, project, spec.read_text(encoding="utf-8"),
+            spec_file=str(spec), keep_going=args.keep_going,
+        )
+
     if args.as_json:
         print(report.model_dump_json(indent=2))
-    else:
-        for task in report.tasks:
-            mark = {"completed": "DONE", "failed": "FAIL",
-                    "skipped": "SKIP"}[task.status]
-            commit = f" ({task.commit_sha[:10]})" if task.commit_sha else ""
-            print(f"  [{mark}] {task.index}. {task.task[:70]}{commit}")
-            if task.error:
-                print(f"         {task.error[:100]}")
-        print(f"\nsprint {report.sprint_id}: {report.status.upper()} — "
-              f"{report.completed_count}/{len(report.tasks)} task(s) on "
-              f"branch {report.branch}")
-        print(f"workspace: {report.workspace_path}")
+        return 0 if report.status == "completed" else 1
+
+    if report.plan:
+        print(f"goal: {report.plan.goal}")
+        print(f"{len(report.plan.tasks)} task(s) in {report.waves} wave(s)")
+    for task in report.tasks:
+        mark = {"completed": "DONE", "failed": "FAIL",
+                "skipped": "SKIP"}[task.status]
+        commit = f" ({task.commit_sha[:10]})" if task.commit_sha else ""
+        wave = f" [wave {task.wave}]" if task.wave else ""
+        deps = f" <- {','.join(task.depends_on)}" if task.depends_on else ""
+        print(f"  [{mark}] {task.task_id or task.index}. "
+              f"{task.task[:60]}{wave}{deps}{commit}")
+        if task.error:
+            print(f"         {task.error[:110]}")
+    print(f"\nsprint {report.sprint_id}: {report.status.upper()} — "
+          f"{report.completed_count}/{len(report.tasks)} task(s) on "
+          f"branch {report.branch}")
+    if report.report_doc:
+        print(f"report:    {report.report_doc} "
+              f"({'committed' if report.status == 'completed' else 'not committed'})")
+    print(f"workspace: {report.workspace_path}")
     return 0 if report.status == "completed" else 1
 
 

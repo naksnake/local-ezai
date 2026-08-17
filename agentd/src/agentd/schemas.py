@@ -242,7 +242,30 @@ class ReviewReport(BaseModel):
     findings: list[ReviewFinding] = Field(default_factory=list)
 
 
-# ── Sprint (Phase 5) ─────────────────────────────────────────────────────────
+# ── Sprint (Phase 5/6) ───────────────────────────────────────────────────────
+
+
+class SprintTaskSpec(BaseModel):
+    """One task of an analyzed sprint plan (Sprint Agent output)."""
+
+    id: str
+    title: str
+    description: str = Field(
+        description="Self-contained implementation brief incl. acceptance "
+                    "criteria, tests, and documentation expectations"
+    )
+    depends_on: list[str] = Field(default_factory=list)
+
+
+class SprintPlan(BaseModel):
+    """Sprint Agent output — requirement analysis + task breakdown +
+    dependency graph (`SprintPlan v1`). DAG validity (unique ids, known
+    dependencies, no cycles) is enforced by code, not by trust."""
+
+    goal: str
+    requirements: list[str] = Field(default_factory=list)
+    tasks: list[SprintTaskSpec] = Field(min_length=1)
+    notes: str = ""
 
 
 class SprintTaskResult(BaseModel):
@@ -250,7 +273,11 @@ class SprintTaskResult(BaseModel):
     task: str
     run_id: str
     status: Literal["completed", "failed", "skipped"]
+    task_id: str = ""
+    wave: int = 0
+    depends_on: list[str] = Field(default_factory=list)
     commit_sha: str = ""
+    merged: bool = True
     error: str | None = None
     iterations_used: int = 0
 
@@ -261,6 +288,9 @@ class SprintReport(BaseModel):
     branch: str
     workspace_path: str
     spec_file: str = ""
+    plan: SprintPlan | None = None
+    waves: int = 0
+    report_doc: str = ""
     tasks: list[SprintTaskResult] = Field(default_factory=list)
 
     @property

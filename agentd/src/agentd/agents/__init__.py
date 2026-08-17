@@ -7,6 +7,8 @@ from agentd.agents.debugger import DebuggerAgent
 from agentd.agents.git_agent import GitAgent
 from agentd.agents.memory_agent import MemoryAgent
 from agentd.agents.planner import PlannerAgent
+from agentd.agents.reviewer import ReviewerAgent
+from agentd.agents.sprint_agent import SprintAgent
 from agentd.agents.validator import ValidationAgent
 
 __all__ = [
@@ -17,4 +19,6 @@ __all__ = [
     "GitAgent",
     "DebuggerAgent",
     "MemoryAgent",
+    "ReviewerAgent",
+    "SprintAgent",
 ]
