@@ -48,12 +48,17 @@ def build_registry(config: AgentdConfig, journal: Journal) -> ToolRegistry:
 def prepare_run(
     config: AgentdConfig, repo: Path, run_id: str
 ) -> tuple[AgentdConfig, Workspace, Journal]:
-    """Apply repo overrides, create the workspace and the journal."""
+    """Apply repo overrides + model registry, create workspace and journal."""
+    from agentd.model_registry import apply_model_registry
+
     config = merge_repo_overrides(config, load_repo_overrides(repo))
     workspace = create_workspace(config, repo, run_id)
     # Re-read overrides from the workspace itself (worktree == repo content
     # at HEAD; a repo may carry .agentd.yaml only on the checked-out branch).
     config = merge_repo_overrides(config, load_repo_overrides(workspace.root))
+    # Model governance: the ORIGIN repo's .agent/model_registry.yaml wins
+    # (CLAUDE.md agent_model_map, ADR-020).
+    config = apply_model_registry(config, resolve_origin_root(workspace.repo_path))
     journal = Journal(config.runs_dir / run_id)
     return config, workspace, journal
 

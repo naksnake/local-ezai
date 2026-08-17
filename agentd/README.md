@@ -8,7 +8,7 @@ self-heals within a bounded iteration budget, then commits (and optionally
 pushes) the result — using **only the local models already served by the
 stack**.
 
-It implements Phases 1–4 of the architecture defined in
+It implements Phases 1–7 of the architecture defined in
 [docs/TARGET_ARCHITECTURE.md](../docs/TARGET_ARCHITECTURE.md) /
 [docs/MIGRATION_PLAN.md](../docs/MIGRATION_PLAN.md), and it changes nothing
 about the existing 8-service chat stack (ADR-002: additive evolution).
@@ -141,6 +141,8 @@ Every step appends to the run journal (`~/.agentd/runs/<run-id>/journal.jsonl`).
 | **Memory** (Phase 4) | persist architecture decisions, coding styles, project rules, failed/successful fixes, implementation history · learn from debugging attempts, validation failures, successful repairs | optional (distillation only, off by default) | SQLite store in the repo's `.agent/` |
 | **Reviewer** (Phase 5) | adversarial diff review: correctness, regressions, check-weakening, scope creep, style-rule violations (from memory) | yes (`reviewer` role) | read-only: `fs_read`, `fs_ls`, `fs_glob`, `code_grep`, `git_status`, `git_diff` |
 | **Sprint** (Phase 6) | requirement analysis · task breakdown · dependency graph for parallel multi-agent execution | yes (`sprint` role) | read-only: `fs_ls`, `fs_read`, `fs_glob`, `code_grep` |
+| **Documentation** (Phase 7) | generate/refresh `docs/USER_GUIDE.md`, `OPERATION_MANUAL.md`, `MAINTENANCE_GUIDE.md`, `RELEASE_NOTES.md` (left uncommitted for review) | yes (`documentation` role) | `fs_read`, `fs_ls`, `fs_glob`, `code_grep`, `fs_write`, `fs_edit`, `git_status`, `git_diff` |
+| **Evolution** (Phase 7) | analyze run history, failure patterns, bottlenecks · propose ≤3 concrete improvements (implemented by the full pipeline, delivered as a PR — never merged) | yes (`evolution` role) | read-only: `fs_read`, `fs_ls`, `fs_glob`, `code_grep`, `git_status`, `git_diff` |
 | **Git** | `git add` · `git commit` · `git push` — **blocked until validation incl. Browser QA succeeds** | optional (commit message only, off by default) | `git_status`, `git_diff`, `git_add`, `git_commit`, `git_push` |
 
 Agents exchange **validated envelopes** (`Plan`, `TaskResult`,
@@ -307,6 +309,10 @@ local-ezai review [--json]                  # adversarial diff review (Reviewer 
 local-ezai commit [-m MSG] [--push]         # validate, then commit (gated)
 local-ezai memory [--add TEXT --kind K] [--search TERM] [--limit N]
 local-ezai sprint <spec-file> [--keep-going] [--push] [--json]
+local-ezai docs [--focus F]                 # Documentation Agent → 4 repo guides
+local-ezai evolve [--focus F] [--push]      # evolution cycle → PR proposal
+local-ezai roadmap [--full]                 # show .agent/roadmap.md milestones
+local-ezai evaluate-models [--json]         # probe every model role + benchmarks
 local-ezai version
 ```
 
@@ -315,7 +321,11 @@ full roster; `test` → Validator + Browser QA; `fix` → Validator + RCA +
 Debugger + Coder + Git (enters the workflow at VALIDATE — no planning);
 `review` → Reviewer (reads the working-tree diff, or the last commit when
 clean); `commit` → Validator + Browser QA + Git (the commit gate applies);
-`memory`/`chat` → Memory.
+`memory`/`chat` → Memory; `docs` → Documentation; `evolve` → Evolution +
+the full roster (delivery via the `forge:` config — PR or proposal
+bundle, always awaiting human approval). Model routing per role comes
+from `.agent/model_registry.yaml` (primary + fallback chains), verified
+by `evaluate-models` → `.agent/model_benchmarks.json`.
 
 ### Autonomous sprint execution (Phase 6)
 
@@ -351,8 +361,9 @@ checklist items sequentially (the Phase 5 behavior); `--keep-going`
 continues scheduling after failures (dependents of failed tasks are always
 skipped).
 
-Exit codes: `0` success · `1` run/validation/review failed · `2` usage or
-workspace error · `3` model unreachable (chat) · `130` interrupted.
+Exit codes: `0` success · `1` run/validation/review/evolution failed ·
+`2` usage or workspace error · `3` model unreachable (chat) · `130`
+interrupted.
 
 The Phase 1–4 `ezai` CLI (`run/plan/runs/journal/remember/memory` with
 `--repo`) remains available for scripts; `ezai runs` and `ezai journal`

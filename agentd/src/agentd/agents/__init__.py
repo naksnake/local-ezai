@@ -4,6 +4,8 @@
 from agentd.agents.browser_qa import BrowserQAAgent
 from agentd.agents.coder import CoderAgent
 from agentd.agents.debugger import DebuggerAgent
+from agentd.agents.documentation_agent import DocumentationAgent
+from agentd.agents.evolution_agent import EvolutionAgent
 from agentd.agents.git_agent import GitAgent
 from agentd.agents.memory_agent import MemoryAgent
 from agentd.agents.planner import PlannerAgent
@@ -21,4 +23,6 @@ __all__ = [
     "MemoryAgent",
     "ReviewerAgent",
     "SprintAgent",
+    "DocumentationAgent",
+    "EvolutionAgent",
 ]

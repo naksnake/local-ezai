@@ -406,3 +406,51 @@ observability lands in a dedicated journal (SPRINT_PLAN/WAVES/
 WAVE_STARTED/TASK/MERGE_CONFLICT/DOC). Cross-task semantic conflicts that
 merge cleanly remain undetected until validation of later waves — a
 Reviewer-over-the-whole-sprint gate is future work.
+
+## ADR-020 — Production governance: model registry + fallback routing, evaluation harness, Documentation & Evolution agents, forge PR delivery, self-hosting
+**Date:** 2026-08-17 · **Status:** Accepted (closes the CLAUDE.md
+Documentation/Evolution/Model-Routing/Bootstrap-Exit mandates; final
+production-readiness review)
+**Context:** The final readiness audit found the platform could plan,
+code, validate, heal, remember, and sprint — but could not govern its
+model routing declaratively, could not generate PRs, had no Documentation
+or Evolution agents, and could not target itself. CLAUDE.md mandates an
+exact `agent_model_map`, mandatory documentation, an evolution workflow
+ending in human-approved PRs, and a bootstrap exit
+(Human → Roadmap → Local-EZAI).
+**Decision:**
+(1) **Model governance is data, not code**: per-repo
+`.agent/model_registry.yaml` (`agent_model_map:` — primary + fallback per
+role) parsed by `model_registry.py` and applied at `prepare_run` into
+`llm.roles` / `llm.role_fallbacks`. The LLM client walks
+`[primary] + fallbacks` per request (journaled `LLM_FALLBACK`), raising
+only after the chain is exhausted. `evaluate-models` probes every role
+(structured-output roles must return valid JSON), measures latency, and
+writes `.agent/model_benchmarks.json` — the evidence artifact for
+human-approved routing changes.
+(2) **Documentation Agent** (role `documentation`, write-tools limited to
+the worktree): generates/refreshes USER_GUIDE, OPERATION_MANUAL,
+MAINTENANCE_GUIDE, RELEASE_NOTES under `docs/`; results derived from
+`git status --porcelain -uall`, left uncommitted for review.
+(3) **Evolution Agent + pipeline** (`evolution.py`): deterministic
+evidence gathering (memory history, failed fixes with repeated-signature
+flagging, recent run reports, roadmap head) → schema-validated proposal
+(≤3 improvements) → full execute_run pipeline per improvement, sequential,
+on an `evolve/<id>` worktree → timed before/after benchmark → dated
+RELEASE_NOTES entry (green only) → PR delivery. **The pipeline has no
+merge step by construction** — it terminates awaiting human review.
+(4) **Forge abstraction** (`forge.py`): PR delivery kinds `none`
+(PR_PROPOSAL.md bundle, default), `gh` (GitHub CLI), `api`
+(GitHub/Gitea-compatible REST, token via `$FORGE_TOKEN`). Configured
+globally, never from repo overrides; push remains double-gated
+(`git.allow_push` AND `--push`).
+(5) **Self-hosting / bootstrap exit**: a root `.agentd.yaml` wires the
+platform's own ruff + pytest commands, making Local-EZAI a first-class
+target of its own agents (`local-ezai . test|fix|docs|evolve`). A `type`
+validation category joins lint/build/test (CLAUDE.md).
+**Consequences:** Model replacement becomes a reviewable data diff with
+benchmark evidence; the platform can document and improve itself with the
+human as the only merge authority; four new CLI commands
+(docs/evolve/roadmap/evaluate-models); the agent roster reaches 11.
+Accepted residual risk: forge `api` tested against a stub only; live
+forges validated operationally.

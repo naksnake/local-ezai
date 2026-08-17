@@ -109,10 +109,20 @@ class LLMError(RuntimeError):
 
 
 class OpenAICompatLLM:
-    """Minimal, dependency-light client for OpenAI-compatible endpoints."""
+    """Minimal, dependency-light client for OpenAI-compatible endpoints.
 
-    def __init__(self, config: LLMConfig) -> None:
+    Model governance (ADR-020): each role resolves to a primary model plus
+    an ordered fallback chain (``role_fallbacks``); when a model fails —
+    transport errors, exhausted retries, or rejection (e.g. the alias is
+    not served) — the next model in the chain is tried. ``on_fallback`` is
+    an optional callback ``(role, failed_model, next_model, error)`` used
+    for journaling.
+    """
+
+    def __init__(self, config: LLMConfig, on_fallback=None) -> None:
         self.config = config
+        self.on_fallback = on_fallback
+        self.fallbacks_used = 0
         self._client = httpx.Client(
             base_url=config.base_url.rstrip("/"),
             headers={"Authorization": f"Bearer {config.api_key}"},
@@ -125,8 +135,34 @@ class OpenAICompatLLM:
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
     ) -> LLMResponse:
+        chain = [self.config.model_for_role(role)]
+        for fallback in self.config.role_fallbacks.get(role, []):
+            if fallback not in chain:
+                chain.append(fallback)
+        last_error: Exception | None = None
+        for position, model in enumerate(chain):
+            try:
+                return self._chat_model(model, messages, tools)
+            except LLMError as exc:
+                last_error = exc
+                if position < len(chain) - 1:
+                    self.fallbacks_used += 1
+                    log.warning("model '%s' failed for role '%s' (%s); "
+                                "falling back to '%s'", model, role,
+                                str(exc)[:120], chain[position + 1])
+                    if self.on_fallback is not None:
+                        self.on_fallback(role, model, chain[position + 1],
+                                         str(exc))
+        raise last_error  # type: ignore[misc]
+
+    def _chat_model(
+        self,
+        model: str,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+    ) -> LLMResponse:
         payload: dict[str, Any] = {
-            "model": self.config.model_for_role(role),
+            "model": model,
             "messages": messages,
             "temperature": self.config.temperature,
             "max_tokens": self.config.max_tokens,

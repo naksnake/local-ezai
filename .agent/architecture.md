@@ -41,11 +41,23 @@ openwebui:3000 · litellm:4000 (auto-RAG hook `config/litellm_custom_callbacks.p
 Profiles: GPU (base) / cpu / n97 / n97-igpu via compose overrides with
 `!override` on `deploy`. Config via `.env` (`.env.example` = schema).
 
-## Phases 1–6 — shipped (agentd/)
+## Phases 1–7 — shipped (agentd/)
 
 The `agentd/` sub-project implements the first slices of the target
 architecture (see [agentd/README.md](../agentd/README.md)):
 
+- **Model governance & self-sustainability** (ADR-020): per-repo
+  `.agent/model_registry.yaml` (`agent_model_map`: primary + fallback per
+  role) applied at run preparation; runtime fallback chains (journaled
+  `LLM_FALLBACK`); `evaluate-models` probe harness →
+  `.agent/model_benchmarks.json`; **Documentation Agent** (generates the
+  four repo guides, uncommitted); **Evolution Agent + `evolve` pipeline**
+  (evidence → proposal ≤3 improvements → full pipelines on `evolve/<id>` →
+  before/after benchmark → RELEASE_NOTES → PR via forge none/gh/api —
+  **human-approval terminal, no merge capability exists**); root
+  `.agentd.yaml` makes the platform self-hosting (bootstrap exit);
+  `type` validation category; production guides under `docs/`
+  (final review: [docs/FINAL_RELEASE_REPORT.md](../docs/FINAL_RELEASE_REPORT.md)).
 - **Autonomous sprint execution** (ADR-019): Sprint Agent analyzes
   `sprint.md` → requirements + task breakdown + validated dependency DAG
   (cycles/unknown deps rejected deterministically, fed back for retry);
@@ -59,13 +71,14 @@ architecture (see [agentd/README.md](../agentd/README.md)):
 - **Production CLI `local-ezai`** (ADR-018): path-first selection
   (`local-ezai .` / `-C path` / cwd; bare path opens chat); commands
   chat · plan · run · code · test · fix · review · commit · memory ·
-  sprint, each a pipeline subset over the agents; in-place commands
+  sprint · docs · evolve · roadmap · evaluate-models (ADR-020), each a
+  pipeline subset over the agents; in-place commands
   (test/fix/review/commit) vs worktree commands (run/code/sprint);
   sprint = markdown spec → sequential full pipelines on one shared
   `sprint/<id>` branch; cross-platform (Windows: sys.executable
   autodetect, process-group handling); packaging via pipx/pip
   (agentd/INSTALL.md), legacy `ezai` CLI retained.
-- **9 agents**: Planner (read-only tools → validated `Plan`), Coder
+- **11 agents**: Planner (read-only tools → validated `Plan`), Coder
   (fs/grep/exec tools, one plan task per invocation), Validator
   (deterministic test/lint/build harness), **Debugger** (read-only
   root-cause analysis → structured `DebugReport`, ADR-015), **Browser QA**
@@ -74,7 +87,10 @@ architecture (see [agentd/README.md](../agentd/README.md)):
   (per-repo SQLite learning: `.agent/memory.db` + `lessons_learned.json`,
   ADR-017), **Reviewer** (read-only adversarial diff review → structured
   verdict/findings, memory-style-aware, ADR-018), **Sprint** (requirement
-  analysis → task DAG for parallel execution, ADR-019), Git (add/commit,
+  analysis → task DAG for parallel execution, ADR-019),
+  **Documentation** (generates USER_GUIDE/OPERATION_MANUAL/
+  MAINTENANCE_GUIDE/RELEASE_NOTES, ADR-020), **Evolution** (read-only
+  evidence → improvement proposals, ADR-020), Git (add/commit,
   T3-gated push, **refuses failing validation** — `COMMIT_BLOCKED`;
   never stages memory files).
 - **Project memory rules** (ADR-017): six kinds (architecture_decision /

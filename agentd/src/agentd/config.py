@@ -59,8 +59,13 @@ class LLMConfig(BaseModel):
             "reviewer": "qwen2.5-7b",
             "chat": "qwen2.5-7b",
             "sprint": "qwen2.5-7b",
+            "documentation": "qwen2.5-7b",
+            "evolution": "qwen2.5-7b",
         }
     )
+    #: Ordered fallback models per role (ADR-020): tried when the primary
+    #: fails. Populated from .agent/model_registry.yaml or set directly.
+    role_fallbacks: dict[str, list[str]] = Field(default_factory=dict)
 
     def model_for_role(self, role: str) -> str:
         return self.roles.get(role) or self.roles.get("default") or "qwen2.5-7b"
@@ -133,6 +138,20 @@ class BrowserQAConfig(BaseModel):
     ignore_console_patterns: list[str] = Field(default_factory=list)
 
 
+class ForgeConfig(BaseModel):
+    """Pull-request delivery (Evolution workflow, ADR-020). Fail-closed:
+    kind 'none' produces a reviewable PR proposal bundle instead of any
+    network action."""
+
+    kind: Literal["none", "gh", "api"] = "none"
+    #: 'api' kind: forge REST base, e.g. https://api.github.com or
+    #: https://gitea.lan/api/v1 (both use POST {api_base}/repos/{repo}/pulls)
+    api_base: str = ""
+    repo: str = ""  # owner/name
+    token_env: str = "FORGE_TOKEN"
+    base_branch: str = "main"
+
+
 class SprintConfig(BaseModel):
     """Autonomous sprint execution (Phase 6, ADR-019)."""
 
@@ -181,6 +200,7 @@ class AgentdConfig(BaseModel):
     browser_qa: BrowserQAConfig = Field(default_factory=BrowserQAConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
     sprint: SprintConfig = Field(default_factory=SprintConfig)
+    forge: ForgeConfig = Field(default_factory=ForgeConfig)
     git: GitConfig = Field(default_factory=GitConfig)
     workspace: WorkspaceConfig = Field(default_factory=WorkspaceConfig)
     runs_dir: Path = Field(default_factory=lambda: Path.home() / ".agentd" / "runs")

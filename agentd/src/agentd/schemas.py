@@ -298,6 +298,91 @@ class SprintReport(BaseModel):
         return sum(1 for t in self.tasks if t.status == "completed")
 
 
+# ── Documentation Agent (Phase 7) ────────────────────────────────────────────
+
+
+class DocsResult(BaseModel):
+    """Documentation Agent output."""
+
+    status: Literal["done", "failed"]
+    summary: str = ""
+    files_written: list[str] = Field(default_factory=list)
+
+
+# ── Evolution workflow (Phase 7) ─────────────────────────────────────────────
+
+
+class Improvement(BaseModel):
+    id: str
+    title: str
+    description: str = Field(
+        description="Self-contained implementation brief incl. acceptance "
+                    "criteria and tests")
+    rationale: str = ""
+
+
+class EvolutionProposal(BaseModel):
+    """Evolution Agent output — `EvolutionProposal v1`.
+
+    Analyze history → analyze failures → identify bottlenecks → propose."""
+
+    title: str
+    history_summary: str = ""
+    failure_patterns: list[str] = Field(default_factory=list)
+    bottlenecks: list[str] = Field(default_factory=list)
+    improvements: list[Improvement] = Field(min_length=1)
+    notes: str = ""
+
+
+class BenchmarkResult(BaseModel):
+    """Timed validation snapshot (before/after an evolution)."""
+
+    passed: bool = False
+    checks: int = 0
+    duration_seconds: float = 0.0
+
+
+class PullRequestResult(BaseModel):
+    created: bool = False
+    url: str = ""
+    bundle_path: str = ""
+    note: str = ""
+
+
+class EvolutionReport(BaseModel):
+    evolution_id: str
+    status: Literal["completed", "failed"]
+    branch: str
+    workspace_path: str
+    proposal: EvolutionProposal | None = None
+    tasks: list[SprintTaskResult] = Field(default_factory=list)
+    benchmark_before: BenchmarkResult | None = None
+    benchmark_after: BenchmarkResult | None = None
+    release_notes_updated: bool = False
+    pull_request: PullRequestResult | None = None
+    error: str | None = None
+
+
+# ── Model governance (Phase 7, ADR-020) ─────────────────────────────────────
+
+
+class ModelProbeResult(BaseModel):
+    role: str
+    model: str
+    fallbacks: list[str] = Field(default_factory=list)
+    ok: bool
+    latency_ms: int = 0
+    expects_json: bool = False
+    error: str | None = None
+
+
+class ModelEvalReport(BaseModel):
+    evaluated_at: str
+    base_url: str = ""
+    passed: bool
+    results: list[ModelProbeResult] = Field(default_factory=list)
+
+
 # ── Run report ───────────────────────────────────────────────────────────────
 
 

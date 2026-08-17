@@ -41,7 +41,8 @@ from agentd.logging_setup import get_logger, setup_logging
 log = get_logger("local-ezai")
 
 COMMANDS = ("chat", "plan", "run", "code", "test", "fix", "review",
-            "commit", "memory", "sprint", "version")
+            "commit", "memory", "sprint", "docs", "evolve", "roadmap",
+            "evaluate-models", "version")
 
 
 # ── argv preprocessing: leading path selection ────────────────────────────────
@@ -150,6 +151,32 @@ def build_parser() -> argparse.ArgumentParser:
                           help="Concurrent tasks per dependency wave")
     sprint_p.add_argument("--json", action="store_true", dest="as_json")
 
+    docs_p = sub.add_parser("docs", help="Generate/refresh the four repo guides",
+                            parents=[common])
+    docs_p.add_argument("--focus", default="")
+    docs_p.add_argument("--json", action="store_true", dest="as_json")
+
+    evolve_p = sub.add_parser(
+        "evolve", help="Evolution cycle: analyze → propose → implement → "
+                       "validate → benchmark → PR (human approves)",
+        parents=[common])
+    evolve_p.add_argument("--focus", default="",
+                          help="Optional human focus for this cycle")
+    evolve_p.add_argument("--push", action="store_true",
+                          help="Allow pushing the evolve branch (T3)")
+    evolve_p.add_argument("--json", action="store_true", dest="as_json")
+
+    roadmap_p = sub.add_parser("roadmap", help="Show the project roadmap",
+                               parents=[common])
+    roadmap_p.add_argument("--full", action="store_true",
+                           help="Print the whole file (default: milestones)")
+
+    eval_p = sub.add_parser("evaluate-models",
+                            help="Probe every routed model role and record "
+                                 "benchmarks to .agent/model_benchmarks.json",
+                            parents=[common])
+    eval_p.add_argument("--json", action="store_true", dest="as_json")
+
     sub.add_parser("version", help="Print the version")
     return parser
 
@@ -207,6 +234,14 @@ def _dispatch(command: str, args, config: AgentdConfig, project: Path) -> int:
         return cmd_memory(config, project, args)
     if command == "sprint":
         return cmd_sprint(config, project, args)
+    if command == "docs":
+        return cmd_docs(config, project, args)
+    if command == "evolve":
+        return cmd_evolve(config, project, args)
+    if command == "roadmap":
+        return cmd_roadmap(config, project, args)
+    if command == "evaluate-models":
+        return cmd_evaluate_models(config, project, args)
     raise ValueError(f"unknown command {command}")  # unreachable
 
 
@@ -453,6 +488,110 @@ def cmd_sprint(config: AgentdConfig, project: Path, args) -> int:
               f"({'committed' if report.status == 'completed' else 'not committed'})")
     print(f"workspace: {report.workspace_path}")
     return 0 if report.status == "completed" else 1
+
+
+def cmd_docs(config: AgentdConfig, project: Path, args) -> int:
+    from agentd.agents import DocumentationAgent
+    from agentd.llm import build_llm
+    from agentd.runner import build_memory_store, build_registry, new_run_id, prepare_run
+
+    run_config = config.model_copy(deep=True)
+    run_config.workspace.mode = "in-place"
+    run_config, workspace, journal = prepare_run(run_config, project, new_run_id())
+    llm = build_llm(run_config.llm)
+    store = build_memory_store(run_config, workspace)
+    try:
+        agent = DocumentationAgent(run_config, llm,
+                                   build_registry(run_config, journal),
+                                   journal, memory=store)
+        result = agent.run(workspace, focus=args.focus)
+    finally:
+        if store is not None:
+            store.close()
+    if args.as_json:
+        print(result.model_dump_json(indent=2))
+    else:
+        print(f"documentation: {result.status} — {result.summary[:120]}")
+        for file in result.files_written:
+            print(f"  wrote: {file}")
+        print("changes are UNCOMMITTED — review, then 'local-ezai commit'")
+    return 0 if result.status == "done" else 1
+
+
+def cmd_evolve(config: AgentdConfig, project: Path, args) -> int:
+    from agentd.evolution import run_evolution
+
+    if args.push:
+        config.git.allow_push = True
+    print("evolve: analyzing history, failures, and bottlenecks ...")
+    report = run_evolution(config, project, focus=args.focus)
+    if args.as_json:
+        print(report.model_dump_json(indent=2))
+        return 0 if report.status == "completed" else 1
+    if report.proposal:
+        print(f"proposal: {report.proposal.title}")
+        for pattern in report.proposal.failure_patterns[:5]:
+            print(f"  pattern:    {pattern[:90]}")
+        for bottleneck in report.proposal.bottlenecks[:5]:
+            print(f"  bottleneck: {bottleneck[:90]}")
+    for task in report.tasks:
+        mark = {"completed": "DONE", "failed": "FAIL", "skipped": "SKIP"}[task.status]
+        commit = f" ({task.commit_sha[:10]})" if task.commit_sha else ""
+        print(f"  [{mark}] {task.task_id}: {task.task[:65]}{commit}")
+    if report.benchmark_before and report.benchmark_after:
+        before, after = report.benchmark_before, report.benchmark_after
+        print(f"benchmark: before {'PASS' if before.passed else 'FAIL'} "
+              f"({before.duration_seconds}s) -> after "
+              f"{'PASS' if after.passed else 'FAIL'} ({after.duration_seconds}s)")
+    if report.pull_request:
+        pr = report.pull_request
+        print(f"pull request: {pr.url or pr.bundle_path} — {pr.note}")
+    print(f"\nevolution {report.evolution_id}: {report.status.upper()} on "
+          f"branch {report.branch} — awaiting human review")
+    return 0 if report.status == "completed" else 1
+
+
+def cmd_roadmap(config: AgentdConfig, project: Path, args) -> int:
+    from agentd.runner import resolve_origin_root
+
+    roadmap = resolve_origin_root(project) / config.memory.dir / "roadmap.md"
+    if not roadmap.is_file():
+        print(f"(no roadmap at {roadmap} — create .agent/roadmap.md)")
+        return 0
+    text = roadmap.read_text(encoding="utf-8")
+    if args.full:
+        print(text)
+        return 0
+    shown = False
+    for line in text.splitlines():
+        if line.startswith("#") or line.startswith("| M") or \
+                line.startswith("| ID") or line.startswith("|--"):
+            print(line)
+            shown = True
+    if not shown:
+        print(text)
+    return 0
+
+
+def cmd_evaluate_models(config: AgentdConfig, project: Path, args) -> int:
+    from agentd.evaluate import evaluate_models
+
+    report = evaluate_models(config, project)
+    if args.as_json:
+        print(report.model_dump_json(indent=2))
+        return 0 if report.passed else 1
+    print(f"model evaluation @ {report.base_url}")
+    for result in report.results:
+        mark = "ok  " if result.ok else "FAIL"
+        fallbacks = f" (fallback: {', '.join(result.fallbacks)})" \
+            if result.fallbacks else ""
+        print(f"  [{mark}] {result.role:14} {result.model:20} "
+              f"{result.latency_ms:5d} ms{fallbacks}")
+        if result.error:
+            print(f"         {result.error[:100]}")
+    print(f"\n{'all roles passed' if report.passed else 'SOME ROLES FAILED'} — "
+          f"recorded in .agent/model_benchmarks.json")
+    return 0 if report.passed else 1
 
 
 if __name__ == "__main__":

@@ -22,7 +22,8 @@ from agentd.schemas import CheckResult, ValidationReport
 from agentd.tools.shell import run_command
 from agentd.workspace import Workspace
 
-_CATEGORY_ORDER = ("lint", "build", "test")
+# CLAUDE.md Validation Agent responsibilities: tests, build, lint, TYPE
+_CATEGORY_ORDER = ("lint", "type", "build", "test")
 
 
 class ValidationAgent(BaseAgent):
