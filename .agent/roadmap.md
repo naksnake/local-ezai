@@ -59,7 +59,9 @@ governance rules "govern roles, reveal models", evolution gains an
 advisory-only lane into the approval queue. Final FRE: clone → edit .env
 once (`AI_RUNTIME` + three group seeds) → `make setup` → WebUI → done.
 See [docs/V1_PRODUCT_REVIEW.md](../docs/V1_PRODUCT_REVIEW.md) and its five
-companion documents.
+companion documents. Execution decomposition:
+[docs/V1_PR_PLAN.md](../docs/V1_PR_PLAN.md) — 26 PRs across P1–P6 with
+dependency graph, gates, and per-PR acceptance.
 
 ## Next-generation roadmap (post-readiness-review)
 

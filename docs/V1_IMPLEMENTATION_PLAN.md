@@ -13,6 +13,10 @@
 > and the third-runtime drill
 > ([RUNTIME_ABSTRACTION_STRATEGY.md](RUNTIME_ABSTRACTION_STRATEGY.md) §6).
 
+> **PR-level decomposition:** [V1_PR_PLAN.md](V1_PR_PLAN.md) breaks these
+> phases into 26 individually reviewable pull requests with dependency
+> graph, sizing, per-PR gates, and a PR-ready checklist.
+
 **Input:** the eight productization architecture documents
 ([TARGET_PRODUCT_V1.md](TARGET_PRODUCT_V1.md) and its references).
 **Constraints:** extend-only (no redesign), every existing platform and
