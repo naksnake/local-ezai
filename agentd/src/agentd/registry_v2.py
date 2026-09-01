@@ -88,6 +88,10 @@ class ModelEntry(BaseModel):
     groups: list[str] = Field(default_factory=list)
     context: int = 0
     state: ModelState = "registered"
+    #: Declared artifact size in GB — measured from actual bytes at install
+    #: time (PR-4), consumed by capability.fit() (PR-2). Never inferred
+    #: from the model's name or family (ADR-026). 0 = unknown.
+    size_gb: float = 0.0
     #: Chat-template / tool-call metadata for capability negotiation (PR-3).
     template: str = ""
     tool_call_format: str = ""

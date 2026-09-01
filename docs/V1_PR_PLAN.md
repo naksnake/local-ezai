@@ -69,7 +69,9 @@ skipping, loud empty-group failure; **golden test: reproduces today's
 CLAUDE.md routing byte-for-byte**; generation diff.
 Excludes: any consumer.
 
-**PR-2 · Capability vector + classes + fit()** — S
+**PR-2 · Capability vector + classes + fit()** — S — ✅ **implemented**
+([prs/PR-2-capability-fit.md](prs/PR-2-capability-fit.md); 14 tests,
+suite 344 green, golden intact)
 Scope: detection (`accelerator kind/vram/ram/cores/flags`), class mapping
 (`accel-large|accel-small|cpu-standard|cpu-low`, `n97` preset alias), pure
 `fit(model, vector)` with conservative verdicts + override flag.

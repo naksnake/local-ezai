@@ -57,6 +57,16 @@ agent code and prompts · registry roles/groups · CLI/WebUI surfaces
 (entries state *requirements*, e.g. min memory at a quantization — never
 "needs an RTX ...").
 
+> **As-built note (PR-2, `agentd/src/agentd/capability.py`):** detection
+> must invoke each accelerator kind's canonical driver interface, so a
+> **second sanctioned location** exists beside runtime descriptors: the
+> declarative `ACCELERATOR_PROBES` table in `capability.py` (kind, probe
+> binary, args, memory parser). The H1 CI gate (PR-25) allowlists exactly
+> this table. Everything else in the module is thresholds and pure
+> functions; legacy profile names live only in `PROFILE_PRESETS` (H4);
+> `fit()` sizing comes exclusively from the declared `ModelEntry.size_gb`
+> (measured at install), never from model names.
+
 A vendor never named in a descriptor is still supported the day its
 runtime supports it — that is the test of agnosticism.
 
