@@ -40,7 +40,8 @@ git diff main...swe/<id>                     # review, merge when happy
 local-ezai test                              # lint/type/build/test + Browser QA
 local-ezai fix                               # self-heal a red suite, in place
 local-ezai review                            # adversarial review of your diff
-local-ezai commit -m "polish the API"        # gated: only commits when green
+local-ezai commit -m "polish the API"        # gated: green validation + review approval
+
 ```
 
 ### Sprints (multi-task, parallel)
@@ -97,8 +98,17 @@ browser_qa:                       # optional — see the tested example at
 local-ezai docs                 # generate/refresh the four repo guides
 local-ezai evolve               # autonomous improvement cycle → PR proposal
 local-ezai roadmap              # show the project roadmap
-local-ezai evaluate-models      # verify every model role responds correctly
+local-ezai models               # live model routing (primary + fallback per role)
+local-ezai evaluate-models      # verify every role + quality metrics (--report)
+local-ezai explain-run          # which model handled each stage of a run
 ```
+
+Every delivering pipeline passes the **mandatory reviewer gate** before
+committing — critical security/architecture/maintainability findings block
+the commit ([REVIEW_PROCESS.md](REVIEW_PROCESS.md)) — and agent commands
+execute inside the sandbox ([SANDBOX_GUIDE.md](SANDBOX_GUIDE.md)). Plans
+draw on a semantic index of your code
+([CODE_INTELLIGENCE.md](CODE_INTELLIGENCE.md)).
 
 `evolve` never merges anything: it ends at a pull request (or a local
 PR proposal bundle) **awaiting your approval** — see

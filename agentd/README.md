@@ -312,7 +312,9 @@ local-ezai sprint <spec-file> [--keep-going] [--push] [--json]
 local-ezai docs [--focus F]                 # Documentation Agent → 4 repo guides
 local-ezai evolve [--focus F] [--push]      # evolution cycle → PR proposal
 local-ezai roadmap [--full]                 # show .agent/roadmap.md milestones
-local-ezai evaluate-models [--json]         # probe every model role + benchmarks
+local-ezai evaluate-models [--report]       # probe roles + quality metrics + trends
+local-ezai models                           # live routing: primary/fallback per role
+local-ezai explain-run [run-id]             # which model handled each stage
 local-ezai version
 ```
 
@@ -483,21 +485,31 @@ denied by default. Every decision is journaled.
 
 ## Safety model & limitations
 
-Honest statement of the MVP's isolation level (ADR-014):
+The hardened isolation level (ADR-021, superseding the ADR-014 interim):
 
 - **Git worktree isolation**: agents act on a worktree + dedicated branch.
   Your checkout and branches are untouched; rollback = delete the branch.
 - **Path containment**: all file tools resolve inside the workspace;
   traversal and symlink escapes are rejected.
+- **Execution sandbox** (`sandbox:` config, docs/SANDBOX_GUIDE.md): every
+  `exec_run`/validation/debug/benchmark command passes one executor —
+  regex **command allowlist** (fail-closed when configured), execution in
+  a **disposable Docker container** whenever `sandbox.image` is set and
+  the daemon answers (workspace-only mount at the host-identical path,
+  `--network none` default, memory/cpu/pids limits, explicit env
+  passthrough), and a per-run **audit log**
+  (`~/.agentd/runs/<id>/exec_audit.jsonl`). Without an image or Docker,
+  execution falls back to timeboxed host subprocesses (allowlist + audit
+  still apply) — there, run agentd as a low-privilege user and only
+  against repos you trust it to build.
+- **Mandatory reviewer gate** (ADR-022, docs/REVIEW_PROCESS.md): after
+  green validation, the Reviewer examines the full uncommitted change set
+  (untracked files included); `request_changes` or high-severity findings
+  (security / architecture / maintainability taxonomy) block the commit —
+  in every pipeline and in `local-ezai commit`.
 - **Fail-closed push**: nothing leaves the machine unless you pass `--push`.
-- ⚠️ **`exec_run` and validation commands run as host subprocesses** (with
-  timeouts, in the workspace cwd). A malicious or confused model could run
-  commands that read host state or reach your LAN. Phase 2 (`sandboxd`)
-  moves execution into per-run containers with default-deny egress —
-  until then, run agentd as a low-privilege user and only against repos you
-  trust it to build.
-- No plan-approval gate yet (`ezai plan` is the manual preview); the full
-  gate/autonomy machine (A0–A3) arrives in Phase 3.
+- No plan-approval gate yet (`local-ezai plan` is the manual preview); the
+  full gate/autonomy machine (A0–A3) remains future work.
 
 ## Observability: journal & report
 

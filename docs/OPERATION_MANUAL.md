@@ -36,8 +36,10 @@ scripts authenticate with `Authorization: Bearer $MCP_API_KEY`.
 | Install (pipx / Windows) | see [agentd/INSTALL.md](../agentd/INSTALL.md) |
 | Self-test the runtime | `make swe-test` (offline, 260+ tests) · `make swe-lint` |
 | Point at the model plane | `AGENTD_LLM__BASE_URL=http://localhost:4000/v1` + `LITELLM_MASTER_KEY` |
-| Verify model routing | `local-ezai evaluate-models` |
-| Inspect runs | `ezai runs` · `ezai journal <run-id>` |
+| Show model routing | `local-ezai models` |
+| Verify models + quality metrics | `local-ezai evaluate-models [--report]` |
+| Inspect runs | `ezai runs` · `ezai journal <run-id>` · `local-ezai explain-run <run-id>` |
+| Enable container execution | set `sandbox.image` in the global config — [SANDBOX_GUIDE.md](SANDBOX_GUIDE.md) |
 
 ### Runtime state locations
 
@@ -56,15 +58,18 @@ delete the rest (`git branch -D`). Pushing is always opt-in (`--push`).
 
 ### Autonomy & safety posture
 
-- Commits are **blocked until validation (incl. Browser QA) is green** —
-  for agents and for `local-ezai commit` alike.
+- Commits are **blocked until validation (incl. Browser QA) is green AND
+  the reviewer gate approves** — for agents and for `local-ezai commit`
+  alike ([REVIEW_PROCESS.md](REVIEW_PROCESS.md)).
 - Pushing (`git_push`) and PR creation are fail-closed: off unless enabled
   per run (`--push`) / configured (`forge:`).
 - Self-healing is bounded: max 10 debug/fix iterations + stall detection.
-- ⚠️ Interim isolation (ADR-014): agent shell commands run as host
-  subprocesses in the worktree (timeouts + path containment, no container
-  sandbox yet). Run the CLI as a low-privilege user and only against repos
-  whose build commands you trust.
+- Agent shell commands run through the **execution sandbox** (ADR-021):
+  command allowlist + audit log always; disposable Docker containers with
+  workspace-only mounts, no network, and resource limits once
+  `sandbox.image` is configured ([SANDBOX_GUIDE.md](SANDBOX_GUIDE.md)).
+  On the host fallback, keep running the CLI as a low-privilege user
+  against repos whose build commands you trust.
 
 ## 3. Operating Local-EZAI on itself
 

@@ -17,10 +17,50 @@ from agentd.workspace import Workspace
 _MAX_DIFF_CHARS = 24_000
 
 
+def collect_review_diff(workspace: Workspace, max_new_file_chars: int = 20_000) -> str:
+    """The full uncommitted change set for the reviewer gate: tracked
+    changes (``git diff HEAD``) plus the content of untracked files —
+    a change consisting only of NEW files must not bypass review."""
+    from agentd.tools.git import git_run
+
+    diff = git_run(workspace, "diff", "HEAD")
+    parts = [diff.output] if diff.ok and diff.output.strip() else []
+    untracked = git_run(workspace, "ls-files", "--others", "--exclude-standard")
+    if untracked.ok:
+        for rel in untracked.output.splitlines():
+            rel = rel.strip()
+            # machine-managed runtime state is never committed → never reviewed
+            if not rel or rel.startswith(".agent/"):
+                continue
+            try:
+                content = (workspace.root / rel).read_text(
+                    encoding="utf-8", errors="replace")[:max_new_file_chars]
+            except OSError:
+                continue
+            body = "\n".join(f"+{line}" for line in content.splitlines())
+            parts.append(f"--- /dev/null\n+++ b/{rel} (new file)\n{body}")
+    return "\n".join(parts)
+
+
+def review_blocked(report: ReviewReport, review_config) -> tuple[bool, str]:
+    """Whether a review outcome blocks the commit (Phase H2 gate policy):
+    ``request_changes`` always blocks; findings at a configured blocking
+    severity block even under an ``approve`` verdict."""
+    if report.verdict == "request_changes":
+        return True, "verdict: request_changes"
+    blocking = [f for f in report.findings
+                if f.severity in review_config.block_severities]
+    if blocking:
+        severities = sorted({f.severity for f in blocking})
+        return True, (f"{len(blocking)} finding(s) at blocking severity "
+                      f"{'/'.join(severities)}")
+    return False, ""
+
+
 class ReviewerAgent(BaseAgent):
     agent_name = "reviewer"
     role = "reviewer"
-    tool_names = ["fs_read", "fs_ls", "fs_glob", "code_grep",
+    tool_names = ["fs_read", "fs_ls", "fs_glob", "code_grep", "code_symbols",
                   "git_status", "git_diff"]
 
     def run(self, diff_text: str, workspace: Workspace,

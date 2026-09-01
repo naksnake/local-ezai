@@ -25,6 +25,14 @@ Governance here is not policy text; it is enforced by the runtime:
 - **Commit gate:** commits are refused (`COMMIT_BLOCKED`) until validation
   — lint, type, build, test, **and Browser QA** — is green. Applies to
   agents and to `local-ezai commit` equally.
+- **Reviewer gate (ADR-022):** after green validation, the Reviewer Agent
+  examines the full uncommitted change set; `request_changes` or any
+  high-severity finding **blocks the commit** — on every pipeline and on
+  `local-ezai commit`. Details: [REVIEW_PROCESS.md](REVIEW_PROCESS.md).
+- **Execution sandbox (ADR-021):** every agent shell command passes one
+  policed executor — command allowlist, host or Docker-container execution
+  (workspace-only mount, no network by default, resource limits), and a
+  per-run audit log. Details: [SANDBOX_GUIDE.md](SANDBOX_GUIDE.md).
 - **Fail-closed tools:** every agent has an explicit tool allowlist
   (`permissions.py`); an unlisted tool is denied and journaled. Risk tiers
   T0 (read) → T3 (push). There is no T4 (merge/deploy) implementation.
@@ -67,9 +75,13 @@ is the terminal artifact. Rejecting it is one `git branch -D`.
 ## 6. Security posture & known limits
 
 - Secrets stay in `.env` / `FORGE_TOKEN` env — never in configs or code.
-- ⚠️ **ADR-014 (interim):** agent commands run as host subprocesses inside
-  the worktree (path containment + timeouts, no container sandbox yet).
-  Until sandboxd ships (M2), run the CLI as a low-privilege user, only on
-  repos whose build commands you trust.
+- **Sandbox (ADR-021, closes ADR-014):** configure `sandbox.image` and
+  agent commands run in disposable containers — workspace-only filesystem,
+  default-deny network, resource limits, full audit trail. Without an
+  image (or Docker), execution falls back to policed host subprocesses
+  (allowlist + audit still apply): there, keep running the CLI as a
+  low-privilege user on repos whose build commands you trust.
+- A repo's own `.agentd.yaml` can never weaken governance: no push grant,
+  no sandbox changes, no review-gate opt-out.
 - Model plane is local-only by default; no code leaves the machine unless
   you configure push/forge remotes.

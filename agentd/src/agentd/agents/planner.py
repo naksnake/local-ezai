@@ -25,7 +25,7 @@ def _validate_plan(data: dict) -> Plan:
 class PlannerAgent(BaseAgent):
     agent_name = "planner"
     role = "planner"
-    tool_names = ["fs_ls", "fs_read", "fs_glob", "code_grep"]
+    tool_names = ["fs_ls", "fs_read", "fs_glob", "code_grep", "code_symbols"]
 
     def run(self, request: str, workspace: Workspace) -> Plan:
         system = load_prompt("planner")
@@ -35,6 +35,7 @@ class PlannerAgent(BaseAgent):
             f"Maximum number of tasks: {self.config.limits.max_plan_tasks}\n\n"
             f"Change request:\n{request}"
         )
+        user += self._repo_map_block(workspace)
         user += self._memory_block(request)
         plan: Plan = self.ask_for_json(system, user, workspace, _validate_plan)
 
@@ -52,6 +53,21 @@ class PlannerAgent(BaseAgent):
             risks=plan.risks,
         )
         return plan
+
+    def _repo_map_block(self, workspace: Workspace) -> str:
+        """Semantic repository map injected into planning (ADR-023)."""
+        if workspace.code_index is None:
+            return ""
+        from agentd.code_intel import render_repo_map
+
+        block = render_repo_map(workspace.code_index,
+                                self.config.code_intel.map_max_chars)
+        if not block:
+            return ""
+        return (
+            "\n\n" + block
+            + "\n(Use the code_symbols tool to locate any symbol precisely.)"
+        )
 
     def _memory_block(self, request: str) -> str:
         """Project memory injected into planning (Phase 4, ADR-017)."""

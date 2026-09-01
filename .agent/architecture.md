@@ -46,6 +46,25 @@ Profiles: GPU (base) / cpu / n97 / n97-igpu via compose overrides with
 The `agentd/` sub-project implements the first slices of the target
 architecture (see [agentd/README.md](../agentd/README.md)):
 
+- **v1.0 hardening** (ADR-021..024): **execution sandbox** — one policed
+  executor for every agent command: regex command allowlist, host or
+  Docker execution (`sandbox.image` + reachable daemon ⇒ disposable
+  container, workspace-only mount at the host-identical path, network
+  `none`, memory/cpu/pids limits, explicit env passthrough), per-run
+  `exec_audit.jsonl`, journaled `SANDBOX_MODE`; **mandatory reviewer
+  gate** — REVIEW node between green validation and commit in every
+  delivering pipeline incl. `local-ezai commit` (`request_changes` or
+  high-severity findings block; finding categories incl.
+  security/architecture/maintainability; untracked files included in the
+  reviewed diff); **semantic code intelligence** — ast/Tree-sitter symbol
+  index + import graph persisted in `.agent/code-index/`, repo map
+  injected into planning, `code_symbols` tool for
+  Planner/Coder/Debugger/Reviewer; **model transparency & dashboard** —
+  fallback-aware `models_used` per run, `models` / `explain-run` commands,
+  run-history quality metrics + trend history in
+  `.agent/model_benchmarks.json`, `evaluate-models --report` →
+  docs/MODEL_GOVERNANCE_REPORT.md; evolution evidence reads benchmark
+  trends and refuses repeated failed experiments.
 - **Model governance & self-sustainability** (ADR-020): per-repo
   `.agent/model_registry.yaml` (`agent_model_map`: primary + fallback per
   role) applied at run preparation; runtime fallback chains (journaled

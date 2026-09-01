@@ -37,7 +37,13 @@ checkout is never touched.
   (`~/.agentd/runs/*/report.json`).
 - **Failures:** failed-fix records, with **repeated failure signatures
   flagged** (`x2: <signature>` — the strongest evolution signal: the same
-  error keeps coming back).
+  error keeps coming back). The proposal rules forbid re-proposing a
+  failed experiment — memory is the guard.
+- **Benchmark & model trends** (`.agent/model_benchmarks.json`): per-role
+  probe state with drift vs the previous evaluation (REGRESSED /
+  recovered / latency deltas) plus run-quality rates (planning, coding,
+  validation, debugging, review approval) — measured weaknesses are
+  first-class evolution targets.
 - **Bottlenecks:** roadmap head (`.agent/roadmap.md`) + failure clustering.
 
 ### Proposal
@@ -95,10 +101,14 @@ agent_model_map:
 ```
 
 - Fallbacks engage automatically at request time (journaled as
-  `LLM_FALLBACK`); exhausting a chain fails the call loudly.
+  `LLM_FALLBACK`); exhausting a chain fails the call loudly. Which model
+  actually served each stage of a run: `local-ezai explain-run`; the
+  standing routing: `local-ezai models`.
 - `local-ezai evaluate-models` probes every role (JSON roles must return
-  parseable JSON), measures latency, and writes
-  `.agent/model_benchmarks.json` — the evidence file for routing PRs.
+  parseable JSON), measures latency, aggregates run-history quality
+  metrics, and rolls a trend history into `.agent/model_benchmarks.json` —
+  the evidence file for routing PRs (`--report` renders
+  [MODEL_GOVERNANCE_REPORT.md](MODEL_GOVERNANCE_REPORT.md)).
 - Changing routing is **model replacement** → human-approved PR
   ([GOVERNANCE.md](GOVERNANCE.md)).
 

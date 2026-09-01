@@ -83,12 +83,16 @@ class GitAdd(Tool):
         },
     }
 
-    #: The runtime's own project memory must never ride along in a run's
-    #: commit (relevant in in-place mode, where .agent/ sits inside the
-    #: workspace; in worktree mode memory lives in the origin repo anyway).
+    #: The runtime's own machine-managed state must never ride along in a
+    #: run's commit (relevant in in-place mode, where .agent/ sits inside
+    #: the workspace; in worktree mode it lives in the origin repo anyway).
+    #: Human-managed .agent files (model_registry.yaml, roadmap.md, ADRs)
+    #: are NOT excluded — they are ordinary repository content.
     MEMORY_EXCLUDES = (
         ":(exclude).agent/memory.db*",
         ":(exclude).agent/lessons_learned.json",
+        ":(exclude).agent/code-index",
+        ":(exclude).agent/model_benchmarks.json",
     )
 
     def run(self, workspace: Workspace, paths: list[str] | None = None) -> ToolResult:

@@ -37,6 +37,10 @@ runtime. Preventive care: [MAINTENANCE_GUIDE.md](MAINTENANCE_GUIDE.md).
 | Run FAILED with `max healing iterations` | 10 debug/fix cycles didn't converge | read `ezai journal <run-id>`; the DebugReports name root causes — fix manually or re-run with a sharper task |
 | Run FAILED with `stall detected` | 3 identical failure signatures in a row | the model is looping on one error; check `MEMORY_REPEAT_WARNING` events — a previously failed approach was likely retried |
 | `COMMIT_BLOCKED` | validation (incl. Browser QA) is red | this is by design — the gate never commits red. `local-ezai test` to see what's failing, `local-ezai fix` to heal it |
+| `review blocked the commit` | the reviewer gate found critical issues | read the findings (`ezai journal <run-id>` / `report.json`); fix and re-run — see [REVIEW_PROCESS.md](REVIEW_PROCESS.md) §5 |
+| `command blocked by sandbox allowlist` | `sandbox.command_allowlist` is configured and the command doesn't match | extend the allowlist regexes in the global config, or drop the offending command |
+| `sandbox.mode is 'docker' but ...` | strict docker mode without a daemon/image | start Docker and set `sandbox.image`, or use `mode: auto` — [SANDBOX_GUIDE.md](SANDBOX_GUIDE.md) |
+| checks fail only in docker mode | the sandbox image lacks the project toolchain | rebuild the image with dev dependencies; `network: none` also blocks anything fetching from the net |
 | Sprint task `skipped` | a dependency task failed | journal records the precise reason; fix the failed task, re-run the sprint |
 | Sprint `merge conflict` task failure | parallel tasks touched the same files | encode the ordering as `depends_on` in the sprint (or run with `--simple`) |
 | Worktree/branch litter after crashes | interrupted runs | `git worktree prune` + delete stale `swe/*` branches; run dirs under `~/.agentd/runs/` are safe to delete |

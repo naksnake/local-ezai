@@ -21,11 +21,18 @@ Commands:
     commit                     validate, then commit the working tree
                                (blocked until validation is green)
     memory                     inspect / add to the project's memory
-    sprint <spec-file>         run a markdown spec's tasks sequentially on
-                               one sprint/<id> branch
+    sprint <spec-file>         autonomous sprint: requirement analysis →
+                               dependency waves → parallel task pipelines
+    docs                       Documentation Agent → the four repo guides
+    evolve                     evolution cycle → PR proposal (human approves)
+    roadmap                    show .agent/roadmap.md milestones
+    evaluate-models            probe every routed role + quality metrics
+    models                     live model routing (primary/fallback per role)
+    explain-run [run-id]       which model handled each stage of a run
 
 Every command drives the existing agents: Planner, Coder, Validator,
-Debugger, Browser QA, Memory, Reviewer, Git.
+Debugger, Browser QA, Memory, Reviewer, Sprint, Documentation, Evolution,
+Git — through the execution sandbox and the mandatory reviewer gate.
 """
 
 from __future__ import annotations
@@ -42,7 +49,7 @@ log = get_logger("local-ezai")
 
 COMMANDS = ("chat", "plan", "run", "code", "test", "fix", "review",
             "commit", "memory", "sprint", "docs", "evolve", "roadmap",
-            "evaluate-models", "version")
+            "evaluate-models", "models", "explain-run", "version")
 
 
 # ── argv preprocessing: leading path selection ────────────────────────────────
@@ -176,6 +183,21 @@ def build_parser() -> argparse.ArgumentParser:
                                  "benchmarks to .agent/model_benchmarks.json",
                             parents=[common])
     eval_p.add_argument("--json", action="store_true", dest="as_json")
+    eval_p.add_argument("--report", action="store_true",
+                        help="Also write docs/MODEL_GOVERNANCE_REPORT.md")
+
+    models_p = sub.add_parser(
+        "models", help="Show the live model routing (primary + fallback per "
+                       "agent role) from .agent/model_registry.yaml",
+        parents=[common])
+    models_p.add_argument("--json", action="store_true", dest="as_json")
+
+    explain_p = sub.add_parser(
+        "explain-run", help="Show which model handled each stage of a run",
+        parents=[common])
+    explain_p.add_argument("run_id", nargs="?", default=None,
+                           help="Run id (default: the project's latest run)")
+    explain_p.add_argument("--json", action="store_true", dest="as_json")
 
     sub.add_parser("version", help="Print the version")
     return parser
@@ -242,6 +264,10 @@ def _dispatch(command: str, args, config: AgentdConfig, project: Path) -> int:
         return cmd_roadmap(config, project, args)
     if command == "evaluate-models":
         return cmd_evaluate_models(config, project, args)
+    if command == "models":
+        return cmd_models(config, project, args)
+    if command == "explain-run":
+        return cmd_explain_run(config, project, args)
     raise ValueError(f"unknown command {command}")  # unreachable
 
 
@@ -574,9 +600,12 @@ def cmd_roadmap(config: AgentdConfig, project: Path, args) -> int:
 
 
 def cmd_evaluate_models(config: AgentdConfig, project: Path, args) -> int:
-    from agentd.evaluate import evaluate_models
+    from agentd.evaluate import evaluate_models, write_governance_report
 
     report = evaluate_models(config, project)
+    report_path = None
+    if getattr(args, "report", False):
+        report_path = write_governance_report(report, project)
     if args.as_json:
         print(report.model_dump_json(indent=2))
         return 0 if report.passed else 1
@@ -589,9 +618,147 @@ def cmd_evaluate_models(config: AgentdConfig, project: Path, args) -> int:
               f"{result.latency_ms:5d} ms{fallbacks}")
         if result.error:
             print(f"         {result.error[:100]}")
+    metrics = report.metrics
+    if metrics and metrics.runs_total:
+        def pct(v):
+            return f"{v * 100:.0f}%" if v is not None else "—"
+        print(f"\nrun history ({metrics.runs_total} run(s)): "
+              f"planning {pct(metrics.planning_accuracy)} · "
+              f"coding {pct(metrics.coding_success_rate)} · "
+              f"validation {pct(metrics.validation_pass_rate)} · "
+              f"debugging {pct(metrics.debugging_success_rate)} · "
+              f"review {pct(metrics.review_approval_rate)}")
     print(f"\n{'all roles passed' if report.passed else 'SOME ROLES FAILED'} — "
           f"recorded in .agent/model_benchmarks.json")
+    if report_path is not None:
+        print(f"governance report: {report_path}")
     return 0 if report.passed else 1
+
+
+# ── model transparency (Phases H4/H5) ────────────────────────────────────────
+
+#: Stage display order for `models` / `explain-run` — the mandated roster
+#: first, then the remaining routed roles.
+_ROLE_ORDER = ("planner", "coder", "debugger", "reviewer", "documentation",
+               "memory", "evolution", "sprint", "chat", "validator", "git")
+
+
+def cmd_models(config: AgentdConfig, project: Path, args) -> int:
+    """`local-ezai models` — the live routing from .agent/model_registry.yaml
+    merged over the config, exactly as a run would resolve it."""
+    from agentd.model_registry import apply_model_registry
+    from agentd.runner import resolve_origin_root
+
+    origin = resolve_origin_root(project)
+    effective = apply_model_registry(config, origin)
+    registry_path = origin / ".agent" / "model_registry.yaml"
+
+    roles = [r for r in _ROLE_ORDER if r in effective.llm.roles]
+    roles += sorted(set(effective.llm.roles) - set(roles) - {"default"})
+
+    if args.as_json:
+        import json as _json
+
+        print(_json.dumps({
+            "registry": str(registry_path) if registry_path.is_file() else None,
+            "endpoint": effective.llm.base_url,
+            "roles": {
+                role: {
+                    "primary": effective.llm.model_for_role(role),
+                    "fallback": effective.llm.role_fallbacks.get(role, []),
+                } for role in roles
+            },
+        }, indent=2))
+        return 0
+
+    source = (str(registry_path) if registry_path.is_file()
+              else "(no registry — global config defaults)")
+    print(f"model routing for {origin.name}")
+    print(f"registry: {source}")
+    print(f"endpoint: {effective.llm.base_url}\n")
+    for role in roles:
+        fallbacks = effective.llm.role_fallbacks.get(role, [])
+        print(f"{role.capitalize()}:")
+        print(f"  primary:  {effective.llm.model_for_role(role)}")
+        print(f"  fallback: {', '.join(fallbacks) if fallbacks else '(none)'}")
+    print("\nverify availability: local-ezai evaluate-models")
+    return 0
+
+
+def cmd_explain_run(config: AgentdConfig, project: Path, args) -> int:
+    """`local-ezai explain-run [run-id]` — which model handled each stage."""
+    import json as _json
+
+    runs_dir = Path(config.runs_dir)
+    run_id = args.run_id
+    if run_id is None:
+        run_id = _latest_run_for(runs_dir, project)
+        if run_id is None:
+            log.error("no runs recorded for %s under %s", project, runs_dir)
+            return 2
+    report_file = runs_dir / run_id / "report.json"
+    if not report_file.is_file():
+        log.error("no report for run '%s' (looked in %s)", run_id, report_file)
+        return 2
+    data = _json.loads(report_file.read_text(encoding="utf-8"))
+    models_used = data.get("models_used", {}) or {}
+
+    stages = [(role.capitalize(), models_used[role])
+              for role in _ROLE_ORDER if role in models_used]
+    if data.get("validation") is not None:
+        stages.append(("Validation", "deterministic harness (no LLM)"))
+        if (data["validation"] or {}).get("browser") is not None:
+            stages.append(("Browser QA", "Playwright (deterministic)"))
+
+    if args.as_json:
+        print(_json.dumps({
+            "run_id": run_id,
+            "status": data.get("status"),
+            "task": data.get("request", ""),
+            "branch": data.get("branch", ""),
+            "stages": dict(stages),
+            "models_used": models_used,
+        }, indent=2))
+        return 0
+
+    print(f"run:    {run_id} [{data.get('status', '?').upper()}]")
+    print(f"task:   {data.get('request', '')}")
+    if data.get("branch"):
+        print(f"branch: {data['branch']}")
+    print()
+    if not stages:
+        print("(no stage attribution recorded — report predates Phase H5)")
+    for label, model in stages:
+        print(f"{label + ':':13} {model}")
+    review = data.get("review")
+    if review is not None:
+        print(f"\nreview:  {review.get('verdict', '?')} "
+              f"({len(review.get('findings', []))} finding(s))")
+    if data.get("iterations_used"):
+        print(f"healing: {data['iterations_used']} debug/fix iteration(s)")
+    return 0
+
+
+def _latest_run_for(runs_dir: Path, project: Path) -> str | None:
+    """Most recent run whose report belongs to this repository."""
+    if not runs_dir.is_dir():
+        return None
+    candidates: list[tuple[float, str]] = []
+    for run_dir in runs_dir.iterdir():
+        report_file = run_dir / "report.json"
+        if not report_file.is_file():
+            continue
+        try:
+            import json as _json
+
+            data = _json.loads(report_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if data.get("repo_path") in (str(project), str(project.resolve())):
+            candidates.append((report_file.stat().st_mtime, run_dir.name))
+    if not candidates:
+        return None
+    return max(candidates)[1]
 
 
 if __name__ == "__main__":

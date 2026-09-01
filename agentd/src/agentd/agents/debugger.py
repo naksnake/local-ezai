@@ -30,6 +30,7 @@ class DebuggerAgent(BaseAgent):
         "fs_ls",
         "fs_glob",
         "code_grep",
+        "code_symbols",
         "exec_run",
         "git_diff",
         "git_status",

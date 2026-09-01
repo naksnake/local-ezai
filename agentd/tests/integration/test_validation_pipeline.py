@@ -21,7 +21,12 @@ from agentd.schemas import (
     BrowserStepResult,
     BrowserWorkflowResult,
 )
-from tests.conftest import debug_response, git, git_commit_all
+from tests.conftest import (
+    debug_response,
+    git,
+    git_commit_all,
+    review_approve_response,
+)
 
 
 def browser_report(passed: bool, console: list[str] | None = None):
@@ -112,6 +117,7 @@ def test_browser_failure_heals_then_commits(config, ui_repo):
                                        "old_string": "VERSION = 1",
                                        "new_string": "VERSION = 2"}}]},
         {"content": "applied the diagnosed fix"},
+        review_approve_response(),
     ]
     report = execute_run(config, ui_repo, "fix the login page",
                          llm=ScriptedLLM(script), run_id="ui1")
@@ -176,7 +182,7 @@ def test_browser_events_journaled_through_pipeline(config, ui_repo):
     import json
 
     QueueStub.queue = [browser_report(True)]
-    script = [PLAN, *coder_touch("only attempt")]
+    script = [PLAN, *coder_touch("only attempt"), review_approve_response()]
     report = execute_run(config, ui_repo, "fix the login page",
                          llm=ScriptedLLM(script), run_id="ui4")
     assert report.status == "completed"

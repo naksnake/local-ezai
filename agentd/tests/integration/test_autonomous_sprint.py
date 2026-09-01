@@ -13,7 +13,7 @@ import yaml
 from agentd.llm import ScriptedLLM
 from agentd.schemas import SprintTaskSpec
 from agentd.sprint_exec import run_sprint_autonomous
-from tests.conftest import git, git_commit_all
+from tests.conftest import git, git_commit_all, review_approve_response
 
 
 @pytest.fixture
@@ -51,7 +51,8 @@ def sprint_plan_json(tasks):
 
 
 def task_script(goal, path, content):
-    """Planner → coder writes one file → done (one full pipeline)."""
+    """Planner → coder writes one file → done → review approves
+    (one full pipeline incl. the H2 reviewer gate)."""
     return [
         {"content": json.dumps({
             "goal": goal,
@@ -61,6 +62,7 @@ def task_script(goal, path, content):
         {"tool_calls": [{"name": "fs_write",
                          "arguments": {"path": path, "content": content}}]},
         {"content": f"done: {goal}"},
+        review_approve_response(),
     ]
 
 
@@ -178,6 +180,7 @@ def test_merge_conflict_marks_task_failed(config, green_repo):
                                            "old_string": "VERSION = 1",
                                            "new_string": new_line}}]},
             {"content": "done"},
+            review_approve_response(),
         ]
 
     factory = factory_for({

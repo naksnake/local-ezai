@@ -3,7 +3,7 @@
 from agentd.tools.base import Tool, ToolRegistry, ToolResult
 from agentd.tools.filesystem import FsEdit, FsGlob, FsLs, FsRead, FsWrite
 from agentd.tools.git import GitAdd, GitCommit, GitDiff, GitPush, GitStatus
-from agentd.tools.search import CodeGrep
+from agentd.tools.search import CodeGrep, CodeSymbols
 from agentd.tools.shell import ExecRun
 
 ALL_TOOL_CLASSES = [
@@ -13,6 +13,7 @@ ALL_TOOL_CLASSES = [
     FsLs,
     FsGlob,
     CodeGrep,
+    CodeSymbols,
     ExecRun,
     GitStatus,
     GitDiff,
@@ -32,6 +33,7 @@ __all__ = [
     "FsLs",
     "FsGlob",
     "CodeGrep",
+    "CodeSymbols",
     "ExecRun",
     "GitStatus",
     "GitDiff",

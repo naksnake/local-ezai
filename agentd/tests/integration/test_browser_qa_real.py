@@ -26,7 +26,12 @@ from agentd.journal import Journal  # noqa: E402
 from agentd.llm import ScriptedLLM  # noqa: E402
 from agentd.runner import build_registry, execute_run  # noqa: E402
 from agentd.workspace import Workspace  # noqa: E402
-from tests.conftest import debug_response, git, git_commit_all  # noqa: E402
+from tests.conftest import (  # noqa: E402
+    debug_response,
+    git,
+    git_commit_all,
+    review_approve_response,
+)
 
 FIXTURE_APP = Path(__file__).parent.parent / "fixtures" / "customer_app.py"
 EXAMPLE_YAML = (Path(__file__).parents[2] / "examples"
@@ -193,6 +198,7 @@ def test_self_healing_fixes_ui_bug_and_gates_commit(config, tmp_path, chromium_o
                                        "old_string": 'CUSTOMERS[NEXT_ID[0]] = ""',
                                        "new_string": "CUSTOMERS[NEXT_ID[0]] = name"}}]},
         {"content": "restored the name assignment"},
+        review_approve_response(),
     ]
     report = execute_run(config, repo, "fix customer creation",
                          llm=ScriptedLLM(script), run_id="uibug1")

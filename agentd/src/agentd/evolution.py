@@ -228,12 +228,65 @@ def gather_evidence(config: AgentdConfig, repo: Path) -> str:
         if outcomes:
             sections.append("Recent runs:\n" + "\n".join(outcomes))
 
+    # Benchmark + model-performance trends (H6 upgrade): the evolution cycle
+    # checks measured quality before proposing improvements.
+    trends = _benchmark_trends(origin / config.memory.dir)
+    if trends:
+        sections.append(trends)
+
     roadmap = origin / config.memory.dir / "roadmap.md"
     if roadmap.is_file():
         sections.append("Roadmap (head):\n"
                         + "\n".join(roadmap.read_text(encoding="utf-8")
                                     .splitlines()[:40]))
     return "\n\n".join(sections)
+
+
+def _benchmark_trends(agent_dir: Path) -> str:
+    """Model benchmark trends from .agent/model_benchmarks.json — current
+    per-role state, run-quality metrics, and drift vs the previous
+    evaluation."""
+    path = agent_dir / "model_benchmarks.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ""
+    lines = [f"Model benchmark trends (evaluated {data.get('evaluated_at', '?')},"
+             f" overall {'pass' if data.get('passed') else 'FAIL'}):"]
+
+    previous_roles: dict = {}
+    history = data.get("history") or []
+    if history:
+        previous_roles = history[-1].get("roles", {})
+    for result in data.get("results", []):
+        role, model = result.get("role", "?"), result.get("model", "")
+        state = "ok" if result.get("ok") else f"FAILING ({result.get('error', '')[:60]})"
+        line = f"- {role} ({model}): {state}, {result.get('latency_ms', 0)} ms"
+        prev = previous_roles.get(role)
+        if prev is not None:
+            if prev.get("ok") and not result.get("ok"):
+                line += " — REGRESSED since the previous evaluation"
+            elif not prev.get("ok") and result.get("ok"):
+                line += " — recovered"
+            elif prev.get("latency_ms"):
+                delta = result.get("latency_ms", 0) - prev["latency_ms"]
+                if abs(delta) >= max(100, prev["latency_ms"] // 2):
+                    line += f" — latency {'+' if delta > 0 else ''}{delta} ms vs previous"
+        lines.append(line)
+
+    metrics = data.get("metrics") or {}
+    if metrics.get("runs_total"):
+        def pct(v):
+            return f"{v * 100:.0f}%" if v is not None else "n/a"
+        lines.append(
+            "- run quality: "
+            f"planning {pct(metrics.get('planning_accuracy'))}, "
+            f"coding {pct(metrics.get('coding_success_rate'))}, "
+            f"validation {pct(metrics.get('validation_pass_rate'))}, "
+            f"debugging {pct(metrics.get('debugging_success_rate'))}, "
+            f"review approval {pct(metrics.get('review_approval_rate'))} "
+            f"over {metrics['runs_total']} run(s)")
+    return "\n".join(lines)
 
 
 # ── stages ────────────────────────────────────────────────────────────────────

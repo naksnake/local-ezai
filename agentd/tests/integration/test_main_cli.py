@@ -17,6 +17,7 @@ from tests.conftest import (
     git,
     healing_script,
     planner_response,
+    review_approve_response,
 )
 
 APPROVE_JSON = json.dumps({"verdict": "approve", "summary": "clean", "findings": []})
@@ -138,6 +139,7 @@ def test_fix_command_repairs_in_place_and_commits(tmp_repo, cli, capsys):
         debug_response(),
         coder_edit("return a - b", "return a + b"),
         {"content": "applied the diagnosed fix"},
+        review_approve_response(),
     ]
     head_before = git(tmp_repo, "rev-parse", "HEAD")
     code, out = cli(script, str(tmp_repo), "fix", capsys=capsys)
@@ -189,10 +191,10 @@ def test_commit_blocked_until_validation_green(tmp_repo, cli, capsys):
     assert code == 1
     assert git(tmp_repo, "rev-parse", "HEAD") == head  # nothing committed
 
-    # make validation green → commit succeeds
+    # make validation green → the reviewer gate runs, then commit succeeds
     (tmp_repo / "calculator.py").write_text("def add(a, b):\n    return a + b\n")
-    code, out = cli([], str(tmp_repo), "commit", "-m", "add notes and fix add",
-                    capsys=capsys)
+    code, out = cli([review_approve_response()], str(tmp_repo), "commit",
+                    "-m", "add notes and fix add", capsys=capsys)
     assert code == 0
     assert "committed" in out
     assert git(tmp_repo, "log", "-1", "--format=%s") == "feat: add notes and fix add"
@@ -260,6 +262,7 @@ def sprint_task_script(goal, path, content):
         {"tool_calls": [{"name": "fs_write",
                          "arguments": {"path": path, "content": content}}]},
         {"content": f"done: {goal}"},
+        review_approve_response(),
     ]
 
 

@@ -17,7 +17,7 @@ anything that escapes the workspace root (absolute paths outside it,
 from __future__ import annotations
 
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from agentd.config import AgentdConfig
@@ -42,6 +42,12 @@ class Workspace:
     repo_path: Path
     branch: str
     mode: str
+    #: Per-run execution sandbox (agentd.sandbox.Sandbox), attached by
+    #: prepare_run. None → tools fall back to a bare host executor.
+    sandbox: object | None = field(default=None, repr=False, compare=False)
+    #: Semantic code index (agentd.code_intel.CodeIndex), attached by
+    #: prepare_run when code intelligence is enabled (ADR-023).
+    code_index: object | None = field(default=None, repr=False, compare=False)
 
     def resolve(self, relpath: str) -> Path:
         """Resolve ``relpath`` inside the workspace or raise PathEscapeError."""

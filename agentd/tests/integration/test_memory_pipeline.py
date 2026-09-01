@@ -15,6 +15,7 @@ from tests.conftest import (
     debug_response,
     git,
     healing_script,
+    review_approve_response,
 )
 
 
@@ -99,6 +100,7 @@ def test_repeat_mistake_warning_across_runs(config, tmp_repo):
         debug_response(approach="correct the operator to addition"),
         coder_edit("return a * b", "return a + b"),
         {"content": "fixed properly."},
+        review_approve_response(),
     ])
     report_2 = execute_run(config, tmp_repo, "fix the add bug",
                            llm=llm, run_id="mem3b")
@@ -126,10 +128,23 @@ def test_repeat_mistake_warning_across_runs(config, tmp_repo):
 
 def test_memory_disabled_leaves_no_files(config, tmp_repo):
     config.memory.enabled = False
+    config.code_intel.enabled = False  # isolate memory from the code index
     report = execute_run(config, tmp_repo, "fix the add bug",
                          llm=ScriptedLLM(healing_script()), run_id="mem4")
     assert report.status == "completed"
     assert not (tmp_repo / ".agent").exists()
+
+
+def test_memory_disabled_writes_no_memory_files(config, tmp_repo):
+    """With the code index enabled (default), .agent/ holds ONLY the index —
+    never memory files — when memory is disabled."""
+    config.memory.enabled = False
+    report = execute_run(config, tmp_repo, "fix the add bug",
+                         llm=ScriptedLLM(healing_script()), run_id="mem4b")
+    assert report.status == "completed"
+    assert not (tmp_repo / ".agent" / "memory.db").exists()
+    assert not (tmp_repo / ".agent" / "lessons_learned.json").exists()
+    assert (tmp_repo / ".agent" / "code-index" / "symbols.json").is_file()
 
 
 def test_gitadd_excludes_memory_files_in_place(config, inplace_ws):

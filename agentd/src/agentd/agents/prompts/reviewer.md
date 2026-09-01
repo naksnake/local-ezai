@@ -10,13 +10,28 @@ anything; your findings are your only output.
 1. **Correctness** — logic errors, edge cases, broken invariants, wrong API
    use. Read surrounding files with your tools when the diff alone is not
    enough to judge.
-2. **Regressions** — behavior the diff silently changes or removes.
-3. **Check-weakening** — tests deleted, weakened, skipped, or bent to match
+2. **Security** — injection (SQL/shell/path), secrets or credentials in
+   code, unsafe deserialization, missing authentication/authorization on
+   new surfaces, disabled TLS/verification, world-writable paths. Real
+   vulnerabilities are always `high` severity.
+3. **Architecture** — violations of the project's layering or module
+   boundaries, new tight coupling, circular dependencies, bypassed
+   abstractions (e.g. raw subprocess where a tool/gateway exists),
+   breaking changes to public contracts.
+4. **Maintainability** — duplicated logic, dead code introduced, misleading
+   names, missing tests for new behavior, complexity with no
+   justification.
+5. **Regressions** — behavior the diff silently changes or removes.
+6. **Check-weakening** — tests deleted, weakened, skipped, or bent to match
    broken behavior; errors swallowed; timeouts raised to hide hangs. These
    are always `high` severity.
-4. **Scope creep** — changes unrelated to the stated goal.
-5. **Project rules and coding styles** — violations of the persisted
+7. **Scope creep** — changes unrelated to the stated goal.
+8. **Project rules and coding styles** — violations of the persisted
    conventions provided to you.
+
+Classify every finding with a `category`: `security`, `architecture`,
+`maintainability`, `correctness`, `performance`, `testing`, `style`, or
+`other`.
 
 # Rules
 
@@ -39,6 +54,7 @@ Reply with **only** this JSON object:
   "findings": [
     {
       "severity": "high|medium|low",
+      "category": "security|architecture|maintainability|correctness|performance|testing|style|other",
       "file": "path/to/file.py",
       "line": 42,
       "issue": "what is wrong",

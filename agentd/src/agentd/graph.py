@@ -2,10 +2,11 @@
 
 Implements the required state machine, deterministically (ADR-010/ADR-013):
 
-    START → PLAN → CODE (task loop) → VALIDATE ──passed──► GIT → SUCCESS/END
-                     ▲                    │ failed
-                     │                    ▼
-                     │                  DEBUG  (Debug Agent + RCA engine)
+    START → PLAN → CODE (task loop) → VALIDATE ──passed──► REVIEW → GIT → END
+                     ▲                    │ failed          │ blocked
+                     │                    ▼                 ▼ (ADR-022)
+                     │                  DEBUG             ABORT
+                     │                 (Debug Agent + RCA engine)
                      │                    │
                      │                    ▼
                      └──(initial tasks)  FIX   (Coding Agent applies strategy)
@@ -36,9 +37,11 @@ from agentd.agents import (
     DebuggerAgent,
     GitAgent,
     PlannerAgent,
+    ReviewerAgent,
     ValidationAgent,
 )
 from agentd.agents.memory_agent import MemoryAgent
+from agentd.agents.reviewer import review_blocked
 from agentd.browser_qa import merge_validation, skipped_report
 from agentd.config import AgentdConfig
 from agentd.journal import Journal
@@ -52,6 +55,7 @@ from agentd.schemas import (
     HealingIteration,
     Plan,
     PlanTask,
+    ReviewReport,
     RunReport,
     TaskResult,
     ValidationReport,
@@ -72,6 +76,7 @@ class RunState(TypedDict, total=False):
     task_index: int
     task_results: list[dict[str, Any]]
     validation: dict[str, Any] | None
+    review: dict[str, Any] | None  # ReviewReport of the reviewer gate (H2)
     commit: dict[str, Any] | None
     # ── self-healing state (Phase 2) ──
     iteration: int  # completed/entered DEBUG→FIX→REVALIDATE cycles
@@ -100,6 +105,7 @@ class Orchestrator:
         rca_engine: RcaEngine | None = None,
         memory_agent: MemoryAgent | None = None,
         memory_store: MemoryStore | None = None,
+        reviewer: ReviewerAgent | None = None,
     ) -> None:
         self.config = config
         self.workspace = workspace
@@ -113,6 +119,7 @@ class Orchestrator:
         self.rca = rca_engine or RcaEngine(config.limits.stall_threshold)
         self.memory_agent = memory_agent
         self.memory_store = memory_store
+        self.reviewer = reviewer
         self.graph = self._build("plan")
         #: entry at VALIDATE with a synthetic plan — the `fix` pipeline:
         #: no planning/coding, straight into VALIDATE → DEBUG → FIX loop.
@@ -127,6 +134,7 @@ class Orchestrator:
         builder.add_node("validate", self._validate_node)
         builder.add_node("debug", self._debug_node)
         builder.add_node("fix", self._fix_node)
+        builder.add_node("review", self._review_node)
         builder.add_node("git", self._git_node)
         builder.add_node("abort", self._abort_node)
 
@@ -142,12 +150,15 @@ class Orchestrator:
         builder.add_conditional_edges(
             "validate",
             self._route_after_validate,
-            {"git": "git", "debug": "debug", "abort": "abort"},
+            {"review": "review", "git": "git", "debug": "debug", "abort": "abort"},
         )
         builder.add_conditional_edges(
             "debug", self._route_after_debug, {"fix": "fix", "abort": "abort"}
         )
         builder.add_edge("fix", "validate")  # REVALIDATE
+        builder.add_conditional_edges(
+            "review", self._route_after_review, {"git": "git", "abort": "abort"}
+        )
         builder.add_conditional_edges(
             "git", self._route_after_git, {"end": END, "abort": "abort"}
         )
@@ -377,6 +388,46 @@ class Orchestrator:
             kind="fix",
         )
 
+    def _review_node(self, state: RunState) -> dict[str, Any]:
+        """Mandatory reviewer gate (Phase H2, ADR-022): after validation is
+        green, the Reviewer Agent examines the run's uncommitted diff.
+        Critical issues (`request_changes`, or findings at a blocking
+        severity) block the commit — the run fails with a structured
+        review report instead of delivering."""
+        self.journal.append("STATE_ENTERED", state="REVIEW")
+        from agentd.agents.reviewer import collect_review_diff
+
+        plan = Plan.model_validate(state["plan"])
+        try:
+            review = self.reviewer.run(
+                collect_review_diff(self.workspace),
+                self.workspace,
+                context=f"pre-commit gate for: {plan.goal}",
+            )
+        except Exception as exc:  # noqa: BLE001
+            return {"error": f"review failed: {exc}", "status": "failed"}
+        blocked, reason = review_blocked(review, self.config.review)
+        self.journal.append(
+            "REVIEW_GATE",
+            verdict=review.verdict,
+            blocked=blocked,
+            findings=len(review.findings),
+            categories=sorted({f.category for f in review.findings}),
+            reason=reason,
+        )
+        update: dict[str, Any] = {"review": review.model_dump()}
+        if blocked:
+            log.error("review gate blocked the commit: %s", reason)
+            update["error"] = (
+                f"review blocked the commit ({reason}): "
+                f"{review.summary[:300]}"
+            )
+            update["status"] = "failed"
+        else:
+            log.info("review gate passed: %s (%d finding(s))",
+                     review.verdict, len(review.findings))
+        return update
+
     def _git_node(self, state: RunState) -> dict[str, Any]:
         self.journal.append("STATE_ENTERED", state="GIT")
         plan = Plan.model_validate(state["plan"])
@@ -435,17 +486,27 @@ class Orchestrator:
             return "code"
         return "validate"
 
-    def _route_after_validate(self, state: RunState) -> Literal["git", "debug", "abort"]:
+    def _route_after_validate(
+        self, state: RunState
+    ) -> Literal["review", "git", "debug", "abort"]:
         if state.get("status") == "failed":
             return "abort"
         validation = state.get("validation") or {}
         if validation.get("passed"):
-            return "git"  # SUCCESS path
+            # SUCCESS path — through the reviewer gate when enabled (H2).
+            if self.reviewer is not None and self.config.review.enabled:
+                return "review"
+            return "git"
         if state.get("stalled"):
             return "abort"
         if state.get("iteration", 0) >= self.config.limits.max_heal_iterations:
             return "abort"
         return "debug"
+
+    def _route_after_review(self, state: RunState) -> Literal["git", "abort"]:
+        if state.get("status") == "failed":
+            return "abort"
+        return "git"
 
     def _route_after_debug(self, state: RunState) -> Literal["fix", "abort"]:
         if state.get("status") == "failed" or not state.get("last_debug"):
@@ -477,6 +538,7 @@ class Orchestrator:
             "task_index": len(initial_plan.tasks) if initial_plan else 0,
             "task_results": [],
             "validation": None,
+            "review": None,
             "commit": None,
             "iteration": 0,
             "healing": [],
@@ -507,6 +569,8 @@ class Orchestrator:
                           for r in final.get("task_results", [])],
             validation=(ValidationReport.model_validate(final["validation"])
                         if final.get("validation") else None),
+            review=(ReviewReport.model_validate(final["review"])
+                    if final.get("review") else None),
             commit=CommitInfo.model_validate(final["commit"])
             if final.get("commit") else None,
             journal_path=str(self.journal.path),

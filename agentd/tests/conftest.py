@@ -118,8 +118,34 @@ def planner_response() -> dict:
     return {"content": PLAN_JSON}
 
 
+REVIEW_APPROVE_JSON = json.dumps(
+    {"verdict": "approve", "summary": "change is correct and in scope",
+     "findings": []}
+)
+
+
+def review_approve_response() -> dict:
+    """Reviewer-gate approval (Phase H2) — one per green pipeline run."""
+    return {"content": REVIEW_APPROVE_JSON}
+
+
+def review_block_response(severity: str = "high",
+                          category: str = "security") -> dict:
+    """Reviewer-gate rejection with one blocking finding."""
+    return {"content": json.dumps({
+        "verdict": "request_changes",
+        "summary": "the change introduces a critical issue",
+        "findings": [{
+            "severity": severity, "category": category,
+            "file": "calculator.py", "line": 2,
+            "issue": "seeded blocking issue for the gate test",
+            "suggestion": "do not ship this",
+        }],
+    })}
+
+
 def happy_path_script() -> list[dict]:
-    """Planner → coder reads, fixes, writes a test → final summary."""
+    """Planner → coder reads, fixes, writes a test → review approves."""
     return [
         planner_response(),
         {"tool_calls": [{"name": "fs_read", "arguments": {"path": "calculator.py"}}]},
@@ -147,6 +173,7 @@ def happy_path_script() -> list[dict]:
             ]
         },
         {"content": "Fixed add() to use addition and added a regression test."},
+        review_approve_response(),
     ]
 
 
@@ -208,10 +235,12 @@ def debug_response(**kwargs) -> dict:
 
 
 def healing_script() -> list[dict]:
-    """One self-healing iteration: bad attempt → DEBUG → FIX → REVALIDATE ok."""
+    """One self-healing iteration: bad attempt → DEBUG → FIX → REVALIDATE ok
+    → review approves."""
     return [
         *bad_first_attempt(),
         debug_response(),
         coder_edit("return a * b", "return a + b"),
         {"content": "Applied the diagnosed fix: add() now uses addition."},
+        review_approve_response(),
     ]

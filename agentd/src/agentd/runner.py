@@ -46,10 +46,11 @@ def build_registry(config: AgentdConfig, journal: Journal) -> ToolRegistry:
 
 
 def prepare_run(
-    config: AgentdConfig, repo: Path, run_id: str
+    config: AgentdConfig, repo: Path, run_id: str, persist_index: bool = True
 ) -> tuple[AgentdConfig, Workspace, Journal]:
     """Apply repo overrides + model registry, create workspace and journal."""
     from agentd.model_registry import apply_model_registry
+    from agentd.sandbox import Sandbox
 
     config = merge_repo_overrides(config, load_repo_overrides(repo))
     workspace = create_workspace(config, repo, run_id)
@@ -60,6 +61,25 @@ def prepare_run(
     # (CLAUDE.md agent_model_map, ADR-020).
     config = apply_model_registry(config, resolve_origin_root(workspace.repo_path))
     journal = Journal(config.runs_dir / run_id)
+    # Execution sandbox (ADR-021): one executor per run — allowlist, host or
+    # container execution, audit log in the run directory.
+    workspace.sandbox = Sandbox(
+        config.sandbox, workspace.root,
+        audit_path=journal.run_dir / "exec_audit.jsonl", journal=journal,
+    )
+    # Semantic code intelligence (ADR-023): refresh the persisted index and
+    # attach it for prompt injection / the code_symbols tool.
+    if config.code_intel.enabled:
+        from agentd.code_intel import refresh_index
+
+        try:
+            workspace.code_index = refresh_index(
+                config.code_intel, workspace.root,
+                resolve_origin_root(workspace.repo_path), journal=journal,
+                persist=persist_index,
+            )
+        except Exception as exc:  # noqa: BLE001 — intel must never fail a run
+            log.warning("code index refresh failed: %s", exc)
     return config, workspace, journal
 
 
@@ -105,27 +125,15 @@ def execute_run(
     store = build_memory_store(config, workspace)
 
     try:
-        orchestrator = Orchestrator(
-            config=config,
-            workspace=workspace,
-            journal=journal,
-            planner=PlannerAgent(config, llm, registry, journal, memory=store),
-            coder=CoderAgent(config, llm, registry, journal),
-            validator=ValidationAgent(config, llm, registry, journal),
-            git_agent=GitAgent(config, llm, registry, journal),
-            debugger=DebuggerAgent(config, llm, registry, journal, memory=store),
-            browser_qa=BrowserQAAgent(config, llm, registry, journal),
-            rca_engine=RcaEngine(config.limits.stall_threshold),
-            memory_agent=(MemoryAgent(config, llm, registry, journal, memory=store)
-                          if store is not None else None),
-            memory_store=store,
-        )
+        orchestrator = _build_orchestrator(config, workspace, journal, llm,
+                                           registry, store)
         log.info("run %s starting in %s (branch %s)", run_id, workspace.root,
                  workspace.branch)
         report = orchestrator.run(run_id, request)
     finally:
         if store is not None:
             store.close()
+    report.models_used = dict(getattr(llm, "models_used", {}))
     (journal.run_dir / "report.json").write_text(
         report.model_dump_json(indent=2), encoding="utf-8"
     )
@@ -133,6 +141,8 @@ def execute_run(
 
 
 def _build_orchestrator(config, workspace, journal, llm, registry, store):
+    from agentd.agents import ReviewerAgent
+
     return Orchestrator(
         config=config,
         workspace=workspace,
@@ -147,6 +157,7 @@ def _build_orchestrator(config, workspace, journal, llm, registry, store):
         memory_agent=(MemoryAgent(config, llm, registry, journal, memory=store)
                       if store is not None else None),
         memory_store=store,
+        reviewer=ReviewerAgent(config, llm, registry, journal, memory=store),
     )
 
 
@@ -180,6 +191,7 @@ def heal_run(
     finally:
         if store is not None:
             store.close()
+    report.models_used = dict(getattr(llm, "models_used", {}))
     (journal.run_dir / "report.json").write_text(
         report.model_dump_json(indent=2), encoding="utf-8"
     )
@@ -227,6 +239,7 @@ def code_only(
         repo_path=str(workspace.repo_path), workspace_path=str(workspace.root),
         branch=workspace.branch, error=error, plan=plan,
         task_results=results, journal_path=str(journal.path),
+        models_used=dict(getattr(llm, "models_used", {})),
     )
     if store is not None:
         try:
@@ -296,6 +309,27 @@ def commit_repo(
         browser = (BrowserQAAgent(config, llm, registry, journal).run(workspace)
                    if report.passed else skipped_report("command checks failed"))
         report = merge_validation(report, browser)
+
+    # Reviewer gate (Phase H2, ADR-022): the commit gate applies to human-
+    # initiated commits exactly like the validation gate does.
+    if config.review.enabled and report.passed:
+        from agentd.agents.reviewer import (
+            ReviewerAgent,
+            collect_review_diff,
+            review_blocked,
+        )
+
+        review = ReviewerAgent(config, llm, registry, journal).run(
+            collect_review_diff(workspace), workspace,
+            context="pre-commit gate (local-ezai commit)",
+        )
+        blocked, reason = review_blocked(review, config.review)
+        journal.append("REVIEW_GATE", verdict=review.verdict, blocked=blocked,
+                       findings=len(review.findings), reason=reason)
+        if blocked:
+            raise RuntimeError(
+                f"commit blocked by review ({reason}): {review.summary[:300]}"
+            )
 
     git_agent = GitAgent(config, llm, registry, journal)
     plan = Plan(goal=message or "commit working tree changes", tasks=[])
@@ -412,7 +446,9 @@ def plan_only(
     run_id = run_id or new_run_id()
     config = config.model_copy(deep=True)
     config.workspace.mode = "in-place"
-    config, workspace, journal = prepare_run(config, repo, run_id)
+    # persist_index=False: a plan must leave zero traces in the repository.
+    config, workspace, journal = prepare_run(config, repo, run_id,
+                                             persist_index=False)
     llm = llm or build_llm(config.llm)
     registry = build_registry(config, journal)
     # Memory is read-only here (lazy store: no .agent/ is created by reads).

@@ -24,18 +24,20 @@ local-ezai <command>                # default: current directory
 |---|---|---|
 | `chat` | memory-aware REPL with the local model (`/reset`, `/exit`) | no |
 | `plan "<task>"` | execution plan (JSON), traceless dry-run | no |
-| `run "<task>" [--push] [--in-place] [--max-iterations N] [--json]` | full pipeline: plan → code → validate → Browser QA → self-heal → commit on worktree branch `swe/<id>` | no (branch) |
+| `run "<task>" [--push] [--in-place] [--max-iterations N] [--json]` | full pipeline: plan → code → validate → Browser QA → self-heal → **review gate** → commit on worktree branch `swe/<id>` | no (branch) |
 | `code "<task>" [--in-place] [--json]` | plan + implement only; changes left **uncommitted** | no (worktree) |
 | `test [--json]` | validation in place: lint / **type** / build / test + Browser QA | no |
-| `fix [--goal G] [--max-iterations N] [--json]` | repair failing validation in place (VALIDATE → DEBUG → FIX → REVALIDATE, max 10 iterations); commits when green | **yes** (current branch) |
+| `fix [--goal G] [--max-iterations N] [--json]` | repair failing validation in place (VALIDATE → DEBUG → FIX → REVALIDATE, max 10 iterations); review gate, then commit when green | **yes** (current branch) |
 | `review [--json]` | Reviewer Agent over the working-tree diff (or last commit when clean); exit 1 on `request_changes` | no |
-| `commit [-m MSG] [--push]` | validate, then commit the working tree — **blocked until validation incl. Browser QA is green** | **yes** |
+| `commit [-m MSG] [--push]` | validate, then commit the working tree — **blocked until validation incl. Browser QA is green AND the reviewer gate approves** | **yes** |
 | `memory [--add TEXT --kind K] [--search TERM] [--limit N]` | inspect / add project memory (`.agent/memory.db`) | no (memory only) |
 | `docs [--focus F] [--json]` | Documentation Agent generates/refreshes USER_GUIDE, OPERATION_MANUAL, MAINTENANCE_GUIDE, RELEASE_NOTES (uncommitted) | no (worktree files) |
 | `sprint <spec.md> [--simple] [--keep-going] [--max-parallel N] [--push] [--json]` | autonomous sprint: requirement analysis → dependency waves → **parallel** task pipelines → merged commits + committed sprint report on `sprint/<id>` | no (branch) |
 | `evolve [--focus F] [--push] [--json]` | evolution cycle: analyze history/failures/bottlenecks → propose → implement → validate → benchmark → **PR / proposal bundle** on `evolve/<id>`; always ends awaiting a human | no (branch) |
 | `roadmap [--full]` | show `.agent/roadmap.md` (milestone lines, or the full file) | no |
-| `evaluate-models [--json]` | probe every routed model role (incl. fallback chains); record `.agent/model_benchmarks.json` | no (benchmarks file) |
+| `evaluate-models [--json] [--report]` | probe every routed model role (incl. fallback chains); aggregate run-history quality metrics; record `.agent/model_benchmarks.json` (with trend history); `--report` writes `docs/MODEL_GOVERNANCE_REPORT.md` | no (benchmarks file) |
+| `models [--json]` | show the live model routing: primary + fallback per agent role, from `.agent/model_registry.yaml` | no |
+| `explain-run [run-id] [--json]` | which model handled each stage (planning/coding/debugging/review/…) of a run — fallback-aware; defaults to the project's latest run | no |
 | `version` | print the version | no |
 
 ## Exit codes
@@ -53,7 +55,11 @@ event journal) work for runs produced by either CLI.
 ## Key configuration surfaces
 
 - Global: YAML via `--config`, env `AGENTD_*` (`AGENTD_LLM__BASE_URL`, …)
+- Global only: `sandbox:` (execution sandbox — [SANDBOX_GUIDE.md](SANDBOX_GUIDE.md)),
+  `review:` (reviewer gate — [REVIEW_PROCESS.md](REVIEW_PROCESS.md)),
+  `code_intel:` ([CODE_INTELLIGENCE.md](CODE_INTELLIGENCE.md))
 - Per repo: `.agentd.yaml` (validation commands incl. `type:`, limits,
-  browser_qa) — cannot self-grant push
+  browser_qa) — cannot self-grant push, weaken the sandbox, or disable the
+  review gate
 - Per repo: `.agent/model_registry.yaml` — per-role primary/fallback models
 - Full reference: [agentd/README.md](../agentd/README.md#configuration)

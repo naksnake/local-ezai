@@ -66,3 +66,44 @@ class CodeGrep(Tool):
                             truncated=True,
                         )
         return ToolResult(ok=True, output="\n".join(matches) or "(no matches)")
+
+
+class CodeSymbols(Tool):
+    """Symbol lookup backed by the semantic code index (ADR-023)."""
+
+    name = "code_symbols"
+    description = (
+        "Look up classes/functions/methods by name in the repository's "
+        "semantic code index. Returns 'file:line kind name — signature' "
+        "matches. Much faster and more precise than grepping for "
+        "definitions."
+    )
+    tier = ToolTier.T0_READ_WORKSPACE
+    parameters: dict[str, Any] = {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string",
+                      "description": "Symbol name or substring"},
+            "limit": {"type": "integer", "description": "Max matches, default 20"},
+        },
+        "required": ["query"],
+    }
+
+    def run(self, workspace: Workspace, query: str, limit: int = 20) -> ToolResult:
+        index = workspace.code_index
+        if index is None:
+            return ToolResult(
+                ok=False,
+                error="code index not available for this run "
+                      "(code_intel.enabled is off or indexing failed) — "
+                      "use code_grep instead",
+            )
+        limit = min(max(1, int(limit)), 100)
+        matches = index.find(query, limit=limit)
+        if not matches:
+            return ToolResult(ok=True, output=f"no symbols match '{query}'")
+        lines = [
+            f"{m['file']}:{m['line']} {m['kind']} {m['name']} — {m.get('signature', '')}"
+            for m in matches
+        ]
+        return ToolResult(ok=True, output="\n".join(lines))

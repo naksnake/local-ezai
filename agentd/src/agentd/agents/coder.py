@@ -23,6 +23,7 @@ class CoderAgent(BaseAgent):
         "fs_ls",
         "fs_glob",
         "code_grep",
+        "code_symbols",
         "exec_run",
         "git_status",
         "git_diff",

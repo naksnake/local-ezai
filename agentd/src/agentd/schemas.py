@@ -226,8 +226,17 @@ class CommitInfo(BaseModel):
 # ── Reviewer (Phase 5) ───────────────────────────────────────────────────────
 
 
+#: Concern dimensions the Reviewer classifies findings into (Phase H2):
+#: security, architecture, and maintainability are explicitly mandated.
+ReviewCategory = Literal[
+    "security", "architecture", "maintainability",
+    "correctness", "performance", "testing", "style", "other",
+]
+
+
 class ReviewFinding(BaseModel):
     severity: Literal["high", "medium", "low"]
+    category: ReviewCategory = "other"
     file: str = ""
     line: int | None = None
     issue: str
@@ -376,11 +385,37 @@ class ModelProbeResult(BaseModel):
     error: str | None = None
 
 
+class RunMetrics(BaseModel):
+    """Aggregated quality metrics from run history (Phase H6 dashboard).
+
+    Rates are None when no run exercised that dimension yet."""
+
+    runs_total: int = 0
+    runs_completed: int = 0
+    #: plans whose every task finished "done" / runs that produced a plan
+    planning_accuracy: float | None = None
+    #: completed runs / all runs (the pipeline's end-to-end success)
+    coding_success_rate: float | None = None
+    #: green validations / runs that reached validation
+    validation_pass_rate: float | None = None
+    #: runs that entered self-healing AND completed / runs that entered it
+    debugging_success_rate: float | None = None
+    #: approve verdicts / runs that reached the reviewer gate
+    review_approval_rate: float | None = None
+    avg_heal_iterations: float | None = None
+    #: wall-clock per run, from the journal's first/last event
+    avg_run_seconds: float | None = None
+
+
 class ModelEvalReport(BaseModel):
     evaluated_at: str
     base_url: str = ""
     passed: bool
     results: list[ModelProbeResult] = Field(default_factory=list)
+    #: Run-history quality metrics (Phase H6).
+    metrics: RunMetrics | None = None
+    #: Compact summaries of previous evaluations (trend data, capped).
+    history: list[dict] = Field(default_factory=list)
 
 
 # ── Run report ───────────────────────────────────────────────────────────────
@@ -397,10 +432,16 @@ class RunReport(BaseModel):
     plan: Plan | None = None
     task_results: list[TaskResult] = Field(default_factory=list)
     validation: ValidationReport | None = None
+    #: Reviewer-gate outcome (Phase H2, ADR-022) — None when the gate is
+    #: disabled or was never reached.
+    review: ReviewReport | None = None
     commit: CommitInfo | None = None
     journal_path: str = ""
     healing: list[HealingIteration] = Field(default_factory=list)
     iterations_used: int = 0
+    #: Which model actually served each LLM role in this run, fallback-aware
+    #: (Phase H5 model explainability; empty for deterministic-only runs).
+    models_used: dict[str, str] = Field(default_factory=dict)
 
 
 # ── JSON extraction (LLM structured output) ─────────────────────────────────

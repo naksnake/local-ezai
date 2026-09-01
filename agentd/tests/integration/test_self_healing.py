@@ -14,6 +14,7 @@ from tests.conftest import (
     debug_response,
     git,
     healing_script,
+    review_approve_response,
 )
 
 
@@ -57,7 +58,8 @@ def test_state_machine_trajectory_journaled(config, tmp_repo):
     events = _events(config, "heal2")
     states = [e["payload"]["state"] for e in events if e["type"] == "STATE_ENTERED"]
     # the required machine: PLAN → CODE → VALIDATE → DEBUG → FIX → REVALIDATE → GIT
-    assert states == ["PLAN", "CODE", "VALIDATE", "DEBUG", "FIX", "REVALIDATE", "GIT"]
+    assert states == ["PLAN", "CODE", "VALIDATE", "DEBUG", "FIX",
+                      "REVALIDATE", "REVIEW", "GIT"]
 
     types = [e["type"] for e in events]
     for expected in ("RCA_REPORT", "DEBUG_REPORT", "FIX_APPLIED", "HEAL_ITERATION"):
@@ -82,6 +84,7 @@ def test_two_iterations_until_success(config, tmp_repo):
         debug_response(approach="use addition as the goal states"),
         coder_edit("return a // b", "return a + b"),
         {"content": "Corrected to addition."},
+        review_approve_response(),
     ]
     report = execute_run(
         config, tmp_repo, "fix the add bug",
@@ -168,6 +171,7 @@ def test_failed_fix_attempt_continues_the_loop(config, tmp_repo):
         debug_response(),
         coder_edit("return a * b", "return a + b"),
         {"content": "Fixed on the second attempt."},
+        review_approve_response(),
     ]
     report = execute_run(
         config, tmp_repo, "fix the add bug",

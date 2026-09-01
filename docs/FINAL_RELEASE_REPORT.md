@@ -5,6 +5,16 @@ existing Local-EZAI platform · **Date:** 2026-08-17 ·
 **Review:** final production-readiness audit (Chief Architect / Release
 Manager / Principal Engineer / Product Owner perspectives)
 
+> **2026-09-01 update — v1.0 hardening sprint (ADR-021..024).** The gaps
+> this report accepted as carried risk or next-generation work are closed:
+> **container sandbox** (ADR-021 closes ADR-014 — allowlist, Docker
+> execution, resource limits, audit log), **mandatory reviewer gate**
+> (ADR-022 — REVIEW before every commit, blocking on critical findings),
+> **semantic code intelligence** (ADR-023), and **model transparency +
+> benchmark dashboard + trend-aware evolution** (ADR-024). Version
+> 1.0.0rc1, 311 offline tests. Current status:
+> [V1_RELEASE_CANDIDATE_REPORT.md](V1_RELEASE_CANDIDATE_REPORT.md).
+
 ## Verdict
 
 **PRODUCTION-READY for supervised local use, and SELF-SUSTAINING.**

@@ -138,6 +138,72 @@ class BrowserQAConfig(BaseModel):
     ignore_console_patterns: list[str] = Field(default_factory=list)
 
 
+class SandboxConfig(BaseModel):
+    """Per-run execution sandbox (Phase H1, ADR-021 — closes ADR-014).
+
+    Every agent-driven shell execution (``exec_run`` tool, validation
+    checks, benchmark runs) goes through the sandbox. Modes:
+
+    - ``host``  — subprocess in the workspace (the ADR-014 interim executor)
+    - ``docker``— the command runs in a disposable container that mounts
+      ONLY the workspace; strict: fails when the daemon or image is missing
+    - ``auto``  — docker **whenever possible** (daemon reachable AND an
+      ``image`` is configured), host otherwise. The image gate is
+      deliberate: project checks need the project's toolchain, so a
+      meaningful sandbox image is an operator decision, never a guess.
+
+    The command allowlist and the execution audit log apply in ALL modes.
+    """
+
+    mode: Literal["auto", "docker", "host"] = "auto"
+    #: Container image carrying the project's toolchain. Empty → ``auto``
+    #: stays on the host executor (backward-compatible default).
+    image: str = ""
+    docker_binary: str = "docker"
+    #: Resource limits handed to ``docker run``.
+    memory: str = "2g"
+    cpus: float = 2.0
+    pids_limit: int = 512
+    #: Container network. Default-deny egress; set "bridge" for checks that
+    #: genuinely need the network.
+    network: str = "none"
+    #: Environment variables forwarded into the container (by name).
+    env_passthrough: list[str] = Field(default_factory=list)
+    #: Regex allowlist for commands (matched with re.search). Empty →
+    #: every command is allowed (the workspace remains the blast radius);
+    #: non-empty → any non-matching command is refused and audited.
+    command_allowlist: list[str] = Field(default_factory=list)
+    #: Append every execution to ``<run-dir>/exec_audit.jsonl``.
+    audit: bool = True
+
+
+class ReviewConfig(BaseModel):
+    """Mandatory reviewer gate before every commit (Phase H2, ADR-022)."""
+
+    enabled: bool = True
+    #: Finding severities that block the commit even under an ``approve``
+    #: verdict; ``request_changes`` always blocks.
+    block_severities: list[str] = Field(default_factory=lambda: ["high"])
+
+
+class CodeIntelConfig(BaseModel):
+    """Semantic code intelligence (Phase H3, ADR-023): symbol/function/
+    class extraction + import dependency graph, persisted under the origin
+    repo's ``.agent/code-index/``."""
+
+    enabled: bool = True
+    max_files: int = 2000
+    max_file_bytes: int = 300_000
+    exclude_dirs: list[str] = Field(
+        default_factory=lambda: [
+            ".git", ".agent", "__pycache__", "node_modules", ".venv", "venv",
+            "dist", "build", ".mypy_cache", ".ruff_cache", ".pytest_cache",
+        ]
+    )
+    #: Character budget for the repository map injected into agent prompts.
+    map_max_chars: int = 2500
+
+
 class ForgeConfig(BaseModel):
     """Pull-request delivery (Evolution workflow, ADR-020). Fail-closed:
     kind 'none' produces a reviewable PR proposal bundle instead of any
@@ -201,6 +267,9 @@ class AgentdConfig(BaseModel):
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
     sprint: SprintConfig = Field(default_factory=SprintConfig)
     forge: ForgeConfig = Field(default_factory=ForgeConfig)
+    sandbox: SandboxConfig = Field(default_factory=SandboxConfig)
+    review: ReviewConfig = Field(default_factory=ReviewConfig)
+    code_intel: CodeIntelConfig = Field(default_factory=CodeIntelConfig)
     git: GitConfig = Field(default_factory=GitConfig)
     workspace: WorkspaceConfig = Field(default_factory=WorkspaceConfig)
     runs_dir: Path = Field(default_factory=lambda: Path.home() / ".agentd" / "runs")

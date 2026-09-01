@@ -454,3 +454,109 @@ human as the only merge authority; four new CLI commands
 (docs/evolve/roadmap/evaluate-models); the agent roster reaches 11.
 Accepted residual risk: forge `api` tested against a stub only; live
 forges validated operationally.
+
+## ADR-021 — sandboxd: one policed executor for every agent command (allowlist → host/Docker → audit)
+**Date:** 2026-09-01 · **Status:** Accepted (closes the interim posture of
+ADR-014)
+**Context:** ADR-014 shipped host-subprocess execution as an accepted
+interim risk. The v1.0 hardening sprint requires container execution
+"whenever possible", restricted filesystem access, resource limits, a
+command allowlist, and an execution audit log — without breaking
+docker-less environments or projects whose checks need their own
+toolchain.
+**Decision:** A per-run `Sandbox` (sandbox.py) attached to the workspace
+at `prepare_run`; `run_command` (the shared path of `exec_run`, all
+validation categories, debugging reproductions, and evolution benchmarks)
+delegates to it. Three layers in every mode: (1) regex **command
+allowlist** — empty allows all (backward compatible), non-empty is
+fail-closed; (2) execution — `host` (the ADR-014 behavior) or `docker`:
+`docker run --rm` mounting ONLY the workspace at its **host-identical
+path** (worktrees also mount the origin `.git`), `--network none` default,
+`--memory/--cpus/--pids-limit`, explicit env passthrough, host-side
+timeout + `docker kill`; (3) **audit** — every execution, refused ones
+included, appended to `<run-dir>/exec_audit.jsonl`; resolved mode
+journaled (`SANDBOX_MODE`). Mode `auto` (default) uses docker only when
+the daemon answers AND `sandbox.image` is configured — a meaningful image
+is an operator decision, so the docker-less and unconfigured cases stay
+byte-identical to ADR-014. Repo `.agentd.yaml` cannot configure the
+sandbox (a repo must not weaken its own isolation). Git tools and the
+Browser QA app launch remain host-side (delivery mechanism / needs a local
+port).
+**Consequences:** Agent shell execution can no longer touch the host
+filesystem or network when an image is configured; every execution is
+auditable; strict `docker` mode fails loudly. Residual: git/browser
+processes host-side; container escape hardening (user namespaces, seccomp)
+deferred to N1′.
+
+## ADR-022 — Mandatory reviewer gate: REVIEW between green validation and commit
+**Date:** 2026-09-01 · **Status:** Accepted
+**Context:** The Reviewer Agent existed only as a CLI command; the M4
+remainder ("reviewer in the pipeline") and the hardening mandate require
+review before every commit, blocking on critical issues, with structured
+reports and security/architecture/maintainability detection.
+**Decision:** A `review` graph node after `validate` (green) and before
+`git`, in both compiled graphs (run and fix pipelines) — validation incl.
+Browser QA runs first so review judges working code and expensive review
+cycles are never spent on red changes. The reviewer receives the full
+uncommitted change set via `collect_review_diff` (tracked `git diff HEAD`
+**plus untracked file contents** — new-file-only changes must not bypass
+the gate; machine-managed `.agent/` state excluded). Blocking policy in
+code (`review_blocked`): `request_changes` always blocks; findings at
+`review.block_severities` (default `high`) block even under `approve`.
+Blocked ⇒ run FAILS with the `ReviewReport` in `report.json` +
+`REVIEW_GATE` journal event; no healing loop on judgment. `ReviewFinding`
+gains a mandatory-taxonomy `category`
+(security/architecture/maintainability/correctness/performance/testing/
+style/other). The gate covers `run`/`fix`/`sprint` tasks/`evolve`
+improvements AND `local-ezai commit` (runner-level, same policy).
+`review.enabled` is global-config only — a repo cannot disable its own
+gate. The Git Agent additionally ignores machine-managed `.agent/` status
+lines (the code index now exists before the git node).
+**Consequences:** Nothing commits unreviewed; scripted tests carry one
+reviewer response per green pipeline; the workflow is PLAN → CODE →
+VALIDATE(+Browser QA) → [DEBUG → FIX → REVALIDATE]* → REVIEW → COMMIT →
+(opt-in) PUSH/PR.
+
+## ADR-023 — Semantic code intelligence: ast/Tree-sitter symbol index + import graph in .agent/code-index/
+**Date:** 2026-09-01 · **Status:** Accepted (first slice of M5's codeidx)
+**Context:** Agents located code by grep alone; the hardening mandate
+requires symbolic repository understanding (symbols, functions, classes,
+dependency graph), persisted, serving Planner/Coder/Debugger/Reviewer.
+**Decision:** `code_intel.py` builds a per-repo index: Python via stdlib
+`ast` (always), JS/TS/Go/Rust via optional Tree-sitter grammars
+(`agentd[intel]`; graceful degradation). Persisted under the ORIGIN repo's
+`.agent/code-index/` as `symbols.json` (content-hash-keyed cache →
+incremental refresh at `prepare_run`, journaled `CODE_INDEX`) and
+`graph.json` (import edges resolved to repo files + most-imported
+hotspots). Consumption: a budgeted **repository map** injected into the
+Planner prompt; a read-only `code_symbols` tool (T0) for
+Planner/Coder/Debugger/Reviewer. `plan` builds its index in memory only
+(traceless promise kept); the index is machine state — never staged,
+excluded like memory files.
+**Consequences:** Plans reference real modules; symbol lookup is exact and
+cheap; Qdrant-backed similarity search (N3′) can layer on top without
+replacing the symbolic index.
+
+## ADR-024 — Model transparency & benchmark dashboard: models/explain-run, run metrics, trend history
+**Date:** 2026-09-01 · **Status:** Accepted
+**Context:** Routing lived in the registry but was not inspectable; runs
+did not record which model (after fallbacks) actually served each role;
+evaluate-models measured availability but not quality or drift; evolution
+proposed without benchmark evidence.
+**Decision:** (1) The LLM clients track fallback-aware `models_used`
+(role → serving model); every pipeline persists it in `report.json`.
+(2) `local-ezai models` prints the live per-role primary/fallback routing
+exactly as a run resolves it; `local-ezai explain-run [id]` attributes
+each stage of a run (deterministic stages labeled as such: Validation
+harness, Playwright). (3) `evaluate-models` additionally aggregates run
+history into `RunMetrics` (planning accuracy, coding success, validation
+pass, debugging success, review approval, heal iterations, wall clock),
+rolls a capped 20-entry trend history inside
+`.agent/model_benchmarks.json`, and `--report` renders
+`docs/MODEL_GOVERNANCE_REPORT.md`. (4) `gather_evidence` (evolution) reads
+those trends — regressions, latency drift, weak quality rates — as
+first-class evidence, and the Evolution prompt forbids re-proposing failed
+experiments recorded in memory.
+**Consequences:** "Which model did what" is answerable per run and per
+role; routing PRs carry measured evidence; evolution is driven by
+benchmark feedback, closing the mission's self-improvement loop.

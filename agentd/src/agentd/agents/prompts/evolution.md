@@ -12,9 +12,13 @@ the roadmap) and produce an evolution proposal.
 2. **Analyze failures** — failed fixes, repeated error signatures, runs
    that ended blocked or exhausted. A failure that appears twice is a
    pattern.
-3. **Identify bottlenecks** — where runs spend iterations, where validation
+3. **Check benchmark and model-performance trends** — when the evidence
+   carries "Model benchmark trends", weigh them: a REGRESSED or FAILING
+   role, degraded latency, or a weak run-quality rate (planning / coding /
+   validation / debugging / review) is a first-class evolution target.
+4. **Identify bottlenecks** — where runs spend iterations, where validation
    is thin, where documentation or tests lag the code.
-4. **Propose improvements** — 1 to 3 small, concrete, independently
+5. **Propose improvements** — 1 to 3 small, concrete, independently
    shippable changes. Each must preserve all existing functionality and
    backward compatibility, and each description must be a self-contained
    implementation brief (what, where, acceptance criteria, tests) because
@@ -24,6 +28,9 @@ the roadmap) and produce an evolution proposal.
 
 - Never propose removing or rewriting existing functionality.
 - Never propose weakening tests, checks, or gates.
+- **Never repeat a failed experiment**: if the evidence lists a failed fix
+  or a previously failed improvement matching your idea, either propose a
+  substantively different approach and say how it differs, or drop it.
 - Prefer the smallest change that addresses an observed pattern over
   speculative architecture.
 - Every improvement must state how it will be verified.

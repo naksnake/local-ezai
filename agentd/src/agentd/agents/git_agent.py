@@ -42,7 +42,11 @@ class GitAgent(BaseAgent):
         status = self.registry.execute(
             "git_status", {}, workspace, agent=self.agent_name, allowlist=self.tool_names
         )
-        if status.ok and not status.output.strip():
+        change_lines = [
+            line for line in (status.output or "").splitlines()
+            if line.strip() and not self._machine_state_line(line)
+        ]
+        if status.ok and not change_lines:
             self.journal.append("GIT_NO_CHANGES")
             return CommitInfo(branch=workspace.branch, message="no changes to commit")
 
@@ -67,9 +71,7 @@ class GitAgent(BaseAgent):
         if not commit.ok:
             raise RuntimeError(f"git commit failed: {commit.error} {commit.output}")
 
-        files_committed = sum(
-            1 for line in (status.output or "").splitlines() if line.strip()
-        )
+        files_committed = len(change_lines)
         info = CommitInfo(
             sha=commit.extra.get("sha", ""),
             message=message,
@@ -98,6 +100,19 @@ class GitAgent(BaseAgent):
             push_error=info.push_error,
         )
         return info
+
+    @staticmethod
+    def _machine_state_line(status_line: str) -> bool:
+        """Porcelain lines for the runtime's machine-managed .agent state
+        (project memory, code index, model benchmarks) — never a reason to
+        commit, and excluded from staging by git_add anyway."""
+        path = status_line.strip().split(maxsplit=1)[-1].strip('"')
+        if path in (".agent", ".agent/"):
+            return True
+        machine = (".agent/memory.db", ".agent/lessons_learned.json",
+                   ".agent/code-index", ".agent/model_benchmarks.json")
+        return any(path == m or path.startswith(m + "/") or
+                   path.startswith(m) for m in machine)
 
     # ── commit message ──────────────────────────────────────────────────────
 

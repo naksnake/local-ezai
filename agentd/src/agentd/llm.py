@@ -123,6 +123,9 @@ class OpenAICompatLLM:
         self.config = config
         self.on_fallback = on_fallback
         self.fallbacks_used = 0
+        #: Role → the model that actually served the role's latest call
+        #: (fallback-aware) — the source for `local-ezai explain-run`.
+        self.models_used: dict[str, str] = {}
         self._client = httpx.Client(
             base_url=config.base_url.rstrip("/"),
             headers={"Authorization": f"Bearer {config.api_key}"},
@@ -142,7 +145,9 @@ class OpenAICompatLLM:
         last_error: Exception | None = None
         for position, model in enumerate(chain):
             try:
-                return self._chat_model(model, messages, tools)
+                response = self._chat_model(model, messages, tools)
+                self.models_used[role] = model
+                return response
             except LLMError as exc:
                 last_error = exc
                 if position < len(chain) - 1:
@@ -214,6 +219,7 @@ class ScriptedLLM:
         self._script = list(script)
         self._index = 0
         self.calls: list[dict[str, Any]] = []
+        self.models_used: dict[str, str] = {}
 
     @classmethod
     def from_file(cls, path: Path) -> ScriptedLLM:
@@ -229,6 +235,7 @@ class ScriptedLLM:
         tools: list[dict[str, Any]] | None = None,
     ) -> LLMResponse:
         self.calls.append({"role": role, "messages": messages, "tools": tools})
+        self.models_used[role] = "scripted"
         if self._index >= len(self._script):
             raise LLMError(
                 f"scripted LLM exhausted after {len(self._script)} responses "

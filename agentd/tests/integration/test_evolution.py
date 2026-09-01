@@ -59,6 +59,9 @@ IMPROVEMENT_RUN = [
     {"tool_calls": [{"name": "fs_write", "arguments": {
         "path": "guards.py", "content": "def is_valid(x):\n    return bool(x)\n"}}]},
     {"content": "added the helper"},
+    # reviewer gate (H2) — new files reach review too
+    {"content": json.dumps({"verdict": "approve", "summary": "clean",
+                            "findings": []})},
 ]
 
 
@@ -86,6 +89,40 @@ def test_gather_evidence_contains_history_failures_and_runs(config, green_repo):
     assert "REPEATED failure signatures" in evidence
     assert "x2: sig-A" in evidence
     assert "Recent runs" in evidence and "stall" in evidence
+
+
+def test_gather_evidence_includes_benchmark_trends(config, green_repo):
+    """H6 upgrade: the evolution cycle checks benchmark and model
+    performance trends before proposing improvements."""
+    agent_dir = green_repo / ".agent"
+    agent_dir.mkdir(exist_ok=True)
+    (agent_dir / "model_benchmarks.json").write_text(json.dumps({
+        "evaluated_at": "2026-09-01T10:00:00+00:00",
+        "passed": False,
+        "results": [
+            {"role": "planner", "model": "hermes3", "ok": True,
+             "latency_ms": 900},
+            {"role": "coder", "model": "qwen3-coder", "ok": False,
+             "latency_ms": 40, "error": "request rejected (404)"},
+        ],
+        "metrics": {"runs_total": 6, "coding_success_rate": 0.5,
+                    "validation_pass_rate": 0.8,
+                    "debugging_success_rate": 0.25,
+                    "planning_accuracy": 1.0,
+                    "review_approval_rate": 0.9},
+        "history": [{"evaluated_at": "2026-08-25T10:00:00+00:00",
+                     "passed": True,
+                     "roles": {"planner": {"ok": True, "latency_ms": 200},
+                               "coder": {"ok": True, "latency_ms": 300}}}],
+    }), encoding="utf-8")
+
+    evidence = gather_evidence(config, green_repo)
+    assert "Model benchmark trends" in evidence
+    assert "coder (qwen3-coder): FAILING" in evidence
+    assert "REGRESSED since the previous evaluation" in evidence
+    assert "latency +700 ms vs previous" in evidence
+    assert "coding 50%" in evidence and "debugging 25%" in evidence
+    assert "over 6 run(s)" in evidence
 
 
 def test_evolution_cycle_end_to_end(config, green_repo):
