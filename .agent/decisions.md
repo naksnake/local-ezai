@@ -563,7 +563,7 @@ benchmark feedback, closing the mission's self-improvement loop.
 
 ## ADR-025 — Productization architecture: one control plane, declarative state, two management surfaces
 **Date:** 2026-09-01 · **Status:** Accepted (architecture only — Phases
-P1–P6 of docs/V1_IMPLEMENTATION_PLAN.md implement it; ADR-026..030
+P1–P6 of docs/V1_IMPLEMENTATION_PLAN.md implement it; ADR-027..031
 reserved for the as-built decisions)
 **Context:** The platform is production-ready but operated like an
 engineering project: `make` targets, hand-edited LiteLLM config, per-repo
@@ -614,3 +614,57 @@ documents define the target: TARGET_PRODUCT_V1, OPENWEBUI_INTEGRATION,
 WEBUI_ADMIN_CENTER, MODEL_ROUTING_DESIGN, MODEL_LIFECYCLE_MANAGEMENT,
 PROVIDER_ABSTRACTION, CLI_AND_WEBUI_STRATEGY, FIRST_RUN_EXPERIENCE,
 V1_IMPLEMENTATION_PLAN.
+
+## ADR-026 — Agnosticism review: roles are the interface; hardware, runtime, and models are data
+**Date:** 2026-09-01 · **Status:** Accepted (amends ADR-025; architecture
+only — implemented within plan phases P1/P5/P6)
+**Context:** The V1 product must be hardware-, runtime-, and
+model-agnostic: users choose CPU/GPU (any vendor), llama.cpp/vLLM/future
+runtimes, and any model family without architecture changes. Review of the
+productization docs found real couplings: per-hardware model variable
+families in `.env` (CHAT_MODEL vs CPU_CHAT_MODEL vs N97_MODEL_*) with
+three hand-maintained LiteLLM configs; SKU-shaped profiles (n97);
+a concrete model name in agentd code defaults; the engine service's
+vLLM-specific name; tool-calling assumed via one parser; a catalog at risk
+of becoming a blessed list; raw model names as the chat UX
+(docs/V1_PRODUCT_REVIEW.md, CF-1..CF-10).
+**Decision:**
+(1) **Logical roles/groups are the only stable names.** LiteLLM serves
+role aliases (`role-planner`, …); agentd defaults bind to aliases —
+completing ADR-007 so no repository code contains a model name. `.env`
+seeds groups once (`AI_RUNTIME`, `REASONING_MODEL`, `CODING_MODEL`,
+`CHAT_MODEL`, sources as `hf:`/`gguf:` URIs or catalog ids, `auto`
+supported), consumed at bootstrap into generation 1 and never re-read;
+legacy per-profile variables migrate automatically. The five-step FRE
+(clone → edit .env → make setup[-cpu|-gpu] → open WebUI → use everything)
+runs with zero interactive prompts (docs/FINAL_FIRST_RUN_EXPERIENCE.md).
+(2) **Capability classes replace SKU profiles** (accel-large/accel-small/
+cpu-standard/cpu-low from a detected capability vector; `n97` = preset
+alias of cpu-low; make targets unchanged). Hardware knowledge is legal in
+exactly one place: runtime-descriptor (runtime × accelerator-kind) data.
+One pure `fit()` function powers recommendations/validation and never
+blocks explicit user override (docs/HARDWARE_AGNOSTIC_ARCHITECTURE.md).
+(3) **Runtime = descriptor + images behind six verbs** (materialize,
+start/stop/restart, ready?, validate_model, bench, capabilities); the
+compose service keeps its historical `vllm` name with an additive neutral
+network alias `engine` used by all new consumers; capability negotiation
+makes tool-calling a checked property of the (runtime × chat-template)
+pair at render time. Acceptance: the mock third-runtime drill must pass
+with zero diffs outside descriptors (docs/RUNTIME_ABSTRACTION_STRATEGY.md).
+(4) **Governance ruling — govern roles, REVEAL models** (option B amended,
+never hidden): group/role/pin/runtime changes are the approved objects;
+model names remain visible everywhere evidence matters. Role contracts
+(declarative capability requirements per role) close the loop. The
+chat selector leads with role entries; raw names behind an advanced
+toggle (docs/MODEL_GOVERNANCE_V2.md, docs/WEBUI_PRODUCT_STRATEGY.md).
+(5) **Evolution is an advisor, never an operator**: benchmark readings,
+fit-checked model recommendations, and pre-filled activation proposals
+into the one governance queue (`proposed-by: evolution`, rate-limited,
+local-evidence-required); no write path to generations exists; rejections
+are recorded to memory and never re-proposed. Humans remain the final
+authority on every activation.
+**Consequences:** Implementation ADRs renumber to ADR-027..031;
+plan P1 absorbs remediations R-1..R-5, P5 implements the final FRE,
+P6 gains gates H1–H4 + the third-runtime drill; the platform can adopt a
+new GPU vendor, runtime, or model family as pure data — which is the
+definition of done for agnosticism.

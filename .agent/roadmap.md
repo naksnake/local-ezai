@@ -51,6 +51,16 @@ product definition: [docs/TARGET_PRODUCT_V1.md](../docs/TARGET_PRODUCT_V1.md).
 P4 (web console) supersedes N4; N5′/N6′ land post-V1 on the P2 governance
 queue. Status: 📐 architecture only — no implementation started.
 
+**Product review (ADR-026, 2026-09-01):** agnosticism audit passed with
+remediations — roles/groups become the only stable names (role aliases
+complete ADR-007; no model names in code), capability classes replace SKU
+profiles, runtimes are descriptors behind a neutral `engine` alias,
+governance rules "govern roles, reveal models", evolution gains an
+advisory-only lane into the approval queue. Final FRE: clone → edit .env
+once (`AI_RUNTIME` + three group seeds) → `make setup` → WebUI → done.
+See [docs/V1_PRODUCT_REVIEW.md](../docs/V1_PRODUCT_REVIEW.md) and its five
+companion documents.
+
 ## Next-generation roadmap (post-readiness-review)
 
 The v0.7.0 release review defined the successor milestones **N1–N7**; the

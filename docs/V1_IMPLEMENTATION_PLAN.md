@@ -1,5 +1,18 @@
 # V1 Implementation Plan (Productization Phase)
 
+> **2026-09-01 product review (ADR-026):** the agnosticism review
+> ([V1_PRODUCT_REVIEW.md](V1_PRODUCT_REVIEW.md)) amends this plan without
+> resequencing it — **P1 additionally carries remediations R-1…R-5**
+> (role aliases end model names in code; capability classes replace SKU
+> profiles; neutral `engine` alias; capability negotiation; catalog as
+> data + recommender) and **P5 implements
+> [FINAL_FIRST_RUN_EXPERIENCE.md](FINAL_FIRST_RUN_EXPERIENCE.md)** (the
+> `.env`-seeded bootstrap, F7–F11) in place of the interactive-choice
+> wizard. P6's release gates gain H1–H4
+> ([HARDWARE_AGNOSTIC_ARCHITECTURE.md](HARDWARE_AGNOSTIC_ARCHITECTURE.md) §6)
+> and the third-runtime drill
+> ([RUNTIME_ABSTRACTION_STRATEGY.md](RUNTIME_ABSTRACTION_STRATEGY.md) §6).
+
 **Input:** the eight productization architecture documents
 ([TARGET_PRODUCT_V1.md](TARGET_PRODUCT_V1.md) and its references).
 **Constraints:** extend-only (no redesign), every existing platform and
@@ -48,7 +61,7 @@ side-load design ([PROVIDER_ABSTRACTION.md](PROVIDER_ABSTRACTION.md) §6).
    migrated install (golden test);
 3. `config/litellm_config.yaml` is rendered output with drift detection;
 4. all existing tests green; offline/direct CLI mode untouched.
-**ADR:** ADR-026 (Registry v2 + PAL + generations).
+**ADR:** ADR-027 (Registry v2 + PAL + generations).
 
 ## P2 — `ezaid` Platform Control Plane
 
@@ -67,7 +80,7 @@ Deployment: one new compose service in the existing overlay pattern
    report, cancel);
 3. kill-the-daemon test: repo work via CLI unaffected;
 4. OpenAPI spec published and versioned — the contract artifact.
-**ADR:** ADR-027 (control plane).
+**ADR:** ADR-028 (control plane).
 
 ## P3 — OpenWebUI integration (SWE tool server + Orchestrator)
 
@@ -84,7 +97,7 @@ first-run pre-registration of the tool server.
 3. prompt-injection drill: a hostile chat task cannot push, merge,
    activate, or leave the sandbox (red-team script in CI);
 4. existing chat/RAG/tool behavior byte-identical (regression pass).
-**ADR:** ADR-028 (chat-ops boundary).
+**ADR:** ADR-029 (chat-ops boundary).
 
 ## P4 — Admin Center (monitor evolution)
 
@@ -103,7 +116,7 @@ capability.
 2. an evolution PR is reviewed end-to-end from the Governance page;
 3. Browser QA workflow suite green in CI;
 4. monitor's pre-existing functions (health, KB) intact.
-**ADR:** ADR-029 (Admin Center + SSO handoff).
+**ADR:** ADR-030 (Admin Center + SSO handoff).
 
 ## P5 — First-Run Experience
 
@@ -115,7 +128,7 @@ content for all four hardware profiles; bundled sample project; smoke
 suite; offline bundle path.
 **Exit criteria:** the six FRE acceptance criteria F1–F6, each scripted;
 onboarding Browser-QA'd in CI; re-run safety proven.
-**ADR:** ADR-030 (installer & onboarding).
+**ADR:** ADR-031 (installer & onboarding).
 
 ## P6 — Parity, hardening, soak → V1
 
