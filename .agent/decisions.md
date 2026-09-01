@@ -560,3 +560,57 @@ experiments recorded in memory.
 **Consequences:** "Which model did what" is answerable per run and per
 role; routing PRs carry measured evidence; evolution is driven by
 benchmark feedback, closing the mission's self-improvement loop.
+
+## ADR-025 — Productization architecture: one control plane, declarative state, two management surfaces
+**Date:** 2026-09-01 · **Status:** Accepted (architecture only — Phases
+P1–P6 of docs/V1_IMPLEMENTATION_PLAN.md implement it; ADR-026..030
+reserved for the as-built decisions)
+**Context:** The platform is production-ready but operated like an
+engineering project: `make` targets, hand-edited LiteLLM config, per-repo
+registries, CLI-only SWE. Productization requires an integrated product —
+OpenWebUI + runtime + Autonomous SWE + self-evolution + model governance —
+where users edit `.env` once at installation and manage everything
+afterwards through OpenWebUI or the `local-ezai` CLI, with model lifecycle
+(install/activate/benchmark/rollback/upgrade/explain), logical roles
+(orchestrator/planner/coder/debugger/reviewer/memory/chat), model groups
+(reasoning/coding/chat), and providers (llama.cpp/vLLM).
+**Decision (extension-only, no redesign):**
+(1) **One control plane** — `ezaid` (:8010, OpenAPI) wrapping the Python
+functions that already exist (agentd pipelines, evaluate, registry,
+compose ops). CLI (connected mode), Admin Center, and the SWE tool server
+are thin clients; the CLI keeps a fully offline **direct mode** for repo
+work, preserving every existing behavior and test.
+(2) **Declarative state, rendered artifacts** — Registry v2
+(`config/models/registry.yaml`: models × lifecycle states, ordered groups
+reasoning/coding/chat, roles with group+pin; resolution role→group→first
+ACTIVE = primary, rest = fallbacks — feeding the unchanged ADR-020 runtime
+mechanism; per-repo `.agent/model_registry.yaml` overrides preserved) +
+PAL provider descriptors (`config/providers/*.yaml`) rendering the engine
+slot materialization and a **generated** LiteLLM config. Mutations create
+immutable, git-committed **generations**; rollback = re-render generation
+N. Humans never edit rendered artifacts (drift detection refuses).
+(3) **Governed lifecycle** — state machine registered→installed→
+benchmarked→active→retired; activation/upgrade require human approval via
+one Governance queue (shared with evolution PRs and releases); rollback is
+immediate but audited; the first-run wizard's generation 1 is the only
+auto-approved activation.
+(4) **OpenWebUI as front door, never forked** — SWE tool server as an MCP
+server behind mcpo (ADR-003 pattern): start/inspect tools only, no
+governance mutations reachable from chat (prompt-injection ceiling); an
+`orchestrator` role/persona (new logical role, reasoning group) drives
+chat-ops; Admin Center = evolution of the existing monitor (:8888),
+rendering only what ezaid serves.
+(5) **Invariants restated as product law** — engine slot always named
+`vllm` on :8000 behind LiteLLM (ADR-001); one active engine slot in V1
+(second slot schema-ready, deferred); chat stack byte-identical (ADR-002);
+sandbox + reviewer gate on every chat-originated run (ADR-021/022);
+agents propose, humans approve (CLAUDE.md).
+**Consequences:** `.env` becomes installation-only; `make` becomes the
+installer/developer layer; CLI grows additive namespaces (`model`,
+`governance`, `project`, `status`, `up/down`); parity between CLI and
+WebUI is a release-gated test (parity harness), and the Admin Center is
+validated by the platform's own Browser QA agent. Nine architecture
+documents define the target: TARGET_PRODUCT_V1, OPENWEBUI_INTEGRATION,
+WEBUI_ADMIN_CENTER, MODEL_ROUTING_DESIGN, MODEL_LIFECYCLE_MANAGEMENT,
+PROVIDER_ABSTRACTION, CLI_AND_WEBUI_STRATEGY, FIRST_RUN_EXPERIENCE,
+V1_IMPLEMENTATION_PLAN.

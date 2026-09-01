@@ -39,6 +39,18 @@ tests, self-reviews, and delivers a branch/PR — entirely on local hardware.
 - Docs and ADRs updated in the same PR as the change.
 - N97 profile kept working (scoped-down budgets), GPU profile kept primary.
 
+## Productization Phase (V1 product — architecture accepted 2026-09-01)
+
+ADR-025 defines the integrated product: one control plane (`ezaid`),
+declarative model state with generations (Registry v2 + PAL), governed
+model lifecycle, OpenWebUI as the front door (SWE tool server +
+Orchestrator persona), Admin Center on the monitor, `.env`-once
+installation. Execution phases **P1–P6** with exit criteria:
+[docs/V1_IMPLEMENTATION_PLAN.md](../docs/V1_IMPLEMENTATION_PLAN.md);
+product definition: [docs/TARGET_PRODUCT_V1.md](../docs/TARGET_PRODUCT_V1.md).
+P4 (web console) supersedes N4; N5′/N6′ land post-V1 on the P2 governance
+queue. Status: 📐 architecture only — no implementation started.
+
 ## Next-generation roadmap (post-readiness-review)
 
 The v0.7.0 release review defined the successor milestones **N1–N7**; the
