@@ -57,7 +57,9 @@ P3 / P4 / P5 run in parallel after PR-12; P6 is the release train.
 
 ### Phase P1 — Registry v2 · PAL · Lifecycle (ADR-027) — CLI-first, no new services
 
-**PR-1 · Registry v2 store + generations** — M
+**PR-1 · Registry v2 store + generations** — M — ✅ **implemented**
+([prs/PR-1-registry-v2.md](prs/PR-1-registry-v2.md); 19 tests incl. the
+golden test, suite 330 green)
 Scope: `config/models/registry.yaml` schema (models × states, ordered
 groups reasoning/coding/chat, roles with group/pin/**contract** fields per
 MODEL_GOVERNANCE_V2 §3), generation snapshots + diff, load/validate

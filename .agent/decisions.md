@@ -668,3 +668,33 @@ plan P1 absorbs remediations R-1..R-5, P5 implements the final FRE,
 P6 gains gates H1–H4 + the third-runtime drill; the platform can adopt a
 new GPU vendor, runtime, or model family as pure data — which is the
 definition of done for agnosticism.
+
+## ADR-027 — Registry v2: platform model registry with generations (P1)
+**Date:** 2026-09-01 · **Status:** Proposed (enters with PR-1; flips to
+Accepted when phase P1 closes at PR-7)
+**Context:** ADR-025/026 require a platform-scope, declarative,
+generation-versioned model registry — roles → groups → models →
+runtimes — replacing hand-edited routing after installation, resolvable
+deterministically, rollback-able, and reproducing the CLAUDE.md
+`agent_model_map` byte-for-byte through the existing ADR-020 runtime
+mechanism.
+**Decision (PR-1 slice):** `registry_v2.py` implements the schema
+(models × lifecycle states registered/installed/benchmarked/active/
+retired/failed — only `active` is resolvable; ordered groups; roles with
+group + pin + `requires` capability contract), referential-integrity
+validation, deterministic resolution with explain reasons, an aggregated
+resolution-completeness check, ADR-020-shape `role_map()` (fallback keys
+only when non-empty), an append-only immutable generation store with
+atomic current-file replacement, and human-readable generation diffs.
+**As-built refinement:** a pin is an EXPLICIT ordered chain and does not
+inherit group fallbacks — the golden test (reference data vs the live
+ADR-020 registry of this repo) is unreproducible otherwise
+(`reviewer: llama3` has no fallback). Unservable generations are refused
+at write time. The reference default set (CLAUDE.md map) ships as
+packaged data in `agentd/defaults/` — model names live in data, never
+code (R-1/H1). No consumers are wired in this slice (PR-3/6/7); the live
+`config/models/registry.yaml` instance is created by bootstrap (PR-7).
+**Consequences:** later PRs build on a store whose invariants
+(immutability, write-time servability, byte-compatible role maps) are
+already tested; the golden test becomes the standing tripwire for the
+PR-6 role-alias switch.

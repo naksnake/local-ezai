@@ -112,6 +112,16 @@ resolve(role):
 A role whose group has **no active model** fails resolution loudly at
 render time — never silently at request time.
 
+> **As-built refinement (PR-1, `agentd/src/agentd/registry_v2.py`):** a
+> `pin` is an **explicit ordered chain** (string or list) and does *not*
+> inherit group fallbacks — what you pin is what you get. The golden test
+> forced this: CLAUDE.md's `reviewer: llama3` has no fallback, which the
+> "pin + rest of group" rule above could not reproduce. Unpinned roles
+> resolve through their group exactly as specified. The reference default
+> set ships as packaged data (`agentd/src/agentd/defaults/
+> reference_registry.yaml`); the live instance file is created by the
+> bootstrap (PR-7), not by PR-1.
+
 ## 5. Compatibility & precedence
 
 Effective routing for a run =
