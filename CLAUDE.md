@@ -380,3 +380,19 @@ Human
 → Local-EZAI
 
 Local-EZAI should eventually maintain itself.
+
+---
+
+# Release Discipline
+
+Once ADR decomposition exists:
+
+Implementation must proceed PR-by-PR.
+
+The active PR becomes the only implementation scope.
+
+Future PR work is prohibited.
+
+Architecture changes are prohibited unless a new ADR is approved.
+
+Maintain release stability over feature velocity.
