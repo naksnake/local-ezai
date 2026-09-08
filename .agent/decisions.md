@@ -883,3 +883,23 @@ connected mode against the same contract; PR-12 freezes the contract at
 `1.0.0`, adds the kill-the-daemon and two-concurrent-runs tests and flips
 this ADR to Accepted. Until then the overlay stays opt-in (`make
 control-up`) and no existing behavior changes.
+**PR-9 slice (2026-09-08) — lifecycle + governance endpoints:** the PR-6
+verbs' orchestration became **shared operations** in `platform_cli`
+(returning the CLI's `--json` mapping); the CLI verbs format them and
+`control/api.py` serves them — 19 operations on `/v1` (models install /
+benchmark / activate / upgrade / retire / uninstall, generations history /
+rollback, roles explain, catalog + recommendations, governance list / show
+/ approve / reject, projects), each summary naming its CLI verb, the actor
+being the forwarded identity. **Parity is tested**: CLI `--json` == API
+body for every read verb. **Idempotency keys** (`Idempotency-Key`: replay
+with `Idempotency-Replayed`, `409 idempotency_conflict` on a different
+payload; one JSON record per key under `config/control/idempotency/`).
+**Shared error vocabulary** `agentd/platform_errors.py`: `classify()` maps
+the platform exceptions to `{code, message, fix}` + HTTP status + exit code
+(`not_found` by the modules' own phrasing); the API returns the envelope,
+the CLI prints the same envelope in `--json` mode. Every mutating call is
+audited as `api.<operationId>` with the forwarded actor; mutations are
+serialized in the daemon; `reload: true` is refused (`reload_unavailable`)
+where no docker CLI exists — the shipped container — before the apply
+protocol starts. Contract `1.0.0-draft.9`. Deferred: run endpoints (PR-10),
+connected mode (PR-11), freeze + phase-close tests (PR-12).

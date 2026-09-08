@@ -359,6 +359,22 @@ def test_bootstrap_cli_reports_seed_problems_before_downloading(fresh_platform, 
     assert code == 2  # no .env → usage-level error with the fix
 
 
+# ── the shared error object (PR-9) ───────────────────────────────────────────
+
+
+def test_refused_verbs_print_the_shared_error_object_in_json_mode(cli, capsys):
+    code, out = cli("model", "retire", "nope", "--json", capsys=capsys)
+    assert code == 1
+    assert json.loads(out) == {"error": {"code": "not_found", "message": "unknown model 'nope'",
+                                         "fix": ""}}
+    code, out = cli("model", "retire", "alpha", "--json", capsys=capsys)  # serving primary
+    assert code == 1 and json.loads(out)["error"]["code"] == "lifecycle_refused"
+    code, out = cli("model", "explain", "nope", "--json", capsys=capsys)
+    assert code == 1 and json.loads(out)["error"]["code"] == "not_found"
+    code, out = cli("model", "retire", "nope", capsys=capsys)  # text mode: logged, exit 1
+    assert code == 1 and out == ""
+
+
 # ── status: control plane health (PR-8) ──────────────────────────────────────
 
 

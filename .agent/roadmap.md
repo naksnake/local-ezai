@@ -59,10 +59,13 @@ PR-7 (bootstrap core + `.env` seed consumption + cutover) implemented
 ([docs/prs/](../docs/prs/)). 🟡 **P2 in progress (ADR-028 Proposed)** —
 PR-8 (`ezaid` service skeleton: FastAPI app behind `agentd[control]`,
 service-token auth + forwarded identity, single audit log, `/v1/health`
-aggregation, OpenAPI contract artifact, opt-in compose overlay)
-implemented. All eight await human merge on `claude/next-ready-pr-bnq7r3`.
-Next ready: **PR-9** (lifecycle + governance endpoints, idempotency keys,
-errors shared with the CLI).
+aggregation, OpenAPI contract artifact, opt-in compose overlay) and PR-9
+(lifecycle + governance + project endpoints over shared operations with
+CLI/API parity, idempotency keys, one error vocabulary for CLI and API,
+audited mutations) implemented. All nine await human merge on
+`claude/next-ready-pr-bnq7r3`. Next ready: **PR-10** (run endpoints:
+async run registry — start/status/report/cancel for run/sprint/fix/evolve,
+concurrency limits).
 
 **Product review (ADR-026, 2026-09-01):** agnosticism audit passed with
 remediations — roles/groups become the only stable names (role aliases

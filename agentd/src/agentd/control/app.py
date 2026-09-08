@@ -1,36 +1,42 @@
-"""The ``ezaid`` FastAPI application (PR-8, ADR-028).
+"""The ``ezaid`` FastAPI application (PR-8 skeleton, PR-9 endpoints; ADR-028).
 
-Skeleton surface — everything later PRs add hangs off these pieces:
+Surface:
 
 - ``GET /health`` — liveness, unauthenticated (docker/compose healthcheck,
   ``local-ezai status``);
 - ``GET /v1/health`` — the aggregated report: control-plane info, the
   platform snapshot ``local-ezai status`` shows, and one probe per stack
   service;
-- ``GET /v1/whoami`` — the caller identity the audit log will record;
+- ``GET /v1/whoami`` — the caller identity the audit log records;
 - ``GET /v1/audit`` — the tail of the platform's single audit log;
+- the lifecycle, governance and project operations of ``api.py`` (PR-9) —
+  the same functions the direct-mode CLI verbs call;
 - ``GET /openapi.json`` / ``/docs`` — the contract (versioned artifact under
   ``docs/api/``, tripwire-tested).
 
 Every ``/v1`` operation authenticates with the service token and accepts
-the forwarded identity headers (``auth.py``); rejected calls are audited
+the forwarded identity headers (``deps.py``); rejected calls are audited
 (never with the token). Errors are one envelope everywhere
-(``{"error": {"code", "message", "fix"}}``) — the vocabulary the CLI's
-connected mode (PR-11) and the Admin Center (P4) print verbatim.
+(``{"error": {"code", "message", "fix"}}``) — platform exceptions are
+classified by ``platform_errors`` exactly as the CLI classifies them.
+Mutating calls (``POST``/``DELETE``) pass through one middleware that
+honors ``Idempotency-Key`` (replay / conflict) and audits the call with the
+caller's identity and the operation id.
 """
 
 from __future__ import annotations
 
+import json
+import threading
 import time
 from collections.abc import Mapping
 from contextlib import asynccontextmanager
 from typing import Annotated, Any
 
-from fastapi import Depends, FastAPI, Header, Query, Request
+from fastapi import FastAPI, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -43,10 +49,18 @@ from agentd.control import (
     CONTRACT_VERSION,
     DEFAULT_PORT,
     SERVICE_NAME,
-    TOKEN_ENV,
     USER_HEADER,
 )
-from agentd.control.auth import AuthError, Caller, authenticate
+from agentd.control.api import router as v1_router
+from agentd.control.deps import (  # noqa: F401 — ApiError/ErrorEnvelope re-exported
+    UNAUTHORIZED,
+    ApiError,
+    CallerDep,
+    ErrorBody,
+    ErrorEnvelope,
+    envelope,
+    record,
+)
 from agentd.control.health import (
     Prober,
     ServiceHealth,
@@ -55,8 +69,12 @@ from agentd.control.health import (
     probe_services,
     targets_from,
 )
+from agentd.control.idempotency import DIRNAME as IDEMPOTENCY_DIRNAME
+from agentd.control.idempotency import HEADER as IDEMPOTENCY_HEADER
+from agentd.control.idempotency import MAX_KEY_LENGTH, REPLAYED_HEADER, IdempotencyStore
 from agentd.logging_setup import get_logger
 from agentd.platform_cli import PlatformContext, platform_snapshot
+from agentd.platform_errors import classify, platform_exceptions
 
 log = get_logger("ezaid")
 
@@ -67,45 +85,17 @@ DESCRIPTION = (
     "artifacts — for the `local-ezai` CLI (connected mode), the Admin Center and "
     "the SWE tool server. Every `/v1` call presents the service token as a bearer "
     f"credential and may forward the human it acts for (`{USER_HEADER}`) and its "
-    f"own name (`{CLIENT_HEADER}`); the audit log records `<user> via <client>`."
+    f"own name (`{CLIENT_HEADER}`); the audit log records `<user> via <client>`. "
+    f"Mutating calls accept an `{IDEMPOTENCY_HEADER}` header: a retry with the same "
+    "key and payload replays the stored response, a different payload is a conflict. "
+    "Every error is `{\"error\": {\"code\", \"message\", \"fix\"}}` — the same object "
+    "the CLI prints."
 )
+MUTATING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+CONTROL_DIRNAME = "control"
 
 
-# ── error envelope ───────────────────────────────────────────────────────────
-
-
-class ErrorBody(BaseModel):
-    code: str
-    message: str
-    fix: str = ""
-
-
-class ErrorEnvelope(BaseModel):
-    error: ErrorBody
-
-
-class ApiError(Exception):
-    """An error the API returns as the shared envelope."""
-
-    def __init__(self, status: int, code: str, message: str, fix: str = "",
-                 headers: dict[str, str] | None = None) -> None:
-        super().__init__(message)
-        self.status, self.code, self.message, self.fix = status, code, message, fix
-        self.headers = headers or {}
-
-
-def envelope(status: int, code: str, message: str, fix: str = "",
-             headers: dict[str, str] | None = None) -> JSONResponse:
-    body = ErrorEnvelope(error=ErrorBody(code=code, message=message, fix=fix))
-    return JSONResponse(status_code=status, content=body.model_dump(), headers=headers)
-
-
-UNAUTHORIZED: dict[int | str, dict[str, Any]] = {
-    401: {"model": ErrorEnvelope, "description": "missing or invalid service token"},
-}
-
-
-# ── response models ──────────────────────────────────────────────────────────
+# ── response models of the skeleton operations ───────────────────────────────
 
 
 class Liveness(BaseModel):
@@ -145,40 +135,10 @@ class AuditPage(BaseModel):
     records: list[AuditRecord]
 
 
-# ── authentication dependency ────────────────────────────────────────────────
-
-bearer_scheme = HTTPBearer(auto_error=False, scheme_name="serviceToken",
-                           description=f"the platform service token ({TOKEN_ENV})")
-
-UserHeader = Annotated[str | None, Header(
-    alias=USER_HEADER, description="forwarded identity of the human the caller acts for")]
-ClientHeader = Annotated[str | None, Header(
-    alias=CLIENT_HEADER, description="name of the calling surface (cli, admin-center, …)")]
-
-
-def caller(request: Request,
-           credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
-           user: UserHeader = None, client: ClientHeader = None) -> Caller:
-    state = request.app.state
-    authorization = (f"{credentials.scheme} {credentials.credentials}"
-                     if credentials is not None else request.headers.get("authorization"))
-    try:
-        return authenticate(state.settings.token or "", authorization, user=user, client=client)
-    except AuthError as exc:
-        _record(request.app, "auth.rejected", "anonymous", path=request.url.path,
-                reason=exc.message, peer=request.client.host if request.client else "",
-                claimed_client=(client or "")[:64])
-        raise ApiError(401, exc.code, exc.message, exc.fix,
-                       headers={"WWW-Authenticate": "Bearer"}) from exc
-
-
-CallerDep = Annotated[Caller, Depends(caller)]
-
-
-def _record(app: FastAPI, event: str, actor: str, **details: Any) -> None:
-    audit: AuditLog | None = getattr(app.state, "audit", None)
-    if audit is not None:
-        audit.record(event, actor, **details)
+def _operation_id(request: Request) -> str:
+    route = request.scope.get("route")
+    return (getattr(route, "operation_id", None) or getattr(route, "name", None)
+            or f"{request.method} {request.url.path}")
 
 
 # ── application ──────────────────────────────────────────────────────────────
@@ -197,13 +157,13 @@ def create_app(settings: ControlConfig, ctx: PlatformContext | None = None, *,
     async def lifespan(app: FastAPI):
         app.state.started_at = time.strftime("%Y-%m-%dT%H:%M:%S")
         app.state.started_mono = time.monotonic()
-        _record(app, "control.started", SERVICE_NAME, version=__version__,
-                contract=CONTRACT_VERSION, host=settings.host, port=settings.port,
-                platform_root=str(ctx.root) if ctx else "")
+        record(app, "control.started", SERVICE_NAME, version=__version__,
+               contract=CONTRACT_VERSION, host=settings.host, port=settings.port,
+               platform_root=str(ctx.root) if ctx else "")
         log.info("ezaid %s (contract %s) serving %s:%s", __version__, CONTRACT_VERSION,
                  settings.host, settings.port)
         yield
-        _record(app, "control.stopped", SERVICE_NAME)
+        record(app, "control.stopped", SERVICE_NAME)
 
     app = FastAPI(title=TITLE, version=CONTRACT_VERSION, description=DESCRIPTION,
                   lifespan=lifespan, docs_url="/docs", redoc_url=None,
@@ -217,6 +177,10 @@ def create_app(settings: ControlConfig, ctx: PlatformContext | None = None, *,
     app.state.environ = environ
     app.state.started_at = time.strftime("%Y-%m-%dT%H:%M:%S")
     app.state.started_mono = time.monotonic()
+    app.state.mutation_lock = threading.Lock()
+    app.state.idempotency = (
+        IdempotencyStore(ctx.config_dir / CONTROL_DIRNAME / IDEMPOTENCY_DIRNAME)
+        if ctx is not None else None)
 
     def control_info() -> ControlInfo:
         return ControlInfo(version=__version__, contract=CONTRACT_VERSION,
@@ -245,7 +209,58 @@ def create_app(settings: ControlConfig, ctx: PlatformContext | None = None, *,
         return envelope(422, "invalid_request", problems or "invalid request",
                         "check the parameters against /openapi.json")
 
-    # ── operations ───────────────────────────────────────────────────────
+    async def _platform_failure(_: Request, exc: Exception) -> JSONResponse:
+        info = classify(exc)  # the CLI's classification — same code, message, fix
+        return envelope(info.status, info.code, info.message, info.fix)
+
+    for exception_class in platform_exceptions():
+        app.add_exception_handler(exception_class, _platform_failure)
+
+    # ── mutating calls: idempotency + audit ──────────────────────────────
+
+    @app.middleware("http")
+    async def govern_mutations(request: Request, call_next):
+        if request.method not in MUTATING_METHODS:
+            return await call_next(request)
+        store: IdempotencyStore | None = app.state.idempotency
+        key = request.headers.get(IDEMPOTENCY_HEADER)
+        if key is not None and len(key) > MAX_KEY_LENGTH:
+            return envelope(400, "invalid_request",
+                            f"{IDEMPOTENCY_HEADER} is longer than {MAX_KEY_LENGTH} characters",
+                            "use a short unique key (a UUID)")
+        fingerprint: str | None = None
+        if key and store is not None:
+            body = await request.body()
+            fingerprint = IdempotencyStore.fingerprint(request.method, request.url.path,
+                                                       request.url.query, body)
+            stored = store.get(key)
+            if stored is not None:
+                if stored.fingerprint != fingerprint:
+                    return envelope(409, "idempotency_conflict",
+                                    f"{IDEMPOTENCY_HEADER} {key!r} was already used for a "
+                                    "different request",
+                                    "use a new key for every new operation; reuse a key only "
+                                    "to retry the same one")
+                return Response(content=stored.body, status_code=stored.status,
+                                media_type=stored.media_type,
+                                headers={REPLAYED_HEADER: "true", IDEMPOTENCY_HEADER: key})
+        response = await call_next(request)
+        raw = b"".join([chunk async for chunk in response.body_iterator])
+        headers = {k: v for k, v in response.headers.items() if k.lower() != "content-length"}
+        replay = Response(content=raw, status_code=response.status_code, headers=headers)
+        operation = _operation_id(request)
+        if key and store is not None and fingerprint is not None and response.status_code < 500:
+            store.put(key, fingerprint, response.status_code, raw,
+                      response.headers.get("content-type", "application/json"), operation)
+            replay.headers[IDEMPOTENCY_HEADER] = key
+        who = getattr(request.state, "caller", None)
+        if who is not None:  # rejected calls are already audited as auth.rejected
+            record(app, f"api.{operation}", who.actor, method=request.method,
+                   path=request.url.path, status=response.status_code, client=who.client,
+                   idempotency_key=key or "")
+        return replay
+
+    # ── skeleton operations ──────────────────────────────────────────────
 
     @app.get("/health", response_model=Liveness, operation_id="liveness", tags=["control"],
              summary="Liveness (unauthenticated)")
@@ -286,6 +301,8 @@ def create_app(settings: ControlConfig, ctx: PlatformContext | None = None, *,
                            "start ezaid inside a platform")
         return AuditPage(total=audit_log.count(), records=audit_log.tail(limit))
 
+    app.include_router(v1_router)  # PR-9: lifecycle · governance · projects
+
     # ── the contract document ────────────────────────────────────────────
 
     def openapi() -> dict[str, Any]:
@@ -307,8 +324,6 @@ def create_app(settings: ControlConfig, ctx: PlatformContext | None = None, *,
 
 
 def spec_json(app: FastAPI) -> str:
-    import json
-
     return json.dumps(app.openapi(), indent=2, sort_keys=True) + "\n"
 
 

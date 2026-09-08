@@ -218,6 +218,15 @@ through `local-ezai model …` + the governance queue. Modules:
   `/v1/whoami`, `/v1/audit`, versioned OpenAPI artifact
   `docs/api/ezaid-openapi.json` (contract-surface tripwire); opt-in
   compose overlay + `make control-*`; `local-ezai status` probes it.
+- **Lifecycle + governance endpoints** (`control/api.py`, `control/deps.py`,
+  `control/idempotency.py`, `platform_errors.py`, PR-9): the PR-6 verbs'
+  orchestration became shared operations in `platform_cli` (CLI formats,
+  API serves — parity tested); 19 `/v1` operations (models, generations,
+  roles, catalog, governance, projects) with the forwarded identity as
+  actor; `Idempotency-Key` replay/conflict; one error vocabulary
+  (`classify()` → `{code, message, fix}` + status/exit) printed by the CLI
+  in `--json` and returned by the API; mutating calls audited as
+  `api.<operationId>`; reload refused where the daemon cannot run compose.
 
 ## Target additions (control/execution/knowledge planes)
 

@@ -52,8 +52,10 @@ by container name. All external configuration flows through `.env`
 (`EZAI_CONTROL_PORT`), the platform control plane: bearer service token
 `EZAI_CONTROL_TOKEN` + forwarded identity for the audit trail, the single
 audit log (`config/governance/log.jsonl`), `/v1/health` aggregation over the
-eight services + the platform snapshot, OpenAPI contract
-`docs/api/ezaid-openapi.json`. Defined in `docker-compose.control.yml`,
+eight services + the platform snapshot, the model lifecycle / governance
+queue / project allowlist operations of the CLI as `/v1` endpoints (PR-9:
+same functions, same JSON, idempotency keys, one error vocabulary), OpenAPI
+contract `docs/api/ezaid-openapi.json`. Defined in `docker-compose.control.yml`,
 started with `make control-up`; not part of `make up` until CLI connected
 mode (PR-11).
 

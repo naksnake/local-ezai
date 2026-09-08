@@ -119,13 +119,21 @@ the CLI.
 - Errors are the same objects everywhere — the Admin Center shows the same
   message the CLI prints (no divergent failure vocabularies).
 
-> **As built (PR-8):** the contract is `docs/api/ezaid-openapi.json`,
-> `info.version` = `agentd.control.CONTRACT_VERSION` (`1.0.0-draft.8`; the
+> **As built (PR-8/PR-9):** the contract is `docs/api/ezaid-openapi.json`,
+> `info.version` = `agentd.control.CONTRACT_VERSION` (`1.0.0-draft.9`; the
 > P2 close freezes `1.0.0`). A tripwire test compares the committed
 > document with the live app on the contract surface (operations,
 > parameters, response codes, security, schema names) — a contract change
 > ships its regenerated artifact (`make control-spec`). The error object is
-> `{"error": {"code", "message", "fix"}}` for every failure.
+> `{"error": {"code", "message", "fix"}}` for every failure, produced by
+> one classification (`agentd/platform_errors.py`) that the CLI also prints
+> in `--json` mode — same code, same text, same fix. Every mutating
+> operation names its CLI verb in the spec (`CLI: local-ezai …`), accepts
+> `Idempotency-Key` (replay with `Idempotency-Replayed: true`; a different
+> payload under the same key is `409 idempotency_conflict`), and is audited
+> as `api.<operationId>` with the forwarded identity. **Parity is a test**
+> (PR-9): for every read verb the CLI's `--json` output equals the API body,
+> because both call the same operation function.
 
 ## 7. Consistency test (release gate)
 

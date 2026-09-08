@@ -36,11 +36,11 @@ import yaml
 from agentd import activation, lifecycle
 from agentd.activation import ComposeReloader, EngineHealth, Platform
 from agentd.capability import PROFILE_PRESETS, CapabilityVector, detect_vector
-from agentd.catalog import Catalog, CatalogError, load_catalog, recommend
+from agentd.catalog import Catalog, load_catalog, recommend
 from agentd.config import AgentdConfig
 from agentd.control import DEFAULT_PORT as CONTROL_PORT
 from agentd.control import PORT_ENV as CONTROL_PORT_ENV
-from agentd.governance import ChangeRequest, GovernanceError, GovernanceQueue
+from agentd.governance import ChangeRequest, GovernanceQueue
 from agentd.lifecycle import (
     EngineHTTP,
     HttpxEngineHTTP,
@@ -49,9 +49,8 @@ from agentd.lifecycle import (
     default_runner,
 )
 from agentd.logging_setup import get_logger
+from agentd.platform_errors import PlatformError, classify, platform_exceptions
 from agentd.registry_v2 import (
-    RegistryError,
-    RegistryResolutionError,
     RegistryV2,
     diff_generations,
     list_generations,
@@ -63,12 +62,11 @@ from agentd.render import (
     ENGINE_COMPOSE_FILENAME,
     ENGINE_PORT,
     MANIFEST_FILENAME,
-    RenderError,
     check_contract,
     rendered_dir,
 )
 from agentd.routing import PLATFORM_ENV, find_platform_config
-from agentd.runtime_descriptor import DescriptorError, RuntimeDescriptor, load_descriptors
+from agentd.runtime_descriptor import RuntimeDescriptor, load_descriptors
 
 log = get_logger("platform-cli")
 
@@ -79,8 +77,7 @@ ROUTER_PORT = 4000
 BASE_COMPOSE = "docker-compose.yml"
 
 
-class PlatformError(Exception):
-    """No platform to act on (usage-level failure, exit 2)."""
+__all__ = ["PlatformContext", "PlatformError", "build_context", "dispatch_platform"]
 
 
 # ── context ──────────────────────────────────────────────────────────────────
@@ -191,148 +188,132 @@ def _request_lines(req: ChangeRequest) -> list[str]:
     return lines
 
 
-def _apply(ctx: PlatformContext, request_id: str, args: argparse.Namespace) -> int:
-    reloader, health = reload_seams(getattr(args, "reload", False))
-    result = activation.apply(ctx.platform, ctx.queue, request_id, actor=ctx.actor,
-                              reloader=reloader, health=health)
-    _emit(args, {"request": request_id, "ok": result.ok, "generation": result.generation,
-                 "message": result.message, "changed": result.changed,
-                 "rolled_back": result.rolled_back},
-          [result.message])
-    return 0 if result.ok else 1
+# ── operations (PR-9): one brain for the CLI verbs AND the control-plane API ──
+#
+# Each operation acts on the platform through the PR-3/4/5 modules and
+# returns the JSON-able mapping the CLI prints with ``--json`` and the API
+# returns as its response body — the parity the product promises
+# (CLI_AND_WEBUI_STRATEGY §3/§7). The ``cmd_*`` verbs below only format.
 
 
-def _after_proposal(ctx: PlatformContext, req: ChangeRequest, args: argparse.Namespace) -> int:
-    if req.status == "approved":  # policy-approved: self-service, audited
-        _emit(args, {"request": req.model_dump(mode="json")},
-              [*_request_lines(req), "approved by policy (no serving role affected) — applying"])
-        return _apply(ctx, req.id, args)
-    _emit(args, {"request": req.model_dump(mode="json")},
-          [*_request_lines(req),
-           f"awaiting human approval: local-ezai governance approve {req.id}"])
-    return 0
-
-
-# ── model verbs ──────────────────────────────────────────────────────────────
-
-
-def cmd_model_install(ctx: PlatformContext, args: argparse.Namespace) -> int:
+def install_model(ctx: PlatformContext, ref: str, *, name: str | None = None,
+                  runtime: str | None = None, group: str | None = None,
+                  refetch: bool = False) -> dict[str, Any]:
     registry = ctx.registry(required=False) or ctx.fresh_registry()
     result = lifecycle.install(
-        registry, args.ref, descriptors=ctx.descriptors, vector=ctx.vector,
+        registry, ref, descriptors=ctx.descriptors, vector=ctx.vector,
         platform_root=ctx.root, validator=build_validator(ctx), catalog=ctx.catalog,
-        runtime=args.runtime, group=args.group, name=args.name,
+        runtime=runtime, group=group, name=name,
         capability_class=ctx.platform.klass, accelerator=ctx.platform.accel,
-        refetch=args.refetch, persist_dir=ctx.config_dir)
+        refetch=refetch, persist_dir=ctx.config_dir)
     entry = result.registry.models[result.name]
-    lines = [result.message]
-    if entry.error:
-        lines.append(f"  error: {entry.error}")
-    if result.ok:
-        lines.append(f"  next: local-ezai model benchmark {result.name}")
-    _emit(args, {"name": result.name, "state": result.state, "artifact": entry.artifact,
-                 "size_gb": entry.size_gb, "error": entry.error, "persisted": result.persisted,
-                 "message": result.message}, lines)
-    return 0 if result.ok else 1
+    return {"ok": result.ok, "name": result.name, "state": result.state,
+            "artifact": entry.artifact, "size_gb": entry.size_gb, "error": entry.error,
+            "persisted": result.persisted, "message": result.message}
 
 
-def cmd_model_benchmark(ctx: PlatformContext, args: argparse.Namespace) -> int:
-    registry = ctx.registry()
+def benchmark_model(ctx: PlatformContext, name: str, *,
+                    base_url: str | None = None) -> dict[str, Any]:
     updated, result = lifecycle.benchmark(
-        registry, args.name, descriptors=ctx.descriptors, vector=ctx.vector,
+        ctx.registry(), name, descriptors=ctx.descriptors, vector=ctx.vector,
         platform_root=ctx.root, workdir=ctx.workdir, capability_class=ctx.platform.klass,
-        accelerator=ctx.platform.accel, base_url=args.base_url, runner=default_runner,
+        accelerator=ctx.platform.accel, base_url=base_url, runner=default_runner,
         http=engine_http(), agent_dir=ctx.root / ctx.config.memory.dir,
         persist_dir=ctx.config_dir)
-    record = updated.models[args.name].benchmarks
-    _emit(args, {"name": args.name, **record, "persisted": result.persisted},
-          [f"benchmark {args.name}: {result.tokens_per_s:.1f} tok/s "
-           f"({result.via}, {result.completion_tokens} tokens in {result.latency_s:.1f}s)",
-           f"  state: {updated.models[args.name].state}"
-           + ("" if result.persisted else f" — {lifecycle.UNSERVABLE_HINT}"),
-           f"  next: local-ezai model activate {args.name} --group <reasoning|coding|chat>"])
-    return 0
+    record = updated.models[name].benchmarks
+    return {"name": name, **record, "state": updated.models[name].state,
+            "persisted": result.persisted,
+            "message": f"benchmark {name}: {result.tokens_per_s:.1f} tok/s "
+                       f"({result.via}, {result.completion_tokens} tokens in "
+                       f"{result.latency_s:.1f}s)"}
 
 
-def cmd_model_activate(ctx: PlatformContext, args: argparse.Namespace) -> int:
-    req = activation.activate(ctx.platform, ctx.queue, ctx.registry(), args.name,
-                              requested_by=ctx.actor, group=args.group, role=args.role,
-                              position=args.position)
-    return _after_proposal(ctx, req, args)
+def apply_request(ctx: PlatformContext, request_id: str, *, reload: bool = False) -> dict[str, Any]:
+    reloader, health = reload_seams(reload)
+    result = activation.apply(ctx.platform, ctx.queue, request_id, actor=ctx.actor,
+                              reloader=reloader, health=health)
+    return {"request": request_id, "ok": result.ok, "generation": result.generation,
+            "message": result.message, "changed": result.changed,
+            "rolled_back": result.rolled_back}
 
 
-def cmd_model_upgrade(ctx: PlatformContext, args: argparse.Namespace) -> int:
-    req = activation.upgrade(ctx.platform, ctx.queue, ctx.registry(), args.old, args.new,
+def _proposal_outcome(ctx: PlatformContext, req: ChangeRequest, *, reload: bool) -> dict[str, Any]:
+    """A proposal is applied at once when policy approved it (no serving
+    role affected); otherwise it waits in the queue."""
+    applied = apply_request(ctx, req.id, reload=reload) if req.status == "approved" else None
+    return {"request": req.model_dump(mode="json"), "applied": applied}
+
+
+def activate_model(ctx: PlatformContext, name: str, *, group: str | None = None,
+                   role: str | None = None, position: int | None = None,
+                   reload: bool = False) -> dict[str, Any]:
+    req = activation.activate(ctx.platform, ctx.queue, ctx.registry(), name,
+                              requested_by=ctx.actor, group=group, role=role, position=position)
+    return _proposal_outcome(ctx, req, reload=reload)
+
+
+def upgrade_model(ctx: PlatformContext, old: str, new: str, *,
+                  reload: bool = False) -> dict[str, Any]:
+    req = activation.upgrade(ctx.platform, ctx.queue, ctx.registry(), old, new,
                              requested_by=ctx.actor)
-    return _after_proposal(ctx, req, args)
+    return _proposal_outcome(ctx, req, reload=reload)
 
 
-def cmd_model_rollback(ctx: PlatformContext, args: argparse.Namespace) -> int:
+def rollback_generation(ctx: PlatformContext, *, to_generation: int | None = None,
+                        reason: str = "", reload: bool = False,
+                        notify: Callable[[str], None] | None = None) -> dict[str, Any]:
     ctx.registry()
-    reloader, health = reload_seams(args.reload)
+    reloader, health = reload_seams(reload)
     result = activation.rollback(ctx.platform, ctx.queue, actor=ctx.actor,
-                                 to_generation=args.to_generation, reason=args.reason or "",
-                                 reloader=reloader, health=health, notify=print)
-    _emit(args, {"ok": result.ok, "generation": result.generation, "message": result.message,
-                 "rolled_back": result.rolled_back}, [result.message])
-    return 0 if result.ok else 1
+                                 to_generation=to_generation, reason=reason,
+                                 reloader=reloader, health=health, notify=notify)
+    return {"ok": result.ok, "generation": result.generation, "message": result.message,
+            "rolled_back": result.rolled_back}
 
 
-def cmd_model_retire(ctx: PlatformContext, args: argparse.Namespace) -> int:
-    updated, persisted = lifecycle.retire(ctx.registry(), args.name, persist_dir=ctx.config_dir)
-    _emit(args, {"name": args.name, "state": "retired", "generation": updated.generation,
-                 "persisted": persisted},
-          [f"retired {args.name} (generation {updated.generation}); weights kept for rollback"])
-    return 0
+def retire_model(ctx: PlatformContext, name: str) -> dict[str, Any]:
+    updated, persisted = lifecycle.retire(ctx.registry(), name, persist_dir=ctx.config_dir)
+    return {"name": name, "state": "retired", "generation": updated.generation,
+            "persisted": persisted,
+            "message": f"retired {name} (generation {updated.generation}); weights kept for "
+                       "rollback"}
 
 
-def cmd_model_uninstall(ctx: PlatformContext, args: argparse.Namespace) -> int:
-    updated, persisted = lifecycle.uninstall(ctx.registry(), args.name, config_dir=ctx.config_dir,
-                                             force=args.force, persist_dir=ctx.config_dir)
-    _emit(args, {"name": args.name, "removed": True, "generation": updated.generation,
-                 "persisted": persisted},
-          [f"uninstalled {args.name}: weights removed, registry generation {updated.generation}"])
-    return 0
+def uninstall_model(ctx: PlatformContext, name: str, *, force: bool = False) -> dict[str, Any]:
+    updated, persisted = lifecycle.uninstall(ctx.registry(), name, config_dir=ctx.config_dir,
+                                             force=force, persist_dir=ctx.config_dir)
+    return {"name": name, "removed": True, "generation": updated.generation,
+            "persisted": persisted,
+            "message": f"uninstalled {name}: weights removed, registry generation "
+                       f"{updated.generation}"}
 
 
-def cmd_model_explain(ctx: PlatformContext, args: argparse.Namespace) -> int:
+def explain_role(ctx: PlatformContext, role: str) -> dict[str, Any]:
     registry = ctx.registry()
-    resolution = registry.resolve(args.role)
-    spec = registry.roles[args.role]
+    resolution = registry.resolve(role)
+    spec = registry.roles[role]
     checks: dict[str, Any] = {}
-    lines = [f"role {args.role} — generation {registry.generation}",
-             f"  source:   {'pin ' + ', '.join(spec.pin) if spec.pin else 'group ' + spec.group}",
-             f"  primary:  {resolution.primary}",
-             f"  fallback: {', '.join(resolution.fallbacks) or '(none)'}"]
-    lines += [f"  why:      {reason}" for reason in resolution.reason]
     for name in [resolution.primary, *resolution.fallbacks]:
         entry = registry.models[name]
         descriptor = ctx.descriptors.get(entry.provider)
         if descriptor is None:
-            checks[name] = {"ok": False, "failures": [f"no descriptor for '{entry.provider}'"]}
+            checks[name] = {"ok": False, "checks": {},
+                            "failures": [f"no descriptor for '{entry.provider}'"]}
         else:
             passed, failures = check_contract(name, entry, descriptor, spec.requires,
                                               ctx.platform.klass, ctx.platform.accel)
             checks[name] = {"ok": not failures, "checks": passed, "failures": failures}
-        status = "ok" if checks[name]["ok"] else "FAIL"
-        if checks[name]["failures"]:
-            detail = " — " + "; ".join(checks[name]["failures"])
-        else:
-            passed_keys = [k for k, v in checks[name].get("checks", {}).items() if v]
-            detail = f" ({', '.join(passed_keys) or 'no requirements'})"
-        lines.append(f"  contract: {name} [{status}]{detail}")
-    _emit(args, {"role": args.role, "generation": registry.generation,
-                 "primary": resolution.primary, "fallbacks": resolution.fallbacks,
-                 "reason": resolution.reason, "contract": spec.requires.model_dump(),
-                 "checks": checks}, lines)
-    return 0 if all(c["ok"] for c in checks.values()) else 1
+    return {"role": role, "generation": registry.generation,
+            "source": {"pin": list(spec.pin), "group": spec.group},
+            "primary": resolution.primary, "fallbacks": resolution.fallbacks,
+            "reason": resolution.reason, "contract": spec.requires.model_dump(),
+            "checks": checks, "ok": all(c["ok"] for c in checks.values())}
 
 
-def cmd_model_history(ctx: PlatformContext, args: argparse.Namespace) -> int:
+def generation_history(ctx: PlatformContext, *, limit: int = 10) -> dict[str, Any]:
     ctx.registry()
-    numbers = list_generations(ctx.config_dir)[-max(1, args.limit):]
+    numbers = list_generations(ctx.config_dir)[-max(1, limit):]
     entries: list[dict[str, Any]] = []
-    lines: list[str] = []
     previous: RegistryV2 | None = None
     for number in numbers:
         generation = load_generation(ctx.config_dir, number)
@@ -341,74 +322,49 @@ def cmd_model_history(ctx: PlatformContext, args: argparse.Namespace) -> int:
                         "note": generation.note, "diff": diff,
                         "active": sorted(n for n, e in generation.models.items()
                                          if e.state == "active")})
-        lines.append(f"generation {number}  {generation.saved_at}  {generation.note}")
-        lines += [f"    {line}" for line in diff]
         previous = generation
-    _emit(args, {"generations": entries}, lines or ["(no generations yet)"])
-    return 0
+    return {"generations": entries}
 
 
-def cmd_model_catalog(ctx: PlatformContext, args: argparse.Namespace) -> int:
-    if args.group:
-        registry = ctx.registry(required=False)
-        contracts = [spec.requires for spec in (registry.roles.values() if registry else [])
-                     if spec.group == args.group]
-        ranked = recommend(ctx.catalog, args.group, ctx.vector, ctx.descriptors,
-                           runtime=args.runtime, contracts=contracts,
-                           capability_class=ctx.platform.klass, accelerator=ctx.platform.accel)
-        _emit(args, {"group": args.group, "class": ctx.platform.klass,
-                     "candidates": [{"id": r.catalog_id, "format": r.format,
-                                     "provider": r.provider, "eligible": r.eligible,
-                                     "verdict": r.verdict.model_dump(),
-                                     "contract_failures": r.contract_failures}
-                                    for r in ranked]},
-              [f"catalog recommendations for group {args.group} on class "
-               f"{ctx.platform.klass} ({ctx.platform.accel})",
-               *(f"  {r.explain()}" for r in ranked)]
-              or [f"(no catalog entry lists group {args.group})"])
-        return 0
-    lines = []
-    for catalog_id, entry in sorted(ctx.catalog.entries.items()):
-        variants = ", ".join(f"{fmt} {v.size_gb:.1f} GB" for fmt, v in entry.variants.items())
-        lines.append(f"  {catalog_id:32} {', '.join(entry.groups):22} {entry.license:14} "
-                     f"{variants}")
-    _emit(args, {"entries": {k: v.model_dump() for k, v in ctx.catalog.entries.items()}},
-          [f"catalog: {len(ctx.catalog.entries)} entr(y/ies) "
-           f"(packaged seed + {ctx.config_dir / 'catalog'}/*.yaml)", *lines])
-    return 0
+def catalog_listing(ctx: PlatformContext) -> dict[str, Any]:
+    return {"count": len(ctx.catalog.entries),
+            "sources": f"packaged seed + {ctx.config_dir / 'catalog'}/*.yaml",
+            "entries": {k: v.model_dump() for k, v in ctx.catalog.entries.items()}}
 
 
-# ── governance verbs ─────────────────────────────────────────────────────────
+def catalog_recommendations(ctx: PlatformContext, group: str, *,
+                            runtime: str | None = None) -> dict[str, Any]:
+    registry = ctx.registry(required=False)
+    contracts = [spec.requires for spec in (registry.roles.values() if registry else [])
+                 if spec.group == group]
+    ranked = recommend(ctx.catalog, group, ctx.vector, ctx.descriptors, runtime=runtime,
+                       contracts=contracts, capability_class=ctx.platform.klass,
+                       accelerator=ctx.platform.accel)
+    return {"group": group, "class": ctx.platform.klass, "accelerator": ctx.platform.accel,
+            "candidates": [{"id": r.catalog_id, "format": r.format, "provider": r.provider,
+                            "eligible": r.eligible, "verdict": r.verdict.model_dump(),
+                            "contract_failures": r.contract_failures, "explain": r.explain()}
+                           for r in ranked]}
 
 
-def cmd_governance_list(ctx: PlatformContext, args: argparse.Namespace) -> int:
-    requests = ctx.queue.list(status=args.status)
-    _emit(args, {"requests": [r.model_dump(mode="json") for r in requests]},
-          [f"  {r.id}  {r.status:10} {r.kind:11} gen {r.base_generation}  {r.title}"
-           for r in requests] or ["(governance queue is empty)"])
-    return 0
+def list_requests(ctx: PlatformContext, *, status: str | None = None) -> dict[str, Any]:
+    return {"requests": [r.model_dump(mode="json") for r in ctx.queue.list(status=status)]}
 
 
-def cmd_governance_show(ctx: PlatformContext, args: argparse.Namespace) -> int:
-    req = ctx.queue.get(args.id)
-    _emit(args, {"request": req.model_dump(mode="json")}, _request_lines(req))
-    return 0
+def show_request(ctx: PlatformContext, request_id: str) -> dict[str, Any]:
+    return {"request": ctx.queue.get(request_id).model_dump(mode="json")}
 
 
-def cmd_governance_approve(ctx: PlatformContext, args: argparse.Namespace) -> int:
-    req = ctx.queue.approve(args.id, by=ctx.actor, reason=args.reason or "")
-    print(f"approved {req.id} by {ctx.actor} — applying")
-    return _apply(ctx, req.id, args)
+def approve_request(ctx: PlatformContext, request_id: str, *, reason: str = "",
+                    reload: bool = False) -> dict[str, Any]:
+    req = ctx.queue.approve(request_id, by=ctx.actor, reason=reason)
+    return {"request": req.model_dump(mode="json"),
+            "applied": apply_request(ctx, req.id, reload=reload)}
 
 
-def cmd_governance_reject(ctx: PlatformContext, args: argparse.Namespace) -> int:
-    req = ctx.queue.reject(args.id, by=ctx.actor, reason=args.reason or "")
-    _emit(args, {"request": req.model_dump(mode="json")},
-          [f"rejected {req.id} by {ctx.actor}: {req.decision.reason if req.decision else ''}"])
-    return 0
-
-
-# ── project verbs (chat-ops allowlist, consumed by the P3 tool server) ───────
+def reject_request(ctx: PlatformContext, request_id: str, *, reason: str = "") -> dict[str, Any]:
+    req = ctx.queue.reject(request_id, by=ctx.actor, reason=reason)
+    return {"request": req.model_dump(mode="json"), "applied": None}
 
 
 def _projects_path(ctx: PlatformContext) -> Path:
@@ -429,39 +385,215 @@ def _save_projects(ctx: PlatformContext, projects: list[dict[str, str]]) -> None
         + yaml.safe_dump({"projects": projects}, sort_keys=False), encoding="utf-8")
 
 
-def cmd_project_add(ctx: PlatformContext, args: argparse.Namespace) -> int:
-    path = Path(args.path).expanduser().resolve()
+def list_projects(ctx: PlatformContext) -> dict[str, Any]:
+    return {"projects": _load_projects(ctx)}
+
+
+def add_project(ctx: PlatformContext, path_arg: str, *, name: str | None = None) -> dict[str, Any]:
+    path = Path(path_arg).expanduser().resolve()
     if not (path / ".git").exists():
         raise LifecycleError(f"{path} is not a git repository")
     projects = _load_projects(ctx)
-    name = args.name or path.name
+    name = name or path.name
     if any(p["path"] == str(path) or p["name"] == name for p in projects):
         raise LifecycleError(f"project '{name}' ({path}) is already registered")
-    projects.append({"name": name, "path": str(path),
-                     "added_at": time.strftime("%Y-%m-%dT%H:%M:%S"), "added_by": ctx.actor})
+    project = {"name": name, "path": str(path),
+               "added_at": time.strftime("%Y-%m-%dT%H:%M:%S"), "added_by": ctx.actor}
+    projects.append(project)
     _save_projects(ctx, projects)
     ctx.queue.record("project.added", ctx.actor, name=name, path=str(path))
-    print(f"registered project {name} → {path}")
+    return {"project": project, "removed": None, "message": f"registered project {name} → {path}"}
+
+
+def remove_project(ctx: PlatformContext, target: str) -> dict[str, Any]:
+    projects = _load_projects(ctx)
+    resolved = str(Path(target).expanduser().resolve()) if "/" in target else target
+    kept = [p for p in projects if p["name"] != resolved and p["path"] != resolved]
+    if len(kept) == len(projects):
+        raise LifecycleError(f"no registered project named or located at '{target}'")
+    _save_projects(ctx, kept)
+    ctx.queue.record("project.removed", ctx.actor, target=target)
+    return {"project": None, "removed": target, "message": f"removed project {target}"}
+
+
+# ── CLI verbs: format what the operations return ─────────────────────────────
+
+
+def _apply(ctx: PlatformContext, request_id: str, args: argparse.Namespace) -> int:
+    data = apply_request(ctx, request_id, reload=getattr(args, "reload", False))
+    _emit(args, data, [data["message"]])
+    return 0 if data["ok"] else 1
+
+
+def _report_proposal(args: argparse.Namespace, data: dict[str, Any]) -> int:
+    req = ChangeRequest.model_validate(data["request"])
+    lines = _request_lines(req)
+    applied = data.get("applied")
+    if applied is None:
+        lines.append(f"awaiting human approval: local-ezai governance approve {req.id}")
+        _emit(args, data, lines)
+        return 0
+    lines += ["approved by policy (no serving role affected) — applying", applied["message"]]
+    _emit(args, data, lines)
+    return 0 if applied["ok"] else 1
+
+
+# ── model verbs ──────────────────────────────────────────────────────────────
+
+
+def cmd_model_install(ctx: PlatformContext, args: argparse.Namespace) -> int:
+    data = install_model(ctx, args.ref, name=args.name, runtime=args.runtime, group=args.group,
+                         refetch=args.refetch)
+    lines = [data["message"]]
+    if data["error"]:
+        lines.append(f"  error: {data['error']}")
+    if data["ok"]:
+        lines.append(f"  next: local-ezai model benchmark {data['name']}")
+    _emit(args, data, lines)
+    return 0 if data["ok"] else 1
+
+
+def cmd_model_benchmark(ctx: PlatformContext, args: argparse.Namespace) -> int:
+    data = benchmark_model(ctx, args.name, base_url=args.base_url)
+    _emit(args, data,
+          [data["message"],
+           f"  state: {data['state']}"
+           + ("" if data["persisted"] else f" — {lifecycle.UNSERVABLE_HINT}"),
+           f"  next: local-ezai model activate {args.name} --group <reasoning|coding|chat>"])
+    return 0
+
+
+def cmd_model_activate(ctx: PlatformContext, args: argparse.Namespace) -> int:
+    return _report_proposal(args, activate_model(ctx, args.name, group=args.group, role=args.role,
+                                                 position=args.position, reload=args.reload))
+
+
+def cmd_model_upgrade(ctx: PlatformContext, args: argparse.Namespace) -> int:
+    return _report_proposal(args, upgrade_model(ctx, args.old, args.new, reload=args.reload))
+
+
+def cmd_model_rollback(ctx: PlatformContext, args: argparse.Namespace) -> int:
+    data = rollback_generation(ctx, to_generation=args.to_generation, reason=args.reason or "",
+                               reload=args.reload, notify=print)
+    _emit(args, data, [data["message"]])
+    return 0 if data["ok"] else 1
+
+
+def cmd_model_retire(ctx: PlatformContext, args: argparse.Namespace) -> int:
+    data = retire_model(ctx, args.name)
+    _emit(args, data, [data["message"]])
+    return 0
+
+
+def cmd_model_uninstall(ctx: PlatformContext, args: argparse.Namespace) -> int:
+    data = uninstall_model(ctx, args.name, force=args.force)
+    _emit(args, data, [data["message"]])
+    return 0
+
+
+def cmd_model_explain(ctx: PlatformContext, args: argparse.Namespace) -> int:
+    data = explain_role(ctx, args.role)
+    source = data["source"]
+    origin = ("pin " + ", ".join(source["pin"])) if source["pin"] else "group " + source["group"]
+    lines = [f"role {args.role} — generation {data['generation']}",
+             f"  source:   {origin}",
+             f"  primary:  {data['primary']}",
+             f"  fallback: {', '.join(data['fallbacks']) or '(none)'}"]
+    lines += [f"  why:      {reason}" for reason in data["reason"]]
+    for name, check in data["checks"].items():
+        status = "ok" if check["ok"] else "FAIL"
+        if check["failures"]:
+            detail = " — " + "; ".join(check["failures"])
+        else:
+            passed_keys = [k for k, v in check.get("checks", {}).items() if v]
+            detail = f" ({', '.join(passed_keys) or 'no requirements'})"
+        lines.append(f"  contract: {name} [{status}]{detail}")
+    _emit(args, data, lines)
+    return 0 if data["ok"] else 1
+
+
+def cmd_model_history(ctx: PlatformContext, args: argparse.Namespace) -> int:
+    data = generation_history(ctx, limit=args.limit)
+    lines: list[str] = []
+    for entry in data["generations"]:
+        lines.append(f"generation {entry['generation']}  {entry['saved_at']}  {entry['note']}")
+        lines += [f"    {line}" for line in entry["diff"]]
+    _emit(args, data, lines or ["(no generations yet)"])
+    return 0
+
+
+def cmd_model_catalog(ctx: PlatformContext, args: argparse.Namespace) -> int:
+    if args.group:
+        data = catalog_recommendations(ctx, args.group, runtime=args.runtime)
+        _emit(args, data,
+              [f"catalog recommendations for group {args.group} on class "
+               f"{data['class']} ({data['accelerator']})",
+               *(f"  {c['explain']}" for c in data["candidates"])]
+              or [f"(no catalog entry lists group {args.group})"])
+        return 0
+    data = catalog_listing(ctx)
+    lines = []
+    for catalog_id, entry in sorted(ctx.catalog.entries.items()):
+        variants = ", ".join(f"{fmt} {v.size_gb:.1f} GB" for fmt, v in entry.variants.items())
+        lines.append(f"  {catalog_id:32} {', '.join(entry.groups):22} {entry.license:14} "
+                     f"{variants}")
+    _emit(args, data, [f"catalog: {data['count']} entr(y/ies) ({data['sources']})", *lines])
+    return 0
+
+
+# ── governance verbs ─────────────────────────────────────────────────────────
+
+
+def cmd_governance_list(ctx: PlatformContext, args: argparse.Namespace) -> int:
+    data = list_requests(ctx, status=args.status)
+    requests = [ChangeRequest.model_validate(r) for r in data["requests"]]
+    _emit(args, data,
+          [f"  {r.id}  {r.status:10} {r.kind:11} gen {r.base_generation}  {r.title}"
+           for r in requests] or ["(governance queue is empty)"])
+    return 0
+
+
+def cmd_governance_show(ctx: PlatformContext, args: argparse.Namespace) -> int:
+    data = show_request(ctx, args.id)
+    _emit(args, data, _request_lines(ChangeRequest.model_validate(data["request"])))
+    return 0
+
+
+def cmd_governance_approve(ctx: PlatformContext, args: argparse.Namespace) -> int:
+    data = approve_request(ctx, args.id, reason=args.reason or "", reload=args.reload)
+    applied = data["applied"]
+    _emit(args, data, [f"approved {args.id} by {ctx.actor} — applying", applied["message"]])
+    return 0 if applied["ok"] else 1
+
+
+def cmd_governance_reject(ctx: PlatformContext, args: argparse.Namespace) -> int:
+    data = reject_request(ctx, args.id, reason=args.reason or "")
+    req = ChangeRequest.model_validate(data["request"])
+    _emit(args, data,
+          [f"rejected {req.id} by {ctx.actor}: {req.decision.reason if req.decision else ''}"])
+    return 0
+
+
+# ── project verbs (chat-ops allowlist, consumed by the P3 tool server) ───────
+
+
+def cmd_project_add(ctx: PlatformContext, args: argparse.Namespace) -> int:
+    data = add_project(ctx, args.path, name=args.name)
+    _emit(args, data, [data["message"]])
     return 0
 
 
 def cmd_project_list(ctx: PlatformContext, args: argparse.Namespace) -> int:
-    projects = _load_projects(ctx)
-    _emit(args, {"projects": projects},
-          [f"  {p['name']:24} {p['path']}" for p in projects]
+    data = list_projects(ctx)
+    _emit(args, data,
+          [f"  {p['name']:24} {p['path']}" for p in data["projects"]]
           or ["(no projects registered — local-ezai project add <path>)"])
     return 0
 
 
 def cmd_project_remove(ctx: PlatformContext, args: argparse.Namespace) -> int:
-    projects = _load_projects(ctx)
-    target = str(Path(args.target).expanduser().resolve()) if "/" in args.target else args.target
-    kept = [p for p in projects if p["name"] != target and p["path"] != target]
-    if len(kept) == len(projects):
-        raise LifecycleError(f"no registered project named or located at '{args.target}'")
-    _save_projects(ctx, kept)
-    ctx.queue.record("project.removed", ctx.actor, target=args.target)
-    print(f"removed project {args.target}")
+    data = remove_project(ctx, args.target)
+    _emit(args, data, [data["message"]])
     return 0
 
 
@@ -740,10 +872,11 @@ def dispatch_platform(command: str, args: argparse.Namespace, config: AgentdConf
         ctx = build_context(config, project, actor=getattr(args, "by", None))
         handler = HANDLERS[(command, getattr(args, "verb", None))]
         return handler(ctx, args)
-    except PlatformError as exc:
+    except platform_exceptions() as exc:
+        # The shared error object (PR-9): the same code/message/fix the
+        # control plane returns; `--json` prints it, text mode logs it.
+        info = classify(exc)
+        if getattr(args, "as_json", False):
+            print(json.dumps({"error": info.as_dict()}, indent=2))
         log.error("%s", exc)
-        return 2
-    except (LifecycleError, GovernanceError, CatalogError, RegistryError,
-            RegistryResolutionError, RenderError, DescriptorError) as exc:
-        log.error("%s", exc)
-        return 1
+        return info.exit_code

@@ -245,7 +245,7 @@ def test_openapi_document_is_the_contract(ctx):
         "description": f"the platform service token ({TOKEN_ENV})"}
     operation_ids = {op["operationId"] for methods in spec["paths"].values()
                      for op in methods.values()}
-    assert operation_ids == {"liveness", "aggregated_health", "whoami", "audit_tail"}
+    assert operation_ids >= {"liveness", "aggregated_health", "whoami", "audit_tail"}
     assert "security" not in spec["paths"]["/health"]["get"]
     for path, methods in spec["paths"].items():
         if not path.startswith(API_PREFIX):
@@ -267,7 +267,7 @@ def test_committed_spec_artifact_matches_the_app():
     assert contract_surface(committed) == contract_surface(generated), (
         f"{SPEC_ARTIFACT} is stale — regenerate with `make control-spec` and review the diff")
     surface = contract_surface(generated)
-    assert set(surface["operations"]) == {"GET /health", "GET /v1/audit", "GET /v1/health",
+    assert set(surface["operations"]) >= {"GET /health", "GET /v1/audit", "GET /v1/health",
                                           "GET /v1/whoami"}
     assert "ErrorEnvelope" in surface["schemas"] and surface["securitySchemes"] == ["serviceToken"]
 

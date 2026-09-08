@@ -149,8 +149,17 @@ As built: `agentd.control` (FastAPI behind the `agentd[control]` extra),
 `1.0.0-draft.8` at `docs/api/ezaid-openapi.json` (contract-surface
 tripwire), opt-in overlay `docker-compose.control.yml` + `make control-*`,
 `local-ezai status` shows control health.
-**PR-9 · Lifecycle + governance endpoints** — M: expose PR-4/5 operations;
-idempotency keys; error objects shared with CLI.
+**PR-9 · Lifecycle + governance endpoints** — M — ✅ **implemented**
+([prs/PR-9-lifecycle-governance-endpoints.md](prs/PR-9-lifecycle-governance-endpoints.md);
+22 tests incl. CLI/API parity, suite 526 green, goldens intact)
+Scope: expose PR-4/5 operations; idempotency keys; error objects shared
+with CLI.
+As built: shared operations in `platform_cli` (CLI verbs format, API
+serves — parity tested), 19 `/v1` operations with their CLI mapping,
+`Idempotency-Key` replay/conflict, `agentd/platform_errors.py` (the CLI
+prints the same `{"error": …}` in `--json` mode), audited mutating calls,
+reload refused where the daemon cannot run compose; contract
+`1.0.0-draft.9`.
 **PR-10 · Run endpoints** — M: async run registry (start/status/report/
 cancel for run/sprint/fix/evolve), concurrency limits.
 **PR-11 · CLI connected mode** — M: transport auto-detect, identical UX

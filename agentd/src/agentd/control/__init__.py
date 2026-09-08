@@ -17,7 +17,7 @@ from __future__ import annotations
 #: Contract version of the OpenAPI document (``info.version``). PR-12 freezes
 #: it as ``1.0.0``; until then every PR that changes the surface bumps the
 #: pre-release tag and regenerates ``docs/api/ezaid-openapi.json``.
-CONTRACT_VERSION = "1.0.0-draft.8"
+CONTRACT_VERSION = "1.0.0-draft.9"
 API_PREFIX = "/v1"
 SERVICE_NAME = "ezaid"
 

@@ -89,12 +89,48 @@ the platform with `--platform config/`.
 | `ezaid --print-spec` · `ezaid --write-spec [PATH]` | the OpenAPI contract document (needs neither platform nor token); default path `docs/api/ezaid-openapi.json` |
 | `ezaid --version` | package version + contract version |
 
-Endpoints of this slice: `GET /health` (liveness, open) · `GET /v1/health`
+Skeleton endpoints (PR-8): `GET /health` (liveness, open) · `GET /v1/health`
 (control info + platform snapshot + per-service probes) · `GET /v1/whoami`
 · `GET /v1/audit?limit=N` · `GET /openapi.json`, `/docs`. Forward the human
 behind a call with `X-EZAI-User` (and the surface with `X-EZAI-Client`).
-Every error is `{"error": {"code", "message", "fix"}}`. `local-ezai status`
-reports `control up|down`.
+Every error is `{"error": {"code", "message", "fix"}}` — the same object
+the CLI prints in `--json` mode. `local-ezai status` reports `control up|down`.
+
+### Verb ↔ endpoint mapping (PR-9)
+
+Every operation below is the **same function** the CLI verb calls; the API
+body equals the verb's `--json` output (tested). Mutating calls accept
+`Idempotency-Key` (a retry with the same key and payload replays the stored
+answer; a different payload is `409 idempotency_conflict`) and are audited as
+`api.<operationId>` with the forwarded identity.
+
+| CLI verb | Endpoint (operationId) |
+|---|---|
+| `status` (models part) | `GET /v1/models` (`models_list`) |
+| `model install <ref> [--name] [--runtime] [--group] [--refetch]` | `POST /v1/models` `{ref, name?, runtime?, group?, refetch?}` (`model_install`) |
+| `model benchmark <name> [--base-url]` | `POST /v1/models/{name}/benchmark` `{base_url?}` (`model_benchmark`) |
+| `model activate <name> [--group] [--position] [--role] [--reload]` | `POST /v1/models/{name}/activate` `{group?, position?, role?, reload?}` (`model_activate`) → `{request, applied|null}` |
+| `model upgrade <old> <new> [--reload]` | `POST /v1/models/upgrade` `{old, new, reload?}` (`model_upgrade`) |
+| `model rollback [--to-generation] [--reason] [--reload]` | `POST /v1/generations/rollback` `{to_generation?, reason?, reload?}` (`generation_rollback`) |
+| `model retire <name>` | `POST /v1/models/{name}/retire` (`model_retire`) |
+| `model uninstall <name> [--force]` | `DELETE /v1/models/{name}?force=` (`model_uninstall`) |
+| `model explain <role>` | `GET /v1/roles/{role}` (`role_explain`) |
+| `model history [--limit]` | `GET /v1/generations?limit=` (`generation_history`) |
+| `model catalog` · `model catalog --group G [--runtime R]` | `GET /v1/catalog` (`catalog_list`) · `GET /v1/catalog/recommendations?group=&runtime=` (`catalog_recommend`) |
+| `governance list [--status]` · `show <id>` | `GET /v1/governance?status=` (`governance_list`) · `GET /v1/governance/{id}` (`governance_show`) |
+| `governance approve <id> [--reason] [--reload]` | `POST /v1/governance/{id}/approve` `{reason?, reload?}` (`governance_approve`) → applied at once |
+| `governance reject <id> --reason R` | `POST /v1/governance/{id}/reject` `{reason}` (`governance_reject`) |
+| `project add <path> [--name]` · `list` · `remove <name\|path>` | `POST /v1/projects` `{path, name?}` (`project_add`) · `GET /v1/projects` (`projects_list`) · `DELETE /v1/projects?target=` (`project_remove`) |
+
+`reload: true` is refused with `409 reload_unavailable` where the daemon
+cannot run compose (the shipped container): apply without reload, then
+`make up`, or run the verb with `--reload` from the host CLI. Error codes:
+`not_found` 404 · `lifecycle_refused` / `governance_rule` /
+`resolution_incomplete` / `idempotency_conflict` / `reload_unavailable` 409 ·
+`invalid_request` / `registry_invalid` / `render_refused` / `catalog_refused`
+422 · `unauthorized` 401 · `platform_unavailable` 503. The CLI returns exit
+`1` for the 4xx refusals and `2` for `platform_unavailable`, printing the same
+object in `--json` mode.
 
 ## Exit codes
 

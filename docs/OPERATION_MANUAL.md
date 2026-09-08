@@ -38,12 +38,21 @@ scripts authenticate with `Authorization: Bearer $MCP_API_KEY`.
 | Audit tail | `curl -H "Authorization: Bearer $EZAI_CONTROL_TOKEN" "http://localhost:8010/v1/audit?limit=50"` |
 | Who am I (the audit actor) | `… -H "X-EZAI-User: nita" -H "X-EZAI-Client: cli" http://localhost:8010/v1/whoami` |
 | Contract | `http://localhost:8010/docs` · `/openapi.json` · committed at `docs/api/ezaid-openapi.json` (`make control-spec` regenerates) |
+| Models / queue / projects (PR-9) | `GET /v1/models` · `GET /v1/governance` · `GET /v1/projects` · `GET /v1/roles/<role>` · `GET /v1/generations` · `GET /v1/catalog` |
+| Request an activation (idempotent retry-safe) | `curl -X POST -H "Authorization: Bearer $EZAI_CONTROL_TOKEN" -H "X-EZAI-User: nita" -H "Idempotency-Key: $(uuidgen)" -H "Content-Type: application/json" -d '{"group":"coding"}' http://localhost:8010/v1/models/<name>/activate` |
+| Approve and apply a pending request | `curl -X POST … -d '{"reason":"benchmarked, fits"}' http://localhost:8010/v1/governance/cr-0001/approve` (then `make up` to reload consumers) |
 
 Every `/v1` call presents the service token; the calling surface forwards
 the human it acts for in `X-EZAI-User` (and names itself in
-`X-EZAI-Client`), which the audit log records as `<user> via <client>`.
-Without a token the service refuses to start. `local-ezai status` shows
-`control up|down`. Port: `EZAI_CONTROL_PORT` (default 8010).
+`X-EZAI-Client`), which the audit log records as `<user> via <client>` —
+also as `requested_by` / decision author of the change requests it creates.
+Mutating calls are audited as `api.<operation>`; retries with the same
+`Idempotency-Key` replay the stored answer instead of repeating the
+mutation. Every error is `{"error": {"code", "message", "fix"}}`, the same
+object `local-ezai … --json` prints. The full verb ↔ endpoint table:
+[CLI_REFERENCE.md](CLI_REFERENCE.md). Without a token the service refuses
+to start. `local-ezai status` shows `control up|down`. Port:
+`EZAI_CONTROL_PORT` (default 8010).
 
 ## 2. The Autonomous SWE runtime
 

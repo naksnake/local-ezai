@@ -1,6 +1,116 @@
 {
   "components": {
     "schemas": {
+      "ActivateRequest": {
+        "properties": {
+          "group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "0 = primary (default with group)",
+            "title": "Position"
+          },
+          "reload": {
+            "default": false,
+            "title": "Reload",
+            "type": "boolean"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "pin this role to the model",
+            "title": "Role"
+          }
+        },
+        "title": "ActivateRequest",
+        "type": "object"
+      },
+      "ApplyOutcome": {
+        "properties": {
+          "changed": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Changed",
+            "type": "array"
+          },
+          "generation": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generation"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "request": {
+            "title": "Request",
+            "type": "string"
+          },
+          "rolled_back": {
+            "title": "Rolled Back",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "request",
+          "ok",
+          "generation",
+          "message",
+          "changed",
+          "rolled_back"
+        ],
+        "title": "ApplyOutcome",
+        "type": "object"
+      },
+      "ApproveRequest": {
+        "properties": {
+          "reason": {
+            "default": "",
+            "title": "Reason",
+            "type": "string"
+          },
+          "reload": {
+            "default": false,
+            "title": "Reload",
+            "type": "boolean"
+          }
+        },
+        "title": "ApproveRequest",
+        "type": "object"
+      },
       "AuditPage": {
         "properties": {
           "records": {
@@ -66,6 +176,194 @@
         "title": "AuditRecord",
         "type": "object"
       },
+      "BenchmarkOutcome": {
+        "additionalProperties": true,
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "persisted": {
+            "title": "Persisted",
+            "type": "boolean"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "tokens_per_s": {
+            "title": "Tokens Per S",
+            "type": "number"
+          }
+        },
+        "required": [
+          "name",
+          "tokens_per_s",
+          "state",
+          "persisted",
+          "message"
+        ],
+        "title": "BenchmarkOutcome",
+        "type": "object"
+      },
+      "BenchmarkRequest": {
+        "properties": {
+          "base_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "measure the live engine instead of a side-load",
+            "title": "Base Url"
+          }
+        },
+        "title": "BenchmarkRequest",
+        "type": "object"
+      },
+      "CatalogListing": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "entries": {
+            "additionalProperties": true,
+            "title": "Entries",
+            "type": "object"
+          },
+          "sources": {
+            "title": "Sources",
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "sources",
+          "entries"
+        ],
+        "title": "CatalogListing",
+        "type": "object"
+      },
+      "ChangeRequest": {
+        "description": "One governed change \u2014 the approval object (govern roles, reveal\nmodels: model names appear only inside diff/evidence).",
+        "properties": {
+          "affected_roles": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Affected Roles",
+            "type": "object"
+          },
+          "base_generation": {
+            "title": "Base Generation",
+            "type": "integer"
+          },
+          "created_at": {
+            "default": "",
+            "title": "Created At",
+            "type": "string"
+          },
+          "decision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Decision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "diff": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Diff",
+            "type": "array"
+          },
+          "evidence": {
+            "additionalProperties": true,
+            "title": "Evidence",
+            "type": "object"
+          },
+          "id": {
+            "default": "",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "activation",
+              "upgrade",
+              "retire",
+              "runtime_switch",
+              "bootstrap",
+              "evolution_pr",
+              "release"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "proposed": {
+            "additionalProperties": true,
+            "title": "Proposed",
+            "type": "object"
+          },
+          "proposed_by": {
+            "default": "human",
+            "title": "Proposed By",
+            "type": "string"
+          },
+          "requested_by": {
+            "title": "Requested By",
+            "type": "string"
+          },
+          "requires_approval": {
+            "default": true,
+            "title": "Requires Approval",
+            "type": "boolean"
+          },
+          "result": {
+            "additionalProperties": true,
+            "title": "Result",
+            "type": "object"
+          },
+          "status": {
+            "default": "pending",
+            "enum": [
+              "pending",
+              "approved",
+              "rejected",
+              "applied",
+              "failed",
+              "superseded"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "title",
+          "requested_by",
+          "base_generation",
+          "proposed"
+        ],
+        "title": "ChangeRequest",
+        "type": "object"
+      },
       "ControlInfo": {
         "properties": {
           "contract": {
@@ -104,6 +402,51 @@
         "title": "ControlInfo",
         "type": "object"
       },
+      "Decision": {
+        "properties": {
+          "at": {
+            "title": "At",
+            "type": "string"
+          },
+          "by": {
+            "title": "By",
+            "type": "string"
+          },
+          "reason": {
+            "default": "",
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "by",
+          "at"
+        ],
+        "title": "Decision",
+        "type": "object"
+      },
+      "DecisionOutcome": {
+        "properties": {
+          "applied": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApplyOutcome"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request": {
+            "$ref": "#/components/schemas/ChangeRequest"
+          }
+        },
+        "required": [
+          "request"
+        ],
+        "title": "DecisionOutcome",
+        "type": "object"
+      },
       "ErrorBody": {
         "properties": {
           "code": {
@@ -137,6 +480,23 @@
           "error"
         ],
         "title": "ErrorEnvelope",
+        "type": "object"
+      },
+      "GenerationHistory": {
+        "properties": {
+          "generations": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Generations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "generations"
+        ],
+        "title": "GenerationHistory",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -215,6 +575,106 @@
         "title": "Identity",
         "type": "object"
       },
+      "InstallOutcome": {
+        "properties": {
+          "artifact": {
+            "title": "Artifact",
+            "type": "string"
+          },
+          "error": {
+            "title": "Error",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "persisted": {
+            "title": "Persisted",
+            "type": "boolean"
+          },
+          "size_gb": {
+            "title": "Size Gb",
+            "type": "number"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "name",
+          "state",
+          "artifact",
+          "size_gb",
+          "error",
+          "persisted",
+          "message"
+        ],
+        "title": "InstallOutcome",
+        "type": "object"
+      },
+      "InstallRequest": {
+        "properties": {
+          "group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "ref": {
+            "description": "hf:<org/repo> \u00b7 gguf:<url|hf://org/repo/file|path> \u00b7 catalog id \u00b7 auto (needs group)",
+            "title": "Ref",
+            "type": "string"
+          },
+          "refetch": {
+            "default": false,
+            "title": "Refetch",
+            "type": "boolean"
+          },
+          "runtime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runtime"
+          }
+        },
+        "required": [
+          "ref"
+        ],
+        "title": "InstallRequest",
+        "type": "object"
+      },
       "Liveness": {
         "properties": {
           "contract": {
@@ -246,6 +706,366 @@
           "uptime_s"
         ],
         "title": "Liveness",
+        "type": "object"
+      },
+      "ModelList": {
+        "properties": {
+          "generation": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generation"
+          },
+          "models": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Models",
+            "type": "object"
+          }
+        },
+        "required": [
+          "generation",
+          "models"
+        ],
+        "title": "ModelList",
+        "type": "object"
+      },
+      "ProjectAdd": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "ProjectAdd",
+        "type": "object"
+      },
+      "ProjectList": {
+        "properties": {
+          "projects": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Projects",
+            "type": "array"
+          }
+        },
+        "required": [
+          "projects"
+        ],
+        "title": "ProjectList",
+        "type": "object"
+      },
+      "ProjectOutcome": {
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "project": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project"
+          },
+          "removed": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Removed"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "title": "ProjectOutcome",
+        "type": "object"
+      },
+      "ProposalOutcome": {
+        "properties": {
+          "applied": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApplyOutcome"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "set when policy approved the request and it was applied at once"
+          },
+          "request": {
+            "$ref": "#/components/schemas/ChangeRequest"
+          }
+        },
+        "required": [
+          "request"
+        ],
+        "title": "ProposalOutcome",
+        "type": "object"
+      },
+      "Recommendations": {
+        "properties": {
+          "accelerator": {
+            "title": "Accelerator",
+            "type": "string"
+          },
+          "candidates": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "class": {
+            "title": "Class",
+            "type": "string"
+          },
+          "group": {
+            "title": "Group",
+            "type": "string"
+          }
+        },
+        "required": [
+          "group",
+          "class",
+          "accelerator",
+          "candidates"
+        ],
+        "title": "Recommendations",
+        "type": "object"
+      },
+      "RejectRequest": {
+        "properties": {
+          "reason": {
+            "description": "required \u2014 recorded and, for evolution proposals, remembered",
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "RejectRequest",
+        "type": "object"
+      },
+      "RequestList": {
+        "properties": {
+          "requests": {
+            "items": {
+              "$ref": "#/components/schemas/ChangeRequest"
+            },
+            "title": "Requests",
+            "type": "array"
+          }
+        },
+        "required": [
+          "requests"
+        ],
+        "title": "RequestList",
+        "type": "object"
+      },
+      "RequestView": {
+        "properties": {
+          "request": {
+            "$ref": "#/components/schemas/ChangeRequest"
+          }
+        },
+        "required": [
+          "request"
+        ],
+        "title": "RequestView",
+        "type": "object"
+      },
+      "RetireOutcome": {
+        "properties": {
+          "generation": {
+            "title": "Generation",
+            "type": "integer"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "persisted": {
+            "title": "Persisted",
+            "type": "boolean"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "state",
+          "generation",
+          "persisted",
+          "message"
+        ],
+        "title": "RetireOutcome",
+        "type": "object"
+      },
+      "RoleExplanation": {
+        "properties": {
+          "checks": {
+            "additionalProperties": true,
+            "title": "Checks",
+            "type": "object"
+          },
+          "contract": {
+            "additionalProperties": true,
+            "title": "Contract",
+            "type": "object"
+          },
+          "fallbacks": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Fallbacks",
+            "type": "array"
+          },
+          "generation": {
+            "title": "Generation",
+            "type": "integer"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "primary": {
+            "title": "Primary",
+            "type": "string"
+          },
+          "reason": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reason",
+            "type": "array"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "source": {
+            "additionalProperties": true,
+            "title": "Source",
+            "type": "object"
+          }
+        },
+        "required": [
+          "role",
+          "generation",
+          "source",
+          "primary",
+          "fallbacks",
+          "reason",
+          "contract",
+          "checks",
+          "ok"
+        ],
+        "title": "RoleExplanation",
+        "type": "object"
+      },
+      "RollbackOutcome": {
+        "properties": {
+          "generation": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generation"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "rolled_back": {
+            "title": "Rolled Back",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok",
+          "generation",
+          "message",
+          "rolled_back"
+        ],
+        "title": "RollbackOutcome",
+        "type": "object"
+      },
+      "RollbackRequest": {
+        "properties": {
+          "reason": {
+            "default": "",
+            "title": "Reason",
+            "type": "string"
+          },
+          "reload": {
+            "default": false,
+            "title": "Reload",
+            "type": "boolean"
+          },
+          "to_generation": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Generation"
+          }
+        },
+        "title": "RollbackRequest",
         "type": "object"
       },
       "ServiceHealth": {
@@ -290,6 +1110,62 @@
           "ok"
         ],
         "title": "ServiceHealth",
+        "type": "object"
+      },
+      "UninstallOutcome": {
+        "properties": {
+          "generation": {
+            "title": "Generation",
+            "type": "integer"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "persisted": {
+            "title": "Persisted",
+            "type": "boolean"
+          },
+          "removed": {
+            "title": "Removed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "removed",
+          "generation",
+          "persisted",
+          "message"
+        ],
+        "title": "UninstallOutcome",
+        "type": "object"
+      },
+      "UpgradeRequest": {
+        "properties": {
+          "new": {
+            "title": "New",
+            "type": "string"
+          },
+          "old": {
+            "title": "Old",
+            "type": "string"
+          },
+          "reload": {
+            "default": false,
+            "title": "Reload",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "old",
+          "new"
+        ],
+        "title": "UpgradeRequest",
         "type": "object"
       },
       "ValidationError": {
@@ -342,9 +1218,9 @@
     }
   },
   "info": {
-    "description": "One authenticated control plane over the platform's declarative state \u2014 Registry v2 + generations, runtime descriptors, governance queue, rendered artifacts \u2014 for the `local-ezai` CLI (connected mode), the Admin Center and the SWE tool server. Every `/v1` call presents the service token as a bearer credential and may forward the human it acts for (`X-EZAI-User`) and its own name (`X-EZAI-Client`); the audit log records `<user> via <client>`.",
+    "description": "One authenticated control plane over the platform's declarative state \u2014 Registry v2 + generations, runtime descriptors, governance queue, rendered artifacts \u2014 for the `local-ezai` CLI (connected mode), the Admin Center and the SWE tool server. Every `/v1` call presents the service token as a bearer credential and may forward the human it acts for (`X-EZAI-User`) and its own name (`X-EZAI-Client`); the audit log records `<user> via <client>`. Mutating calls accept an `Idempotency-Key` header: a retry with the same key and payload replays the stored response, a different payload is a conflict. Every error is `{\"error\": {\"code\", \"message\", \"fix\"}}` \u2014 the same object the CLI prints.",
     "title": "Local-EZAI Platform Control Plane (ezaid)",
-    "version": "1.0.0-draft.8",
+    "version": "1.0.0-draft.9",
     "x-contract-status": "draft \u2014 frozen by the P2 phase-close PR"
   },
   "openapi": "3.1.0",
@@ -478,6 +1354,1042 @@
         ]
       }
     },
+    "/v1/catalog": {
+      "get": {
+        "operationId": "catalog_list",
+        "parameters": [
+          {
+            "description": "forwarded identity of the human the caller acts for",
+            "in": "header",
+            "name": "X-EZAI-User",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "forwarded identity of the human the caller acts for",
+              "title": "X-Ezai-User"
+            }
+          },
+          {
+            "description": "name of the calling surface (cli, admin-center, \u2026)",
+            "in": "header",
+            "name": "X-EZAI-Client",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "name of the calling surface (cli, admin-center, \u2026)",
+              "title": "X-Ezai-Client"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogListing"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "missing or invalid service token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "no such model / request / role / project"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "refused by a lifecycle or governance rule (message names the fix)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "invalid request or unservable proposal"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not attached to a platform"
+          }
+        },
+        "security": [
+          {
+            "serviceToken": []
+          }
+        ],
+        "summary": "Catalog entries (CLI: local-ezai model catalog)",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
+    "/v1/catalog/recommendations": {
+      "get": {
+        "operationId": "catalog_recommend",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "group",
+            "required": true,
+            "schema": {
+              "title": "Group",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "runtime",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Runtime"
+            }
+          },
+          {
+            "description": "forwarded identity of the human the caller acts for",
+            "in": "header",
+            "name": "X-EZAI-User",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "forwarded identity of the human the caller acts for",
+              "title": "X-Ezai-User"
+            }
+          },
+          {
+            "description": "name of the calling surface (cli, admin-center, \u2026)",
+            "in": "header",
+            "name": "X-EZAI-Client",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "name of the calling surface (cli, admin-center, \u2026)",
+              "title": "X-Ezai-Client"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Recommendations"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "missing or invalid service token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "no such model / request / role / project"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "refused by a lifecycle or governance rule (message names the fix)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "invalid request or unservable proposal"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not attached to a platform"
+          }
+        },
+        "security": [
+          {
+            "serviceToken": []
+          }
+        ],
+        "summary": "Ranked recommendations for a group with fit verdicts (CLI: local-ezai model catalog --group)",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
+    "/v1/generations": {
+      "get": {
+        "operationId": "generation_history",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "forwarded identity of the human the caller acts for",
+            "in": "header",
+            "name": "X-EZAI-User",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "forwarded identity of the human the caller acts for",
+              "title": "X-Ezai-User"
+            }
+          },
+          {
+            "description": "name of the calling surface (cli, admin-center, \u2026)",
+            "in": "header",
+            "name": "X-EZAI-Client",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "name of the calling surface (cli, admin-center, \u2026)",
+              "title": "X-Ezai-Client"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationHistory"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "missing or invalid service token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "no such model / request / role / project"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "refused by a lifecycle or governance rule (message names the fix)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "invalid request or unservable proposal"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not attached to a platform"
+          }
+        },
+        "security": [
+          {
+            "serviceToken": []
+          }
+        ],
+        "summary": "Generations with notes and diffs (CLI: local-ezai model history)",
+        "tags": [
+          "models"
+        ]
+      }
+    },
+    "/v1/generations/rollback": {
+      "post": {
+        "operationId": "generation_rollback",
+        "parameters": [
+          {
+            "description": "forwarded identity of the human the caller acts for",
+            "in": "header",
+            "name": "X-EZAI-User",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "forwarded identity of the human the caller acts for",
+              "title": "X-Ezai-User"
+            }
+          },
+          {
+            "description": "name of the calling surface (cli, admin-center, \u2026)",
+            "in": "header",
+            "name": "X-EZAI-Client",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "name of the calling surface (cli, admin-center, \u2026)",
+              "title": "X-Ezai-Client"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RollbackRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RollbackOutcome"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "missing or invalid service token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "no such model / request / role / project"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "refused by a lifecycle or governance rule (message names the fix)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "invalid request or unservable proposal"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not attached to a platform"
+          }
+        },
+        "security": [
+          {
+            "serviceToken": []
+          }
+        ],
+        "summary": "Restore the previous or a named generation \u2014 no approval, audited (CLI: local-ezai model rollback)",
+        "tags": [
+          "models"
+        ]
+      }
+    },
+    "/v1/governance": {
+      "get": {
+        "operationId": "governance_list",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "description": "forwarded identity of the human the caller acts for",
+            "in": "header",
+            "name": "X-EZAI-User",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "forwarded identity of the human the caller acts for",
+              "title": "X-Ezai-User"
+            }
+          },
+          {
+            "description": "name of the calling surface (cli, admin-center, \u2026)",
+            "in": "header",
+            "name": "X-EZAI-Client",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "name of the calling surface (cli, admin-center, \u2026)",
+              "title": "X-Ezai-Client"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "missing or invalid service token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "no such model / request / role / project"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "refused by a lifecycle or governance rule (message names the fix)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "invalid request or unservable proposal"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not attached to a platform"
+          }
+        },
+        "security": [
+          {
+            "serviceToken": []
+          }
+        ],
+        "summary": "The approval queue (CLI: local-ezai governance list)",
+        "tags": [
+          "governance"
+        ]
+      }
+    },
+    "/v1/governance/{request_id}": {
+      "get": {
+        "operationId": "governance_show",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "forwarded identity of the human the caller acts for",
+            "in": "header",
+            "name": "X-EZAI-User",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "forwarded identity of the human the caller acts for",
+              "title": "X-Ezai-User"
+            }
+          },
+          {
+            "description": "name of the calling surface (cli, admin-center, \u2026)",
+            "in": "header",
+            "name": "X-EZAI-Client",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "name of the calling surface (cli, admin-center, \u2026)",
+              "title": "X-Ezai-Client"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "missing or invalid service token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "no such model / request / role / project"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "refused by a lifecycle or governance rule (message names the fix)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "invalid request or unservable proposal"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not attached to a platform"
+          }
+        },
+        "security": [
+          {
+            "serviceToken": []
+          }
+        ],
+        "summary": "One change request with its evidence (CLI: local-ezai governance show)",
+        "tags": [
+          "governance"
+        ]
+      }
+    },
+    "/v1/governance/{request_id}/approve": {
+      "post": {
+        "operationId": "governance_approve",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "forwarded identity of the human the caller acts for",
+            "in": "header",
+            "name": "X-EZAI-User",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "forwarded identity of the human the caller acts for",
+              "title": "X-Ezai-User"
+            }
+          },
+          {
+            "description": "name of the calling surface (cli, admin-center, \u2026)",
+            "in": "header",
+            "name": "X-EZAI-Client",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "name of the calling surface (cli, admin-center, \u2026)",
+              "title": "X-Ezai-Client"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ApproveRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionOutcome"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "missing or invalid service token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "no such model / request / role / project"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "refused by a lifecycle or governance rule (message names the fix)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "invalid request or unservable proposal"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not attached to a platform"
+          }
+        },
+        "security": [
+          {
+            "serviceToken": []
+          }
+        ],
+        "summary": "Approve a pending request AND apply it \u2014 human act (CLI: local-ezai governance approve)",
+        "tags": [
+          "governance"
+        ]
+      }
+    },
+    "/v1/governance/{request_id}/reject": {
+      "post": {
+        "operationId": "governance_reject",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "forwarded identity of the human the caller acts for",
+            "in": "header",
+            "name": "X-EZAI-User",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "forwarded identity of the human the caller acts for",
+              "title": "X-Ezai-User"
+            }
+          },
+          {
+            "description": "name of the calling surface (cli, admin-center, \u2026)",
+            "in": "header",
+            "name": "X-EZAI-Client",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "name of the calling surface (cli, admin-center, \u2026)",
+              "title": "X-Ezai-Client"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionOutcome"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "missing or invalid service token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "no such model / request / role / project"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "refused by a lifecycle or governance rule (message names the fix)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "invalid request or unservable proposal"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not attached to a platform"
+          }
+        },
+        "security": [
+          {
+            "serviceToken": []
+          }
+        ],
+        "summary": "Reject a pending request with a recorded reason \u2014 human act (CLI: local-ezai governance reject)",
+        "tags": [
+          "governance"
+        ]
+      }
+    },
     "/v1/health": {
       "get": {
         "operationId": "aggregated_health",
@@ -569,6 +2481,1386 @@
         "summary": "Stack + platform health",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/v1/models": {
+      "get": {
+        "operationId": "models_list",
+        "parameters": [
+          {
+            "description": "forwarded identity of the human the caller acts for",
+            "in": "header",
+            "name": "X-EZAI-User",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "forwarded identity of the human the caller acts for",
+              "title": "X-Ezai-User"
+            }
+          },
+          {
+            "description": "name of the calling surface (cli, admin-center, \u2026)",
+            "in": "header",
+            "name": "X-EZAI-Client",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "name of the calling surface (cli, admin-center, \u2026)",
+              "title": "X-Ezai-Client"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "missing or invalid service token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "no such model / request / role / project"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "refused by a lifecycle or governance rule (message names the fix)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "invalid request or unservable proposal"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not attached to a platform"
+          }
+        },
+        "security": [
+          {
+            "serviceToken": []
+          }
+        ],
+        "summary": "Registered models and their states (CLI: local-ezai status)",
+        "tags": [
+          "models"
+        ]
+      },
+      "post": {
+        "operationId": "model_install",
+        "parameters": [
+          {
+            "description": "forwarded identity of the human the caller acts for",
+            "in": "header",
+            "name": "X-EZAI-User",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "forwarded identity of the human the caller acts for",
+              "title": "X-Ezai-User"
+            }
+          },
+          {
+            "description": "name of the calling surface (cli, admin-center, \u2026)",
+            "in": "header",
+            "name": "X-EZAI-Client",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "name of the calling surface (cli, admin-center, \u2026)",
+              "title": "X-Ezai-Client"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstallRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstallOutcome"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "missing or invalid service token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "no such model / request / role / project"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "refused by a lifecycle or governance rule (message names the fix)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "invalid request or unservable proposal"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not attached to a platform"
+          }
+        },
+        "security": [
+          {
+            "serviceToken": []
+          }
+        ],
+        "summary": "Fetch + validate a model (CLI: local-ezai model install)",
+        "tags": [
+          "models"
+        ]
+      }
+    },
+    "/v1/models/upgrade": {
+      "post": {
+        "operationId": "model_upgrade",
+        "parameters": [
+          {
+            "description": "forwarded identity of the human the caller acts for",
+            "in": "header",
+            "name": "X-EZAI-User",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "forwarded identity of the human the caller acts for",
+              "title": "X-Ezai-User"
+            }
+          },
+          {
+            "description": "name of the calling surface (cli, admin-center, \u2026)",
+            "in": "header",
+            "name": "X-EZAI-Client",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "name of the calling surface (cli, admin-center, \u2026)",
+              "title": "X-Ezai-Client"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpgradeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProposalOutcome"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "missing or invalid service token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "no such model / request / role / project"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "refused by a lifecycle or governance rule (message names the fix)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "invalid request or unservable proposal"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not attached to a platform"
+          }
+        },
+        "security": [
+          {
+            "serviceToken": []
+          }
+        ],
+        "summary": "Swap a serving version for a benchmarked one \u2014 approval (CLI: local-ezai model upgrade)",
+        "tags": [
+          "models"
+        ]
+      }
+    },
+    "/v1/models/{name}": {
+      "delete": {
+        "operationId": "model_uninstall",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "even if a stored generation could roll back to it",
+            "in": "query",
+            "name": "force",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "even if a stored generation could roll back to it",
+              "title": "Force",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "forwarded identity of the human the caller acts for",
+            "in": "header",
+            "name": "X-EZAI-User",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "forwarded identity of the human the caller acts for",
+              "title": "X-Ezai-User"
+            }
+          },
+          {
+            "description": "name of the calling surface (cli, admin-center, \u2026)",
+            "in": "header",
+            "name": "X-EZAI-Client",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "name of the calling surface (cli, admin-center, \u2026)",
+              "title": "X-Ezai-Client"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UninstallOutcome"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "missing or invalid service token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "no such model / request / role / project"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "refused by a lifecycle or governance rule (message names the fix)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "invalid request or unservable proposal"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not attached to a platform"
+          }
+        },
+        "security": [
+          {
+            "serviceToken": []
+          }
+        ],
+        "summary": "Delete the weights of a retired/failed model (CLI: local-ezai model uninstall)",
+        "tags": [
+          "models"
+        ]
+      }
+    },
+    "/v1/models/{name}/activate": {
+      "post": {
+        "operationId": "model_activate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "forwarded identity of the human the caller acts for",
+            "in": "header",
+            "name": "X-EZAI-User",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "forwarded identity of the human the caller acts for",
+              "title": "X-Ezai-User"
+            }
+          },
+          {
+            "description": "name of the calling surface (cli, admin-center, \u2026)",
+            "in": "header",
+            "name": "X-EZAI-Client",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "name of the calling surface (cli, admin-center, \u2026)",
+              "title": "X-Ezai-Client"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ActivateRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProposalOutcome"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "missing or invalid service token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "no such model / request / role / project"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "refused by a lifecycle or governance rule (message names the fix)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "invalid request or unservable proposal"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not attached to a platform"
+          }
+        },
+        "security": [
+          {
+            "serviceToken": []
+          }
+        ],
+        "summary": "Request activation \u2014 approval when a serving role changes (CLI: local-ezai model activate)",
+        "tags": [
+          "models"
+        ]
+      }
+    },
+    "/v1/models/{name}/benchmark": {
+      "post": {
+        "operationId": "model_benchmark",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "forwarded identity of the human the caller acts for",
+            "in": "header",
+            "name": "X-EZAI-User",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "forwarded identity of the human the caller acts for",
+              "title": "X-Ezai-User"
+            }
+          },
+          {
+            "description": "name of the calling surface (cli, admin-center, \u2026)",
+            "in": "header",
+            "name": "X-EZAI-Client",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "name of the calling surface (cli, admin-center, \u2026)",
+              "title": "X-Ezai-Client"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/BenchmarkRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BenchmarkOutcome"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "missing or invalid service token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "no such model / request / role / project"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "refused by a lifecycle or governance rule (message names the fix)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "invalid request or unservable proposal"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not attached to a platform"
+          }
+        },
+        "security": [
+          {
+            "serviceToken": []
+          }
+        ],
+        "summary": "Measure tokens/sec on this host (CLI: local-ezai model benchmark)",
+        "tags": [
+          "models"
+        ]
+      }
+    },
+    "/v1/models/{name}/retire": {
+      "post": {
+        "operationId": "model_retire",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "forwarded identity of the human the caller acts for",
+            "in": "header",
+            "name": "X-EZAI-User",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "forwarded identity of the human the caller acts for",
+              "title": "X-Ezai-User"
+            }
+          },
+          {
+            "description": "name of the calling surface (cli, admin-center, \u2026)",
+            "in": "header",
+            "name": "X-EZAI-Client",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "name of the calling surface (cli, admin-center, \u2026)",
+              "title": "X-Ezai-Client"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetireOutcome"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "missing or invalid service token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "no such model / request / role / project"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "refused by a lifecycle or governance rule (message names the fix)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "invalid request or unservable proposal"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not attached to a platform"
+          }
+        },
+        "security": [
+          {
+            "serviceToken": []
+          }
+        ],
+        "summary": "Remove a non-serving active model from resolution (CLI: local-ezai model retire)",
+        "tags": [
+          "models"
+        ]
+      }
+    },
+    "/v1/projects": {
+      "delete": {
+        "operationId": "project_remove",
+        "parameters": [
+          {
+            "description": "project name or path",
+            "in": "query",
+            "name": "target",
+            "required": true,
+            "schema": {
+              "description": "project name or path",
+              "title": "Target",
+              "type": "string"
+            }
+          },
+          {
+            "description": "forwarded identity of the human the caller acts for",
+            "in": "header",
+            "name": "X-EZAI-User",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "forwarded identity of the human the caller acts for",
+              "title": "X-Ezai-User"
+            }
+          },
+          {
+            "description": "name of the calling surface (cli, admin-center, \u2026)",
+            "in": "header",
+            "name": "X-EZAI-Client",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "name of the calling surface (cli, admin-center, \u2026)",
+              "title": "X-Ezai-Client"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectOutcome"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "missing or invalid service token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "no such model / request / role / project"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "refused by a lifecycle or governance rule (message names the fix)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "invalid request or unservable proposal"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not attached to a platform"
+          }
+        },
+        "security": [
+          {
+            "serviceToken": []
+          }
+        ],
+        "summary": "Unregister by name or path (CLI: local-ezai project remove)",
+        "tags": [
+          "projects"
+        ]
+      },
+      "get": {
+        "operationId": "projects_list",
+        "parameters": [
+          {
+            "description": "forwarded identity of the human the caller acts for",
+            "in": "header",
+            "name": "X-EZAI-User",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "forwarded identity of the human the caller acts for",
+              "title": "X-Ezai-User"
+            }
+          },
+          {
+            "description": "name of the calling surface (cli, admin-center, \u2026)",
+            "in": "header",
+            "name": "X-EZAI-Client",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "name of the calling surface (cli, admin-center, \u2026)",
+              "title": "X-Ezai-Client"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "missing or invalid service token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "no such model / request / role / project"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "refused by a lifecycle or governance rule (message names the fix)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "invalid request or unservable proposal"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not attached to a platform"
+          }
+        },
+        "security": [
+          {
+            "serviceToken": []
+          }
+        ],
+        "summary": "Registered repositories (CLI: local-ezai project list)",
+        "tags": [
+          "projects"
+        ]
+      },
+      "post": {
+        "operationId": "project_add",
+        "parameters": [
+          {
+            "description": "forwarded identity of the human the caller acts for",
+            "in": "header",
+            "name": "X-EZAI-User",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "forwarded identity of the human the caller acts for",
+              "title": "X-Ezai-User"
+            }
+          },
+          {
+            "description": "name of the calling surface (cli, admin-center, \u2026)",
+            "in": "header",
+            "name": "X-EZAI-Client",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "name of the calling surface (cli, admin-center, \u2026)",
+              "title": "X-Ezai-Client"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectAdd"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectOutcome"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "missing or invalid service token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "no such model / request / role / project"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "refused by a lifecycle or governance rule (message names the fix)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "invalid request or unservable proposal"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not attached to a platform"
+          }
+        },
+        "security": [
+          {
+            "serviceToken": []
+          }
+        ],
+        "summary": "Register a repository (CLI: local-ezai project add)",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/v1/roles/{role}": {
+      "get": {
+        "operationId": "role_explain",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "role",
+            "required": true,
+            "schema": {
+              "title": "Role",
+              "type": "string"
+            }
+          },
+          {
+            "description": "forwarded identity of the human the caller acts for",
+            "in": "header",
+            "name": "X-EZAI-User",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "forwarded identity of the human the caller acts for",
+              "title": "X-Ezai-User"
+            }
+          },
+          {
+            "description": "name of the calling surface (cli, admin-center, \u2026)",
+            "in": "header",
+            "name": "X-EZAI-Client",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "name of the calling surface (cli, admin-center, \u2026)",
+              "title": "X-Ezai-Client"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleExplanation"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "missing or invalid service token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "no such model / request / role / project"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "refused by a lifecycle or governance rule (message names the fix)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "invalid request or unservable proposal"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not attached to a platform"
+          }
+        },
+        "security": [
+          {
+            "serviceToken": []
+          }
+        ],
+        "summary": "What serves a role, why, and the contract check (CLI: local-ezai model explain)",
+        "tags": [
+          "models"
         ]
       }
     },
