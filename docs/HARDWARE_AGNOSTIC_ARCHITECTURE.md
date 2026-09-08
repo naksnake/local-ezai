@@ -67,6 +67,14 @@ agent code and prompts · registry roles/groups · CLI/WebUI surfaces
 > `fit()` sizing comes exclusively from the declared `ModelEntry.size_gb`
 > (measured at install), never from model names.
 
+> **As-built note (PR-3, `config/providers/*.yaml`):** the table above
+> exists as shipped data — `accelerators: {cuda|rocm|igpu|none: {image,
+> args, preset, tuning, compose}}` per runtime, with class tuning under
+> `classes:`. The renderer (`agentd/src/agentd/render.py`) fills templates
+> and is tested to contain no brand, image, device path, or engine flag;
+> a runtime lacking an image for the detected kind fails loudly (no silent
+> CPU fallback) and the CPU path is an explicit `accelerator="none"`.
+
 A vendor never named in a descriptor is still supported the day its
 runtime supports it — that is the test of agnosticism.
 

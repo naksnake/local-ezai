@@ -78,7 +78,9 @@ Scope: detection (`accelerator kind/vram/ram/cores/flags`), class mapping
 Tests: fixture vectors → classes (H3, H4 seeds); fit verdicts for
 reference sizes/quants.
 
-**PR-3 · Runtime descriptors + renderer** — L
+**PR-3 · Runtime descriptors + renderer** — L — ✅ **implemented**
+([prs/PR-3-runtime-renderer.md](prs/PR-3-runtime-renderer.md); 34 tests
+incl. goldens per legacy profile, suite 378 green, PR-1 golden intact)
 Scope: `config/providers/{llamacpp,vllm}.yaml` (six-verb contract of
 RUNTIME_ABSTRACTION §2, per-accelerator image tables); renderer producing
 LiteLLM config (model + **role aliases**), engine-slot materialization,

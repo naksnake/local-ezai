@@ -143,6 +143,31 @@ architecture (see [agentd/README.md](../agentd/README.md)):
   `swe-install`, `swe-test`, `swe-lint`, `swe-run`, `swe-plan`. Tests are
   fully offline (ScriptedLLM); CI in `.github/workflows/agentd-ci.yml`.
 
+## Productization P1 — in progress (ADR-025/026/027; docs/V1_PR_PLAN.md)
+
+No runtime consumer is wired yet (PR-6/7); these modules are tested
+foundations:
+
+- **Registry v2** (`registry_v2.py`, PR-1): platform-scope models ×
+  lifecycle states, ordered groups, roles with pins + `requires`
+  contracts; deterministic resolution; immutable generations; reference
+  default set as packaged data (`defaults/reference_registry.yaml` — the
+  CLAUDE.md map; golden-tested against `.agent/model_registry.yaml`).
+- **Capability** (`capability.py`, PR-2): detected vector → class
+  (`accel-large|accel-small|cpu-standard|cpu-low`; legacy profiles are
+  preset aliases), pure advisory `fit()`.
+- **Runtime descriptors + renderer** (`runtime_descriptor.py`,
+  `render.py`, `config/providers/{llamacpp,vllm}.yaml`, PR-3): runtimes as
+  data (six-verb contract, image table per accelerator kind, tuning per
+  class); renderer fills templates → `litellm-config.yaml` (model +
+  `role-*` aliases → `engine:8000`), `docker-compose.engine.yml`,
+  `role_map.yaml` (ADR-020 shape), capability report, router preset;
+  render-time capability negotiation (primaries + fallbacks); one-slot
+  rule; hash manifest + drift refusal under `config/rendered/` (parallel
+  path until the PR-7 cutover). The compose slot service carries the
+  neutral network alias **`engine`** (ADR-026 R-3); `vllm:8000` still
+  works.
+
 ## Target additions (control/execution/knowledge planes)
 
 - **agentd** — agent runtime + workflow engine + permission engine (FastAPI).

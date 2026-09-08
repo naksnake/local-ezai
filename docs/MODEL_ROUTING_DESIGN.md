@@ -152,6 +152,20 @@ Render is atomic per generation: write generation N+1, validate, reload,
 record; rollback = re-render generation N
 ([MODEL_LIFECYCLE_MANAGEMENT.md](MODEL_LIFECYCLE_MANAGEMENT.md) §4).
 
+> **As-built (PR-3, `agentd/src/agentd/render.py`):** artifacts 1–3 are
+> rendered by `render()` into `<config>/rendered/` — `litellm-config.yaml`
+> (served-model aliases + `role-<role>` aliases → `http://engine:8000/v1`,
+> the stack's `general_settings`/`litellm_settings` preserved verbatim, the
+> embedding route supplied as caller data), `docker-compose.engine.yml`,
+> and `role_map.yaml` in the ADR-020 `agent_model_map` shape (fallback keys
+> only when non-empty; a golden test parses it with the shipped loader
+> against this repo's `.agent/model_registry.yaml`). Role aliases point at
+> the primary only — request-time fallback stays the ADR-020 client
+> mechanism. Two more artifacts exist: `capability_report.yaml` (evidence)
+> and `manifest.yaml` (hashes for drift detection). The render is
+> all-or-nothing: any negotiation or slot problem aborts with one aggregated
+> error. Cutover of the live `config/litellm-config.yaml` is PR-7.
+
 ## 7. Explain routing (the transparency contract)
 
 Three levels, all served from the same resolution:

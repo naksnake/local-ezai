@@ -49,7 +49,11 @@ installation. Execution phases **P1–P6** with exit criteria:
 [docs/V1_IMPLEMENTATION_PLAN.md](../docs/V1_IMPLEMENTATION_PLAN.md);
 product definition: [docs/TARGET_PRODUCT_V1.md](../docs/TARGET_PRODUCT_V1.md).
 P4 (web console) supersedes N4; N5′/N6′ land post-V1 on the P2 governance
-queue. Status: 📐 architecture only — no implementation started.
+queue. Status: 🟡 **P1 in progress** — PR-1 (Registry v2 store +
+generations), PR-2 (capability vector/classes/fit), PR-3 (runtime
+descriptors + renderer, `engine` alias) implemented
+([docs/prs/](../docs/prs/)); next ready: PR-4 (lifecycle install /
+validate / benchmark). ADR-027 stays Proposed until PR-7.
 
 **Product review (ADR-026, 2026-09-01):** agnosticism audit passed with
 remediations — roles/groups become the only stable names (role aliases

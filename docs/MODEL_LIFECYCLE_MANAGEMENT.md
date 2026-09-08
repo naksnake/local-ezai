@@ -123,6 +123,16 @@ and requires an extra confirmation.
 | `.agent/model_registry.yaml` (per repo) | still supported (ADR-020) but now *written for you* by `local-ezai model pin --repo` if desired; hand-editing remains allowed here — it is repo content, not platform config |
 | `agentd.yaml` global config | absorbed: platform-level settings become control-plane state; env `AGENTD_*` remains for development |
 
+> **As-built (PR-3, `render.write_rendered` / `check_drift`):** drift
+> detection is a `manifest.yaml` of SHA-256 content hashes written beside
+> the rendered artifacts; a hash mismatch (hand edit) or a managed file
+> name without a manifest entry (unmanaged file) makes the next render
+> refuse with the file named and the remedy ("change state via
+> `local-ezai model …`, or `force` to discard the edit"). Artifacts a new
+> generation no longer produces are removed. Rendered files carry a
+> GENERATED banner. The parallel path `config/rendered/` becomes the live
+> path at the PR-7 cutover.
+
 ## 6. Governance summary
 
 - activate / upgrade ⇒ **approval required** (queue, evidence attached)

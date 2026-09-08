@@ -43,6 +43,14 @@ concurrency traits (multi-model? hot-swap?), health, side-load support.
 **V1 ships two descriptors** (llamacpp, vllm). The contract is the
 product; the descriptors are content.
 
+> **As-built (PR-3):** the two descriptors live in `config/providers/`
+> (schema: `agentd/runtime_descriptor.py`). `materialize` and
+> `capabilities` are realized by the renderer as pure data → artifacts;
+> `control`, `ready`, `validate_model`, `bench` are declared in the
+> `verbs:` block (probe path/timeouts, probe kind, bench token budget,
+> timings field) and are executed by the lifecycle manager from PR-4/PR-5
+> on. `ready` already renders as the engine service's compose healthcheck.
+
 ## 3. Neutral naming (killing the `vllm`-name coupling, compatibly)
 
 - The compose service name `vllm` is **kept** (ADR-001 compatibility; no
@@ -54,6 +62,12 @@ product; the descriptors are content.
   only when vLLM is genuinely the selected runtime.
 - Full rename of the service is deferred to a major version (breaking);
   the alias makes it a no-op later.
+
+> **As-built (PR-3):** `docker-compose.yml` attaches network alias
+> `engine` to the slot service; every rendered artifact addresses
+> `http://engine:8000/v1`, and a test asserts the alias stays in place. The
+> renderer spells the historical service name in exactly one constant
+> (`render.ENGINE_SERVICE`) to key the compose override.
 
 ## 4. Capability negotiation (model × runtime × role, all data)
 
@@ -74,6 +88,16 @@ Consequence: a model family the platform has never heard of works
 immediately if it declares its template/format — and a mismatch is a
 clear render-time error naming the missing capability, never a silent
 request-time failure.
+
+> **As-built (PR-3, `render.negotiate`):** the check runs for every model
+> in a role's resolution chain — **fallbacks included** (a fallback that
+> cannot serve the role would otherwise fail silently at request time) —
+> and covers four properties: `tool_calling` (`tool_call_format ∈ runtime
+> tool_call_parsers`), `json_output`, `min_context` against
+> `min(model.context, class ctx budget)`, and source format ∈
+> `serves_formats` (a model may declare several variants; each runtime picks
+> its own). Every failure is aggregated into one error that names the role,
+> model, runtime, and the missing capability with both numbers/lists.
 
 ## 5. Runtime selection & switching UX
 

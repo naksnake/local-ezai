@@ -698,3 +698,30 @@ code (R-1/H1). No consumers are wired in this slice (PR-3/6/7); the live
 (immutability, write-time servability, byte-compatible role maps) are
 already tested; the golden test becomes the standing tripwire for the
 PR-6 role-alias switch.
+**PR-3 slice (2026-09-08) — runtime descriptors + renderer (ADR-026
+R-1/R-3/R-4):** runtimes are YAML descriptors in `config/providers/`
+(schema `runtime_descriptor.py`): served formats, capabilities
+(tool-call parsers, JSON output, `parallel_models`, `hot_swap`), the
+six-verb contract as data (`materialize` realized; `control`/`ready`/
+`validate_model`/`bench` declared for PR-4/5), image table keyed by
+**accelerator kind**, tuning keyed by **capability class**, templated
+commands/compose extras. `render.py` fills templates only — it holds no
+engine, image, flag, or vendor string (tested) — and produces
+`litellm-config.yaml` (model + `role-*` aliases → `engine:8000`),
+`docker-compose.engine.yml` (`deploy` under compose `!override`),
+`role_map.yaml` (ADR-020 shape; golden-chained to this repo's
+`.agent/model_registry.yaml`), `capability_report.yaml`, and a router
+`engine-models.ini` when llama.cpp serves several models. **Capability
+negotiation** at render time covers primaries **and fallbacks**
+(tool_calling / json_output / min_context vs class budget / source
+format); the one-slot rule (one runtime; `parallel_models: false` ⇒ one
+active model) is enforced; all problems aggregate into one loud error.
+`write_rendered` persists to `<config>/rendered/` with a hash
+`manifest.yaml` and **refuses drift** unless forced. The compose slot
+service gains the neutral network alias `engine` (name, port, behavior
+unchanged). Parallel path until the PR-7 cutover; no process verb runs in
+this slice. As-built refinements: fallbacks negotiated (not only
+primaries); llama.cpp multi-model via router preset (upstream-verified);
+the reference default set spans two runtimes and is therefore reported as
+a slot conflict — LiteLLM/role-map rendering remains independently
+callable for explain/approval surfaces.

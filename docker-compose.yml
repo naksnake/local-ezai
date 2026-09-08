@@ -126,7 +126,12 @@ services:
               capabilities: [gpu]
     shm_size: '2gb'
     networks:
-      - ai-net
+      ai-net:
+        # Runtime-neutral name for the engine slot (ADR-026 R-3): rendered
+        # artifacts and new consumers address http://engine:8000; the service
+        # keeps its historical name so http://vllm:8000 routes keep working.
+        aliases:
+          - engine
 
   # ═══════════════════════════════════════════════════════════════════════
   # Embed Server — Embedding model running on CPU

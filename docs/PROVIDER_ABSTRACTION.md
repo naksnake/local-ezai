@@ -63,6 +63,23 @@ Descriptors ship with the platform and are versioned; users select
 the descriptor. Users never author descriptors (extending them is a
 platform-development task like any other, via PRs).
 
+> **As-built (PR-3, `config/providers/*.yaml`, schema in
+> `agentd/src/agentd/runtime_descriptor.py`):** the shipped schema keys
+> hardware by **accelerator kind** (`accelerators: {cuda|rocm|igpu|none:
+> {image, args, preset, tuning, compose}}`) and tunes by **capability
+> class** (`classes: {accel-large|…|cpu-low: {ctx_size, threads,
+> memory_limit, …}}`) instead of the SKU `profiles:` sketched above
+> (ADR-026 R-2). The six verbs appear as `materialize` (`served_id`,
+> `single` command, optional `multi` command + INI `preset`) and `verbs:
+> {control, ready, validate_model, bench}`; `capabilities` carries
+> `tool_call_parsers`, `json_output`, `parallel_models`, `hot_swap`. All
+> engine-specific strings are `{placeholder}` templates filled by the
+> renderer; compose `${VAR:-default}` interpolation passes through.
+> llama.cpp's `parallel_models: true` is realized through its router mode
+> (`--models-preset` + a rendered INI whose `[sections]` are registry model
+> names); a single active model renders the classic command, field-for-
+> field today's low-power profile.
+
 ## 3. What the renderer produces
 
 For the current generation ([MODEL_LIFECYCLE_MANAGEMENT.md](MODEL_LIFECYCLE_MANAGEMENT.md) §4):
@@ -77,6 +94,19 @@ For the current generation ([MODEL_LIFECYCLE_MANAGEMENT.md](MODEL_LIFECYCLE_MANA
    role that needs tool calling must sit on a provider/parser combination
    that supports it; resolution fails at render time otherwise
    (never at request time).
+
+> **As-built (PR-3, `agentd/src/agentd/render.py`):** `render()` produces
+> `litellm-config.yaml` (model aliases + `role-*` aliases → `engine:8000`),
+> `docker-compose.engine.yml` (the slot override, `deploy` under compose's
+> `!override` tag), `role_map.yaml` (ADR-020 shape for agentd),
+> `capability_report.yaml`, and `engine-models.ini` when several models are
+> served; `write_rendered()` stores them under `<config>/rendered/` with a
+> `manifest.yaml` of content hashes and refuses hand-edited or unmanaged
+> files (drift). Until the PR-7 cutover this is a parallel path — the
+> hand-written LiteLLM configs remain the live ones. The §4 slot rule is
+> enforced as data: a `parallel_models: false` runtime accepts one active
+> model; a mixed-runtime active set is a render error naming the models per
+> runtime and the fix.
 
 ## 4. Provider selection rules (deterministic)
 

@@ -180,6 +180,7 @@ local-ezai/
 │   ├── litellm-config.n97.yaml Model routing for the N97/llama.cpp profile
 │   ├── litellm-config.cpu.yaml Model routing for the vLLM CPU profile
 │   ├── mcpo-config.json        MCP server list (reads from env)
+│   ├── providers/              Runtime descriptors (llama.cpp, vLLM) — data for the V1 renderer
 │   ├── searxng/settings.yml    Search engine config
 │   └── prompts/
 │       └── web-search-assistant.md   System prompt for proactive web search
