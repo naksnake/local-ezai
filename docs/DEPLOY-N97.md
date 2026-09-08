@@ -197,11 +197,13 @@ those steps are identical.
    ```
 
 2. `make download-n97`
-3. Edit `config/litellm-config.n97.yaml` so `model_name` (and the
-   `openai/...` value) match the new `N97_MODEL_NAME`
-4. `make up-n97` — recreates the llama.cpp container with the new model
-5. `docker compose restart litellm` — LiteLLM reads its config only at
-   startup, so without this the new model name never appears in OpenWebUI
+3. `make bootstrap` (first time — migrates the `N97_*` settings into model
+   generation 1 and renders LiteLLM + engine config; afterwards use
+   `local-ezai model install|activate …` instead of editing `.env`)
+4. `make up-n97` — recreates the llama.cpp container with the rendered
+   engine override
+5. LiteLLM routing is rendered per generation — no config file to edit; a
+   governed activation reloads it for you
 
 Any single-file GGUF from HuggingFace works the same way. Stay at or below
 ~3B parameters at Q4 on this hardware.

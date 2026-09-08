@@ -195,8 +195,8 @@ and requires an extra confirmation.
 | File users edit today | V1 status |
 |---|---|
 | `.env` | **installation-time only** (ports, secrets, hardware profile); never needed for day-2 |
-| `config/litellm_config.yaml` | rendered artifact (generated header; drift detection: control plane refuses to render over unexpected manual edits and says so) |
-| compose overrides / engine flags | rendered from provider descriptors + registry |
+| `config/litellm_config.yaml` | rendered artifact (generated header; drift detection: control plane refuses to render over unexpected manual edits and says so) — **as built (PR-7):** `config/rendered/litellm-config.yaml` is what compose mounts; the three hand-written variants are retired (test fixtures) |
+| compose overrides / engine flags | rendered from provider descriptors + registry — **as built (PR-7):** `config/rendered/docker-compose.engine.yml`, added by every `make up*` / `local-ezai up --rendered` |
 | `.agent/model_registry.yaml` (per repo) | still supported (ADR-020) but now *written for you* by `local-ezai model pin --repo` if desired; hand-editing remains allowed here — it is repo content, not platform config |
 | `agentd.yaml` global config | absorbed: platform-level settings become control-plane state; env `AGENTD_*` remains for development |
 

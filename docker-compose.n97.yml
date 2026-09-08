@@ -57,10 +57,8 @@ services:
           memory: 6g
     shm_size: '256mb'
 
-  # ── LiteLLM: route the small model name ───────────────────────────────────
+  # ── LiteLLM: routing is rendered per generation (config/rendered/) ────────
   litellm:
-    volumes:
-      - ./config/litellm-config.n97.yaml:/app/config.yaml:ro
     deploy:
       resources:
         limits:

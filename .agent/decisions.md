@@ -669,9 +669,34 @@ P6 gains gates H1–H4 + the third-runtime drill; the platform can adopt a
 new GPU vendor, runtime, or model family as pure data — which is the
 definition of done for agnosticism.
 
-## ADR-027 — Registry v2: platform model registry with generations (P1)
-**Date:** 2026-09-01 · **Status:** Proposed (enters with PR-1; flips to
-Accepted when phase P1 closes at PR-7)
+## ADR-027 — Registry v2 · PAL · governed model lifecycle (P1)
+**Date:** 2026-09-01 · **Status:** **Accepted** (2026-09-08, phase P1
+closed with PR-7; entered as Proposed with PR-1)
+**As built (PR-1..7):** the platform's model state is a **generation-
+versioned Registry v2** (`config/models/registry.yaml` + immutable,
+append-only `generations/`; rollbacks are new generations) resolved
+deterministically role → pin | group → first active model; **runtimes are
+descriptors** (`config/providers/*.yaml`: six-verb contract, image table per
+accelerator kind, tuning per capability class) and the **renderer** turns
+registry + descriptors + the host's capability vector into the LiteLLM
+config (model + `role-*` aliases → `engine:8000`), the engine-slot compose
+override, the ADR-020-shaped role map, and a capability report, with
+render-time **capability negotiation** over every role's chain and a hash
+manifest that refuses drift; the **lifecycle** installs (resumable,
+checksummed, validated through a side-loaded engine), benchmarks, and
+retires/uninstalls with guards; **governance** is a file-backed
+change-request queue with an append-only audit log, a computed approval
+matrix (policy-approved when no serving role or slot runtime changes),
+a bounded evolution lane, and an **atomic apply** (dry render → snapshot →
+write → reload changed → health → self-rollback on any failure);
+**agentd binds to role aliases** (no model name in code) and resolves
+aliases < platform role map < per-repo ADR-020 registry; the
+`local-ezai model|governance|project|status|up|down|bootstrap` namespaces
+are the direct-mode CLI; the **bootstrap** consumes `.env` seeds once
+(legacy families migrated, F8/F10/F11) into generation 1 with the one
+implicit approval, and the **cutover** makes the rendered artifacts the live
+ones. Reference default set: the CLAUDE.md map as packaged data, golden-
+tested against `.agent/model_registry.yaml` throughout.
 **Context:** ADR-025/026 require a platform-scope, declarative,
 generation-versioned model registry — roles → groups → models →
 runtimes — replacing hand-edited routing after installation, resolvable
@@ -798,3 +823,22 @@ once), `project add|list|remove` (`config/projects.yaml`, audited),
 profile name). Behavior note: the default routing path changes as the plan
 foresaw (one pre-existing assertion of the old hard-coded default updated);
 the PR-1 golden test passes unchanged — the tripwire held.
+**PR-7 slice (2026-09-08) — bootstrap core + `.env` seed consumption +
+cutover (P1 closes):** `bootstrap.py` reads the V1 seeds once (`AI_RUNTIME`,
+three group seeds, optional `EZAI_ROLE_PIN_*`, `<SEED>_TOOL_FORMAT`,
+`<SEED>_CONTEXT`) or migrates the first legacy `.env` family from the data
+table `defaults/legacy_seeds.yaml` into one model for all groups keeping the
+served name (F11); validates every problem with its fix before any download
+(F8: runtime, scheme, format × runtime, slot capacity, `auto` feasibility,
+tool format vs runtime parsers — undeclared user sources default to a
+runtime's generic handler only when it lists one — context vs contracts,
+pins); installs + benchmarks through the PR-4 verbs; plans generation 1
+(reference roles + contracts, groups from seeds, pins); the ONE implicit
+approval (`propose(implicit_approval=True)`, refused on a platform with
+history — a forced re-run becomes a governed request) → PR-5 apply →
+`EZAI_SEEDS_CONSUMED` stamped into `.env`; `--dry-run` shows the F10 diff.
+Cutover: compose mounts `config/rendered/litellm-config.yaml`; the three
+hand-written variants become test fixtures; `make bootstrap` /
+`require-rendered`; every `make up*` adds the rendered engine override and
+`make setup-*` bootstraps before `up` (host venv created on demand — the
+first departure from "no host Python", by design). ADR-027 → Accepted.

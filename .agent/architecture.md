@@ -35,11 +35,15 @@
 
 ## Current service map (existing, unchanged)
 
-openwebui:3000 · litellm:4000 (auto-RAG hook `config/litellm_custom_callbacks.py`)
-· vllm:8000 (engine slot) · embed-server:8001 · qdrant:6333 · searxng:8092
+openwebui:3000 · litellm:4000 (auto-RAG hook `config/litellm_custom_callbacks.py`;
+routing rendered per model generation into `config/rendered/`)
+· vllm:8000 (engine slot, network alias `engine`; materialization rendered
+per generation) · embed-server:8001 · qdrant:6333 · searxng:8092
 · mcpo:8200 (filesystem/memory/fetch/qdrant-rag) · monitor:8888 (RBAC).
 Profiles: GPU (base) / cpu / n97 / n97-igpu via compose overrides with
-`!override` on `deploy`. Config via `.env` (`.env.example` = schema).
+`!override` on `deploy`, plus the rendered engine override on every start.
+Config via `.env` (`.env.example` = schema; model seeds read once by
+`make bootstrap`).
 
 ## Phases 1–7 — shipped (agentd/)
 
@@ -143,10 +147,12 @@ architecture (see [agentd/README.md](../agentd/README.md)):
   `swe-install`, `swe-test`, `swe-lint`, `swe-run`, `swe-plan`. Tests are
   fully offline (ScriptedLLM); CI in `.github/workflows/agentd-ci.yml`.
 
-## Productization P1 — in progress (ADR-025/026/027; docs/V1_PR_PLAN.md)
+## Productization P1 — done (ADR-025/026, ADR-027 Accepted; docs/V1_PR_PLAN.md)
 
-No runtime consumer is wired yet (PR-6/7); these modules are tested
-foundations:
+Live since the PR-7 cutover: `make bootstrap` consumes the `.env` seeds
+into generation 1, compose mounts the rendered LiteLLM config and every
+`make up*` adds the rendered engine override; day-2 model changes go
+through `local-ezai model …` + the governance queue. Modules:
 
 - **Registry v2** (`registry_v2.py`, PR-1): platform-scope models ×
   lifecycle states, ordered groups, roles with pins + `requires`
@@ -194,6 +200,12 @@ foundations:
   (repo pin = exact chain), platform found via `platform.config_dir` or
   walk-up from the project; `local-ezai model|governance|project|status|
   up|down` namespaces in direct mode over the PR-3/4/5 modules.
+- **Bootstrap + cutover** (`bootstrap.py`, `defaults/legacy_seeds.yaml`,
+  PR-7): `.env` seeds read once (legacy families migrated as data, served
+  name kept), F8 validation before any download, install → benchmark →
+  the one implicit approval → apply → `EZAI_SEEDS_CONSUMED` stamp;
+  `config/rendered/` is the live LiteLLM + engine config; the hand-written
+  LiteLLM variants are test fixtures.
 
 ## Target additions (control/execution/knowledge planes)
 

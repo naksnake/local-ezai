@@ -70,7 +70,7 @@ from agentd.runtime_descriptor import DescriptorError, RuntimeDescriptor, load_d
 
 log = get_logger("platform-cli")
 
-PLATFORM_COMMANDS = ("model", "governance", "project", "status", "up", "down")
+PLATFORM_COMMANDS = ("model", "governance", "project", "status", "up", "down", "bootstrap")
 PROJECTS_FILENAME = "projects.yaml"
 DEFAULT_GROUPS = ("reasoning", "coding", "chat")
 ROUTER_PORT = 4000
@@ -561,6 +561,49 @@ def cmd_down(ctx: PlatformContext, args: argparse.Namespace) -> int:
     return _compose(ctx, args, "down")
 
 
+# ── bootstrap (PR-7): .env seeds → generation 1 ──────────────────────────────
+
+
+def cmd_bootstrap(ctx: PlatformContext, args: argparse.Namespace) -> int:
+    from agentd import bootstrap as bs
+
+    env_path = Path(args.env).expanduser() if args.env else ctx.root / ".env"
+    if not env_path.is_file():
+        raise PlatformError(f"no {env_path} — copy .env.example to .env and set "
+                            f"{bs.RUNTIME_KEY} + {' / '.join(bs.SEED_GROUPS)}")
+    seeds = bs.read_seeds(bs.parse_env(env_path.read_text(encoding="utf-8")))
+    reloader, health = reload_seams(args.reload)
+
+    def benchmark_fn(registry, name):
+        updated, _ = lifecycle.benchmark(
+            registry, name, descriptors=ctx.descriptors, vector=ctx.vector,
+            platform_root=ctx.root, workdir=ctx.workdir, capability_class=ctx.platform.klass,
+            accelerator=ctx.platform.accel, runner=default_runner, http=engine_http(),
+            agent_dir=ctx.root / ctx.config.memory.dir)
+        return updated
+
+    try:
+        result = bs.bootstrap(seeds, ctx.platform, ctx.queue, ctx.catalog, actor=ctx.actor,
+                              validator=build_validator(ctx), env_path=env_path,
+                              benchmark_fn=benchmark_fn, skip_benchmark=args.skip_benchmark,
+                              reloader=reloader, health=health, dry_run=args.dry_run,
+                              force=args.force)
+    except bs.BootstrapError as exc:
+        _emit(args, {"ok": False, "error": str(exc)}, [str(exc)])
+        return 1
+    lines = [result.message, f"  runtime: {result.runtime}"
+             + (f" · migrated from legacy .env family {seeds.migrated_from}"
+                if seeds.migrated_from else "")]
+    lines += [f"  {line}" for line in result.diff]
+    if not result.dry_run:
+        lines.append("  next: make up (or local-ezai up --rendered) · local-ezai status")
+    _emit(args, {"ok": True, "generation": result.generation, "request": result.request_id,
+                 "models": result.models, "runtime": result.runtime, "dry_run": result.dry_run,
+                 "diff": result.diff, "stamped": result.stamped,
+                 "migrated_from": seeds.migrated_from}, lines)
+    return 0
+
+
 # ── argparse wiring + dispatch ───────────────────────────────────────────────
 
 
@@ -648,6 +691,17 @@ def add_platform_parsers(sub: argparse._SubParsersAction, common: argparse.Argum
     p = leaf(sub, "down", "Stop the stack")
     p.add_argument("--profile", default=None)
 
+    p = leaf(sub, "bootstrap", "Consume the .env model seeds once into generation 1 "
+                               "(validate → install → benchmark → activate → render)")
+    p.add_argument("--env", default=None, help="Path to .env (default: <platform>/.env)")
+    p.add_argument("--dry-run", action="store_true", dest="dry_run",
+                   help="Validate the seeds and show the planned generation; download nothing")
+    p.add_argument("--skip-benchmark", action="store_true", dest="skip_benchmark")
+    p.add_argument("--force", action="store_true",
+                   help="Re-consume the seeds although a registry/stamp exists")
+    p.add_argument("--reload", action="store_true", help="Reload consumers + health-check")
+    p.add_argument("--by", default=None)
+
 
 HANDLERS: dict[tuple[str, str | None], Callable[[PlatformContext, argparse.Namespace], int]] = {
     ("model", "install"): cmd_model_install, ("model", "benchmark"): cmd_model_benchmark,
@@ -661,6 +715,7 @@ HANDLERS: dict[tuple[str, str | None], Callable[[PlatformContext, argparse.Names
     ("project", "add"): cmd_project_add, ("project", "list"): cmd_project_list,
     ("project", "remove"): cmd_project_remove,
     ("status", None): cmd_status, ("up", None): cmd_up, ("down", None): cmd_down,
+    ("bootstrap", None): cmd_bootstrap,
 }
 
 

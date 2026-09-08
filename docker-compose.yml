@@ -65,7 +65,10 @@ services:
     ports:
       - "${LITELLM_PORT:-4000}:4000"
     volumes:
-      - ./config/litellm-config.yaml:/app/config.yaml:ro
+      # RENDERED artifact (V1 cutover): generated from config/models/registry.yaml
+      # + config/providers/*.yaml by `make bootstrap` / local-ezai — never
+      # hand-edited. Model + role-* aliases point at the engine slot.
+      - ./config/rendered/litellm-config.yaml:/app/config.yaml:ro
       # Auto-RAG pre-call hook (module referenced by litellm_settings.callbacks)
       - ./config/litellm_custom_callbacks.py:/app/litellm_custom_callbacks.py:ro
     command: ["--config", "/app/config.yaml", "--port", "4000"]

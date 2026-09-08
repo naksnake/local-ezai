@@ -154,10 +154,17 @@ def _try_render(platform: Platform, registry: RegistryV2) -> RenderResult | None
 
 def propose(platform: Platform, queue: GovernanceQueue, current: RegistryV2,
             proposed: RegistryV2, *, kind: str, title: str, requested_by: str,
-            proposed_by: str = "human",
-            evidence: dict[str, Any] | None = None) -> ChangeRequest:
+            proposed_by: str = "human", evidence: dict[str, Any] | None = None,
+            implicit_approval: bool = False) -> ChangeRequest:
     """Validate a proposed generation exactly as apply will, attach the
-    evidence, and enter the queue. Loud on anything apply would refuse."""
+    evidence, and enter the queue. Loud on anything apply would refuse.
+
+    ``implicit_approval`` is the bootstrap's one exception (MODEL_GOVERNANCE_V2
+    §2: generation 1 is implicitly approved — the human wrote the seeds) and
+    is only honored when no generation exists yet."""
+    if implicit_approval and (current.generation != 0 or current.models):
+        raise LifecycleError("implicit approval is reserved for generation 1 — a platform "
+                             "with history goes through the governance queue")
     proposed = RegistryV2.model_validate(proposed.model_dump(mode="json"))  # integrity
     try:
         result = platform.render(proposed)  # completeness + negotiation + slot rule
@@ -167,7 +174,7 @@ def propose(platform: Platform, queue: GovernanceQueue, current: RegistryV2,
     before = _try_render(platform, current)
     affected = affected_roles(current, proposed)
     runtime_switch = before is not None and before.runtime != result.runtime
-    requires_approval = bool(affected) or runtime_switch
+    requires_approval = (bool(affected) or runtime_switch) and not implicit_approval
     newly_active = [name for name, entry in proposed.models.items()
                     if entry.state == "active"
                     and (name not in current.models or current.models[name].state != "active")]

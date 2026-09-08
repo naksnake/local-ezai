@@ -176,9 +176,9 @@ local-ezai/
 │   └── DEPLOY-N97.md           Deployment guide for Intel N97 / no-GPU boxes
 │
 ├── config/
-│   ├── litellm-config.yaml     Model routing (reads from env)
-│   ├── litellm-config.n97.yaml Model routing for the N97/llama.cpp profile
-│   ├── litellm-config.cpu.yaml Model routing for the vLLM CPU profile
+│   ├── models/                 Model registry + generations (written by `make bootstrap` / local-ezai)
+│   ├── rendered/               GENERATED LiteLLM config + engine override per generation — never hand-edited
+│   ├── governance/             Change-request queue + append-only audit log
 │   ├── mcpo-config.json        MCP server list (reads from env)
 │   ├── providers/              Runtime descriptors (llama.cpp, vLLM) — data for the V1 renderer
 │   ├── searxng/settings.yml    Search engine config
@@ -456,33 +456,27 @@ docker compose -f docker-compose.yml -f docker-compose.n97.yml up -d vllm
 A code-specialist variant is also pre-wired — **Qwen2.5-Coder-1.5B**
 (Apache-2.0), better at writing and explaining code than the chat model at
 the same speed; uncomment its block in `.env.example`'s N97 section the
-same way. All three Qwen names are pre-routed in LiteLLM; for a brand-new model name also
-add an entry in `config/litellm-config.n97.yaml` (copy an existing block,
-change the two name fields) and restart litellm. Keep ~2 GB headroom under
-the 6 GB memory cap; Q4_K_M quantizations of 1-4B models fit comfortably.
+same way. LiteLLM routing is **rendered from the model registry** (V1) — a
+new model becomes routable the moment it is installed and activated; no
+config file to edit. Keep ~2 GB headroom under the 6 GB memory cap; Q4_K_M
+quantizations of 1-4B models fit comfortably.
 
-**GPU / vLLM profile** — models are HuggingFace safetensors repos:
+**Day-2 model changes (V1, any profile)** — models are lifecycle-managed;
+`.env` is read once by `make bootstrap`:
 
 ```bash
-# 1. Download the model (runs in Docker, no host Python needed)
-CHAT_MODEL=mistralai/Mistral-7B-Instruct-v0.3 bash scripts/download-models.sh
-
-# 2. Update .env
-CHAT_MODEL=mistralai/Mistral-7B-Instruct-v0.3
-CHAT_MODEL_NAME=mistral-7b
-
-# 3. Update LiteLLM config to match the new short name
-nano config/litellm-config.yaml
-# change model_name: qwen2.5-7b → model_name: mistral-7b
-
-# 4. Restart
-make restart
+local-ezai model install hf:mistralai/Mistral-7B-Instruct-v0.3 --name mistral-7b
+local-ezai model benchmark mistral-7b            # tokens/sec on this box
+local-ezai model activate mistral-7b --group chat   # → change request
+local-ezai governance approve cr-0001            # renders + reloads generation N+1
+local-ezai model rollback                        # if you regret it
 ```
 
-The same pattern applies to the CPU profiles — set `CPU_CHAT_MODEL` /
-`CPU_CHAT_MODEL_NAME` (vLLM CPU) or `N97_GGUF_REPO` / `N97_MODEL_FILE` /
-`N97_MODEL_NAME` (llama.cpp) in `.env`, run the matching `make download-*`,
-and keep the short name in sync with `config/litellm-config.*.yaml`.
+`model install` also takes `gguf:<url|hf://org/repo/file.gguf|path>`, a
+catalog id (`local-ezai model catalog`), or `auto`. The legacy `.env`
+families (`CHAT_MODEL`/`CHAT_MODEL_NAME`, `CPU_*`, `N97_*`) are migrated into
+generation 1 automatically by the first `make bootstrap`, keeping your
+served model name so existing chats keep working.
 
 ---
 
@@ -660,8 +654,8 @@ vLLM's x86 CPU backend is optimized for AVX-512; on AVX2-only CPUs it runs
 in "limited features" mode — expect it to be noticeably slower and heavier
 than option 1 on the same hardware (that's why option 1 exists). Tune via
 `CPU_CHAT_MODEL`, `CPU_MAX_MODEL_LEN`, and `VLLM_CPU_KVCACHE_SPACE` in
-`.env`; if you change the model, also edit `config/litellm-config.cpu.yaml`
-and restart LiteLLM.
+`.env` before the first `make bootstrap`; afterwards change models with
+`local-ezai model …` (LiteLLM routing is rendered per generation).
 
 ---
 

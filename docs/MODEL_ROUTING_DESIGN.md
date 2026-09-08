@@ -181,7 +181,10 @@ record; rollback = re-render generation N
 > mechanism. Two more artifacts exist: `capability_report.yaml` (evidence)
 > and `manifest.yaml` (hashes for drift detection). The render is
 > all-or-nothing: any negotiation or slot problem aborts with one aggregated
-> error. Cutover of the live `config/litellm-config.yaml` is PR-7.
+> error. **Cutover done in PR-7:** `docker-compose.yml` mounts
+> `config/rendered/litellm-config.yaml` and `make up*` adds the rendered
+> engine override; the hand-written variants live on as fixtures under
+> `agentd/tests/fixtures/legacy/`.
 
 ## 7. Explain routing (the transparency contract)
 

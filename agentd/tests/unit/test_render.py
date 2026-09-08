@@ -225,12 +225,15 @@ def test_litellm_serves_role_aliases_at_the_engine_alias(descriptors):
 
 
 def test_litellm_platform_sections_match_the_hand_written_config(descriptors):
-    """Byte-identical chat behavior at cutover (PR-7): master key + auto-RAG
-    hook sections equal today's config/litellm-config.yaml."""
+    """Byte-identical chat behavior across the cutover (PR-7): master key +
+    auto-RAG hook sections equal the retired hand-written config (kept as
+    a fixture under tests/fixtures/legacy/)."""
     rendered = yaml.safe_load(
         render(registry("vllm"), descriptors, accel_large_vector())
         .artifacts[LITELLM_FILENAME])
-    legacy = yaml.safe_load((CONFIG_DIR / "litellm-config.yaml").read_text())
+    legacy = yaml.safe_load(
+        (Path(__file__).resolve().parents[1] / "fixtures" / "legacy" / "litellm-config.yaml")
+        .read_text())
     assert rendered["general_settings"] == legacy["general_settings"]
     assert rendered["litellm_settings"] == legacy["litellm_settings"]
     legacy_key = legacy["model_list"][0]["litellm_params"]["api_key"]

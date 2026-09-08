@@ -124,7 +124,9 @@ override precedence regression suite.
 Behavior notes: default model resolution path changes — golden test from
 PR-1 must still hold.
 
-**PR-7 · Bootstrap core + `.env` seed consumption + cutover** — M
+**PR-7 · Bootstrap core + `.env` seed consumption + cutover** — M — ✅ **implemented**
+([prs/PR-7-bootstrap-cutover.md](prs/PR-7-bootstrap-cutover.md); 23 tests
+incl. F8/F10/F11, suite 482 green, goldens intact; **ADR-027 → Accepted**)
 Scope: `bootstrap(seed_env) → generation 1` (AI_RUNTIME + three group
 seeds, `auto`, consumed-once stamping), legacy `CPU_*/N97_*/CHAT_MODEL_*`
 migration (F11), **cutover**: rendered LiteLLM config becomes the real

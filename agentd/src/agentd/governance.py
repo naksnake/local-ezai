@@ -186,8 +186,10 @@ class GovernanceQueue:
                     requires_approval=request.requires_approval,
                     affected_roles=sorted(request.affected_roles))
         if not request.requires_approval:
-            return self._decide(request, "approved", POLICY_ACTOR,
-                                "no serving role or slot runtime affected — self-service, audited")
+            reason = ("bootstrap generation 1: implicit approval — the human wrote the seeds"
+                      if request.kind == "bootstrap" else
+                      "no serving role or slot runtime affected — self-service, audited")
+            return self._decide(request, "approved", POLICY_ACTOR, reason)
         return request
 
     def approve(self, request_id: str, by: str, reason: str = "") -> ChangeRequest:

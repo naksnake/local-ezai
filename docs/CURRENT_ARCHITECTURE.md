@@ -59,8 +59,11 @@ by container name. All external configuration flows through `.env`
 | HPC batch | `slurm/*.sh` | batch embedding jobs only | n/a |
 
 Profile overrides use the Compose `!override` YAML tag to *replace* the GPU
-`deploy` block (memory caps per service on 16 GB boxes), and swap the LiteLLM
-config file per profile (`config/litellm-config{,.n97,.cpu}.yaml`).
+`deploy` block (memory caps per service on 16 GB boxes). Since the V1
+cutover (ADR-027, PR-7) LiteLLM routing and the engine slot are **rendered
+per model generation** into `config/rendered/` by `make bootstrap` /
+`local-ezai`; the per-profile LiteLLM config variants are retired (kept as
+test fixtures) and every `make up*` adds the rendered engine override.
 
 ---
 

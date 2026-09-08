@@ -49,15 +49,16 @@ installation. Execution phases **P1–P6** with exit criteria:
 [docs/V1_IMPLEMENTATION_PLAN.md](../docs/V1_IMPLEMENTATION_PLAN.md);
 product definition: [docs/TARGET_PRODUCT_V1.md](../docs/TARGET_PRODUCT_V1.md).
 P4 (web console) supersedes N4; N5′/N6′ land post-V1 on the P2 governance
-queue. Status: 🟡 **P1 in progress** — PR-1 (Registry v2 store +
-generations), PR-2 (capability vector/classes/fit), PR-3 (runtime
-descriptors + renderer, `engine` alias), PR-4 (lifecycle install /
-validate / benchmark, catalog + recommender), PR-5 (activate / upgrade /
-rollback / retire + governance queue, atomic apply with self-rollback),
-PR-6 (CLI namespaces `model|governance|project|status|up|down`, role
-aliases in code — CF-3 closed) implemented ([docs/prs/](../docs/prs/));
-next ready: PR-7 (bootstrap core + `.env` seed consumption + cutover,
-ADR-027 → Accepted).
+queue. Status: ✅ **P1 done (2026-09-08, ADR-027 Accepted)** — PR-1
+(Registry v2 store + generations), PR-2 (capability vector/classes/fit),
+PR-3 (runtime descriptors + renderer, `engine` alias), PR-4 (lifecycle
+install / validate / benchmark, catalog + recommender), PR-5 (activate /
+upgrade / rollback / retire + governance queue, atomic apply with
+self-rollback), PR-6 (CLI namespaces, role aliases in code — CF-3 closed),
+PR-7 (bootstrap core + `.env` seed consumption + cutover) implemented
+([docs/prs/](../docs/prs/)); all seven await human merge on
+`claude/next-ready-pr-bnq7r3`. Next ready: **PR-8** (`ezaid` service
+skeleton, phase P2, ADR-028 Proposed).
 
 **Product review (ADR-026, 2026-09-01):** agnosticism audit passed with
 remediations — roles/groups become the only stable names (role aliases

@@ -288,3 +288,72 @@ def test_repo_work_stays_hermetic_without_platform(tmp_repo, tmp_path, monkeypat
 def _git(repo: Path, *args: str) -> str:
     return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True,
                           check=True).stdout.strip()
+
+
+# ── bootstrap (PR-7): .env seeds → generation 1 through the CLI ──────────────
+
+
+@pytest.fixture
+def fresh_platform(tmp_path, monkeypatch):
+    """A never-bootstrapped platform with V1 seeds in .env; docker/HTTP faked."""
+    root = tmp_path / "fresh"
+    (root / "config").mkdir(parents=True)
+    shutil.copytree(REPO_ROOT / "config" / "providers", root / "config" / "providers")
+    (root / "docker-compose.yml").write_text("services: {}\n")
+    (root / "w").mkdir()
+    for name in ("reasoner", "coder", "chatter"):
+        (root / "w" / f"{name}.gguf").write_bytes(name.encode() * 256)
+    (root / ".env").write_text(
+        f"AI_RUNTIME=llamacpp\nREASONING_MODEL=gguf:{root}/w/reasoner.gguf\n"
+        f"CODING_MODEL=gguf:{root}/w/coder.gguf\nCHAT_MODEL=gguf:{root}/w/chatter.gguf\n")
+    monkeypatch.delenv("AGENTD_CONFIG", raising=False)
+    monkeypatch.setattr(platform_cli, "default_runner", FakeRunner())
+    monkeypatch.setattr(platform_cli, "http_probe", lambda url: 200)
+    monkeypatch.setattr(platform_cli, "engine_http", lambda: FakeEngineHTTP(
+        timings={"predicted_per_second": 7.5, "prompt_per_second": 40.0, "predicted_n": 100}))
+    monkeypatch.setattr(platform_cli, "build_validator",
+                        lambda ctx: lambda descriptor, name, entry: platform_cli.lifecycle
+                        .ProbeResult(True, "", 0.2, name))
+    cfg_file = tmp_path / "fresh-cfg.yaml"
+    cfg_file.write_text(yaml.safe_dump({
+        "llm": {"provider": "scripted"},
+        "platform": {"config_dir": str(root / "config")},
+        "runs_dir": str(tmp_path / "runs")}), encoding="utf-8")
+    return root, cfg_file
+
+
+def test_bootstrap_cli_dry_run_then_real_run(fresh_platform, capsys):
+    root, cfg = fresh_platform
+    code = main(["bootstrap", "--dry-run", "--config", str(cfg)])
+    out = capsys.readouterr().out
+    assert code == 0 and "dry run: seeds valid" in out and "model added: coder" in out
+    assert not (root / "config" / "models").exists()
+
+    code = main(["bootstrap", "--config", str(cfg), "--by", "nita"])
+    out = capsys.readouterr().out
+    assert code == 0 and "generation 1 bootstrapped: reasoning ← reasoner" in out
+    assert "seeds stamped as consumed" in out and "next: make up" in out
+    registry = load_registry(root / "config")
+    assert registry.generation == 1 and registry.resolve("coder").primary == "coder"
+    assert registry.models["coder"].benchmarks["tokens_per_s"] == 7.5
+    assert (root / "config" / "rendered" / "litellm-config.yaml").is_file()
+    assert "EZAI_SEEDS_CONSUMED=1@" in (root / ".env").read_text()
+
+    code = main(["status", "--config", str(cfg)])
+    assert code == 0 and "generation: 1 — bootstrap cr-0001" in capsys.readouterr().out
+    code = main(["bootstrap", "--config", str(cfg)])
+    out = capsys.readouterr().out
+    assert code == 1 and "already exists" in out
+
+
+def test_bootstrap_cli_reports_seed_problems_before_downloading(fresh_platform, capsys):
+    root, cfg = fresh_platform
+    (root / ".env").write_text("AI_RUNTIME=vllm\nREASONING_MODEL=gguf:https://x.invalid/a.gguf\n"
+                               "CODING_MODEL=hf:org/a\nCHAT_MODEL=hf:org/a\n")
+    code = main(["bootstrap", "--config", str(cfg)])
+    out = capsys.readouterr().out
+    assert code == 1 and "REASONING_MODEL is gguf but AI_RUNTIME=vllm serves" in out
+    assert not (root / "config" / "models").exists()
+    (root / ".env").unlink()
+    code = main(["bootstrap", "--config", str(cfg)])
+    assert code == 2  # no .env → usage-level error with the fix

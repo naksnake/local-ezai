@@ -82,6 +82,24 @@ make setup
 Failure at any step: actionable message, safe re-run (idempotent steps,
 atomic generation — never a half-configured platform).
 
+> **As-built (PR-7, `agentd/src/agentd/bootstrap.py`, `local-ezai
+> bootstrap`, `make bootstrap`):** steps 2, 4 (the model part), 5 and the
+> stamping are the **bootstrap core**: `read_seeds` (V1 seeds, or the first
+> legacy family from `defaults/legacy_seeds.yaml` migrated into one model
+> for all groups, F11 — the served name is kept so existing chats work) →
+> `validate_seeds` (F8: runtime, scheme, format × runtime, slot capacity,
+> `auto` feasibility, declared tool format/context vs role contracts, pins —
+> every problem with its fix, nothing downloaded) → install + benchmark per
+> seed (PR-4 verbs) → `plan_generation` (reference roles + contracts, groups
+> from seeds, `EZAI_ROLE_PIN_*`) → the one implicit approval → PR-5 apply
+> (render, reload, health, self-rollback) → `EZAI_SEEDS_CONSUMED` stamped
+> into `.env`. Optional per-seed declarations for user-supplied sources:
+> `<SEED>_TOOL_FORMAT`, `<SEED>_CONTEXT` (undeclared sources default to a
+> runtime's generic template-driven handler when it lists one). Steps 1
+> (detect), 3 (secrets), 6–8 (up, smoke, report) are PR-21/22 (`install.sh`,
+> `make setup`); `make setup-*` already runs `make bootstrap` before `up`.
+> `--dry-run` prints the planned generation-1 diff (F10) without fetching.
+
 ## 4. First WebUI contact
 
 - OpenWebUI opens on account creation (existing flow, first user = admin).

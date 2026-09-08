@@ -1,0 +1,42 @@
+# Legacy `.env` model families → V1 seeds (F11 migration table, PR-7).
+#
+# DATA: the per-profile variable families the platform used before the
+# V1 seeds (docs/V1_PRODUCT_REVIEW.md CF-1). The bootstrap translates the
+# first family whose trigger variable is set into ONE model that seeds all
+# three groups — exactly what the legacy single-model stacks served — and
+# keeps the served name so existing chats keep working. Order = precedence.
+families:
+  # tool_call_format: what the legacy profile's engine flags assumed (the
+  # hub profiles ran the engine with the hermes parser; the GGUF profile
+  # relied on the template-driven generic handler).
+  - id: low-power-gguf
+    runtime: llamacpp
+    format: gguf
+    tool_call_format: generic
+    trigger_vars: [N97_MODEL_FILE, N97_GGUF_REPO, N97_MODEL_NAME]
+    repo_var: N97_GGUF_REPO
+    file_var: N97_MODEL_FILE
+    name_var: N97_MODEL_NAME
+    context_var: N97_CTX
+    dir_var: N97_GGUF_DIR
+    dir_default: ./models/gguf
+    file_default: qwen2.5-1.5b-instruct-q4_k_m.gguf
+    repo_default: Qwen/Qwen2.5-1.5B-Instruct-GGUF
+  - id: cpu-hub
+    runtime: vllm
+    format: hf
+    tool_call_format: hermes
+    trigger_vars: [CPU_CHAT_MODEL, CPU_CHAT_MODEL_NAME]
+    ref_var: CPU_CHAT_MODEL
+    name_var: CPU_CHAT_MODEL_NAME
+    context_var: CPU_MAX_MODEL_LEN
+    ref_default: Qwen/Qwen2.5-1.5B-Instruct
+  - id: accelerator-hub
+    runtime: vllm
+    format: hf
+    tool_call_format: hermes
+    trigger_vars: [CHAT_MODEL]      # a bare org/repo value (no scheme) is the legacy form
+    ref_var: CHAT_MODEL
+    name_var: CHAT_MODEL_NAME
+    context_var: MAX_MODEL_LEN
+    ref_default: Qwen/Qwen2.5-7B-Instruct

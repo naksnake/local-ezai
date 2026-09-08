@@ -46,11 +46,15 @@ def test_code_defaults_are_role_aliases_not_model_names():
 
 
 def test_hand_written_litellm_configs_serve_every_role_alias():
-    """The alias switch must not break the shipped profiles: each LiteLLM
-    config maps every LLM role alias to a model it serves itself."""
+    """The alias switch (PR-6) did not break the shipped profiles: each
+    LiteLLM profile mapped every LLM role alias to a model it served itself.
+    The profiles were retired into rendered output at the PR-7 cutover and
+    live on as fixtures — the renderer's own alias coverage is tested in
+    test_render.py."""
     llm_roles = [r for r in LLM_ROLES if r not in ("validator", "git")]
+    legacy_dir = Path(__file__).resolve().parents[1] / "fixtures" / "legacy"
     for name in ("litellm-config.yaml", "litellm-config.cpu.yaml", "litellm-config.n97.yaml"):
-        config = yaml.safe_load((REPO_ROOT / "config" / name).read_text(encoding="utf-8"))
+        config = yaml.safe_load((legacy_dir / name).read_text(encoding="utf-8"))
         entries = {e["model_name"]: e["litellm_params"]["model"] for e in config["model_list"]}
         served = {e["litellm_params"]["model"] for n, e in
                   ((e["model_name"], e) for e in config["model_list"])

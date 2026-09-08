@@ -67,6 +67,7 @@ generation and an audit record; `--json` is available everywhere.
 | `project add <path> [--name N]` · `list` · `remove <name\|path>` | the chat-ops project allowlist (`config/projects.yaml`) | no (audited) |
 | `status` | platform root, capability class, generation vs rendered generation, slot runtime, model states, pending approvals, engine/router health | — |
 | `up [--profile gpu\|cpu\|n97\|n97-igpu] [--rendered]` · `down [--profile P]` | `docker compose` wrappers over the profile files; `--rendered` adds `config/rendered/docker-compose.engine.yml` | — |
+| `bootstrap [--env PATH] [--dry-run] [--skip-benchmark] [--force] [--reload]` | consume the `.env` model seeds **once** into generation 1: validate (every problem with its fix, before any download) → install → benchmark → activate → render → stamp `EZAI_SEEDS_CONSUMED`; legacy `CHAT_MODEL`/`CPU_*`/`N97_*` migrated automatically; `--dry-run` shows the planned diff; `--force` on a bootstrapped platform files a governed change request instead | implicit (generation 1 only) |
 
 `--reload` (activate/upgrade/rollback/approve) reloads consumers and
 health-checks the new generation through the descriptor's probes; without it

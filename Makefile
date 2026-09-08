@@ -1,4 +1,5 @@
 .PHONY: help setup build pull up up-cpu pull-cpu download-cpu update-cpu setup-cpu wait-ready \
+        bootstrap require-rendered \
         up-n97 pull-n97 download-n97 update-n97 setup-n97 up-n97-igpu bench \
         setup-gpu download-gpu \
         down restart logs health status embed \
@@ -30,6 +31,15 @@ EMBED_CODE_DIR  = $(MODELS_DIR)/models--$(subst /,--,$(EMBED_CODE_REPO))
 
 COMPOSE_CPU = docker compose -f docker-compose.yml -f docker-compose.cpu.yml
 
+# V1 (ADR-027): LiteLLM routing and the engine slot are RENDERED per model
+# generation by `make bootstrap`, which reads the .env model seeds once.
+# Every start includes the rendered engine override; `require-rendered`
+# guards starts on a platform that was never bootstrapped.
+RENDERED_DIR     = config/rendered
+RENDERED_ENGINE  = $(RENDERED_DIR)/docker-compose.engine.yml
+COMPOSE_RENDERED = -f $(RENDERED_ENGINE)
+AGENTD_CLI      ?= $(if $(wildcard .venv-agentd/bin/local-ezai),.venv-agentd/bin/local-ezai,local-ezai)
+
 CHAT_MODEL     ?= Qwen/Qwen2.5-7B-Instruct
 GPU_MODEL_DIR   = $(MODELS_DIR)/models--$(subst /,--,$(CHAT_MODEL))
 
@@ -59,32 +69,49 @@ up: ## Start all services with GPU (auto-resolves port conflicts)
 	@bash scripts/check-ports.sh
 	@$(MAKE) --no-print-directory up-run
 
-up-run:
+up-run: require-rendered
 	@if [ ! -d "$(GPU_MODEL_DIR)/snapshots" ] || [ ! -d "$(EMBED_MODEL_DIR)/snapshots" ] || [ ! -d "$(EMBED_CODE_DIR)/snapshots" ]; then \
 		echo "Models not found in $(MODELS_DIR) — downloading them first..."; \
 		$(MAKE) download-gpu; \
 	fi
-	docker compose up -d
+	docker compose -f docker-compose.yml $(COMPOSE_RENDERED) up -d
 	@echo ""
 	@echo "  Services starting... run 'make health' in 2-3 minutes"
 	@echo "  Chat UI:  http://localhost:$(or $(OPENWEBUI_PORT),3000)"
 	@echo "  Monitor:  http://localhost:$(or $(MONITOR_PORT),8888)"
 	@echo ""
 
-setup-gpu: ## One command for the NVIDIA GPU stack: pull, build, download models, start, wait until healthy
+setup-gpu: ## One command for the NVIDIA GPU stack: pull, build, download models, bootstrap, start, wait until healthy
 	$(MAKE) pull
 	$(MAKE) build
 	$(MAKE) download-gpu
+	$(MAKE) bootstrap
 	$(MAKE) up
 	$(MAKE) wait-ready
+
+bootstrap: ## Consume the .env model seeds ONCE into model generation 1 and render LiteLLM + engine config (V1)
+	@test -x .venv-agentd/bin/local-ezai || command -v local-ezai >/dev/null 2>&1 || $(MAKE) swe-install
+	$(AGENTD_CLI) bootstrap --env .env
+
+require-rendered:
+	@if [ ! -f "$(RENDERED_DIR)/litellm-config.yaml" ] || [ ! -f "$(RENDERED_ENGINE)" ]; then \
+		echo ""; \
+		echo "  No rendered platform config yet: LiteLLM routing and the engine slot are"; \
+		echo "  generated from the model registry. Run once:  make bootstrap"; \
+		echo "  (reads AI_RUNTIME / REASONING_MODEL / CODING_MODEL / CHAT_MODEL from .env;"; \
+		echo "   legacy CHAT_MODEL / CPU_* / N97_* settings are migrated automatically)"; \
+		echo ""; \
+		exit 1; \
+	fi
 
 download-gpu: ## Download models for the GPU stack (~15 GB default; runs in Docker, resumable)
 	@bash scripts/download-models.sh
 
-setup-cpu: ## One command for the vLLM CPU stack: pull, build, download models, start, wait until healthy
+setup-cpu: ## One command for the vLLM CPU stack: pull, build, download models, bootstrap, start, wait until healthy
 	$(MAKE) pull-cpu
 	$(MAKE) build
 	$(MAKE) download-cpu
+	$(MAKE) bootstrap
 	$(MAKE) up-cpu
 	$(MAKE) wait-ready
 
@@ -92,12 +119,12 @@ up-cpu: ## Start with vLLM on CPU (auto-downloads models, auto-resolves port con
 	@bash scripts/check-ports.sh
 	@$(MAKE) --no-print-directory up-cpu-run
 
-up-cpu-run:
+up-cpu-run: require-rendered
 	@if [ ! -d "$(CHAT_MODEL_DIR)/snapshots" ] || [ ! -d "$(EMBED_MODEL_DIR)/snapshots" ] || [ ! -d "$(EMBED_CODE_DIR)/snapshots" ]; then \
 		echo "Models not found in $(MODELS_DIR) — downloading them first (~3.6 GB)..."; \
 		$(MAKE) download-cpu; \
 	fi
-	$(COMPOSE_CPU) up -d
+	$(COMPOSE_CPU) $(COMPOSE_RENDERED) up -d
 	@echo ""
 	@echo "  vLLM CPU mode: http://localhost:$(or $(OPENWEBUI_PORT),3000)"
 	@echo "  vLLM takes 1-3 minutes to load the model — run 'make wait-ready' or 'make health'"
@@ -132,12 +159,13 @@ download-cpu: ## Download models for the vLLM CPU stack (~3.6 GB; runs in Docker
 
 update-cpu: ## Pull latest images and restart the vLLM CPU stack (do NOT use 'make update')
 	$(COMPOSE_CPU) pull
-	$(COMPOSE_CPU) up -d
+	$(COMPOSE_CPU) $(COMPOSE_RENDERED) up -d
 
-setup-n97: ## One command for the N97 stack: pull, build, download models, start, wait until healthy
+setup-n97: ## One command for the N97 stack: pull, build, download models, bootstrap, start, wait until healthy
 	$(MAKE) pull-n97
 	$(MAKE) build
 	$(MAKE) download-n97
+	$(MAKE) bootstrap
 	$(MAKE) up-n97
 	$(MAKE) wait-ready
 
@@ -145,12 +173,12 @@ up-n97: ## Start all services tuned for Intel N97 / low-power mini PCs (auto-dow
 	@bash scripts/check-ports.sh
 	@$(MAKE) --no-print-directory up-n97-run
 
-up-n97-run:
+up-n97-run: require-rendered
 	@if [ ! -f "$(N97_GGUF_DIR)/$(N97_MODEL_FILE)" ] || [ ! -d "$(EMBED_MODEL_DIR)/snapshots" ] || [ ! -d "$(EMBED_CODE_DIR)/snapshots" ]; then \
 		echo "Models not found — downloading them first..."; \
 		$(MAKE) download-n97; \
 	fi
-	docker compose -f docker-compose.yml -f docker-compose.n97.yml up -d
+	docker compose -f docker-compose.yml -f docker-compose.n97.yml $(COMPOSE_RENDERED) up -d
 	@echo ""
 	@echo "  N97 mode (llama.cpp): http://localhost:$(or $(OPENWEBUI_PORT),3000)"
 	@echo "  First start loads the model — run 'make wait-ready' or 'make health'"
@@ -160,8 +188,8 @@ up-n97-igpu: ## N97 profile with llama.cpp on the Intel iGPU (Vulkan): ~2-3x fas
 	@bash scripts/check-ports.sh
 	@$(MAKE) --no-print-directory up-n97-igpu-run
 
-up-n97-igpu-run:
-	docker compose -f docker-compose.yml -f docker-compose.n97.yml -f docker-compose.n97-igpu.yml up -d
+up-n97-igpu-run: require-rendered
+	docker compose -f docker-compose.yml -f docker-compose.n97.yml -f docker-compose.n97-igpu.yml $(COMPOSE_RENDERED) up -d
 	@echo ""
 	@echo "  N97 iGPU mode (llama.cpp + Vulkan): http://localhost:$(or $(OPENWEBUI_PORT),3000)"
 	@echo "  Check the iGPU was picked up:  docker compose logs vllm | grep -i vulkan"
@@ -175,7 +203,7 @@ download-n97: ## Download the small quantized model set for the N97 stack
 
 update-n97: ## Pull latest images and restart the N97 stack (do NOT use 'make update')
 	docker compose -f docker-compose.yml -f docker-compose.n97.yml pull
-	docker compose -f docker-compose.yml -f docker-compose.n97.yml up -d
+	docker compose -f docker-compose.yml -f docker-compose.n97.yml $(COMPOSE_RENDERED) up -d
 
 down: ## Stop all services
 	docker compose down
@@ -239,7 +267,7 @@ k8s-delete: ## Delete all Kubernetes resources
 
 update: ## Pull latest images and restart
 	docker compose pull
-	docker compose up -d
+	docker compose -f docker-compose.yml $(COMPOSE_RENDERED) up -d
 
 slurm-setup: ## Run the automated Slurm setup script
 	@bash slurm/setup-slurm.sh
