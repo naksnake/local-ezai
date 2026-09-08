@@ -25,6 +25,11 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, Field, field_validator
 
+from agentd.control import DEFAULT_HOST as CONTROL_DEFAULT_HOST
+from agentd.control import DEFAULT_PORT as CONTROL_DEFAULT_PORT
+from agentd.control import PORT_ENV as CONTROL_PORT_ENV
+from agentd.control import TOKEN_ENV as CONTROL_TOKEN_ENV
+
 ENV_PREFIX = "AGENTD_"
 REPO_CONFIG_FILENAME = ".agentd.yaml"
 
@@ -269,9 +274,23 @@ class PlatformConfig(BaseModel):
     config_dir: Path | None = None
 
 
+class ControlConfig(BaseModel):
+    """The ``ezaid`` control plane (PR-8, ADR-028). ``token`` is never
+    defaulted in code — the product variable ``EZAI_CONTROL_TOKEN`` (compose,
+    installer) or this section must provide it, otherwise the service refuses
+    to start. ``health_targets`` maps a service id to the URL ``/v1/health``
+    probes (adds to or replaces the defaults; an empty URL removes one)."""
+
+    host: str = CONTROL_DEFAULT_HOST
+    port: int = CONTROL_DEFAULT_PORT
+    token: str | None = None
+    health_targets: dict[str, str] = Field(default_factory=dict)
+
+
 class AgentdConfig(BaseModel):
     llm: LLMConfig = Field(default_factory=LLMConfig)
     platform: PlatformConfig = Field(default_factory=PlatformConfig)
+    control: ControlConfig = Field(default_factory=ControlConfig)
     limits: LimitsConfig = Field(default_factory=LimitsConfig)
     validation: ValidationConfig = Field(default_factory=ValidationConfig)
     browser_qa: BrowserQAConfig = Field(default_factory=BrowserQAConfig)
@@ -348,6 +367,13 @@ def load_config(
     # Stack convention: reuse the LiteLLM master key unless set explicitly.
     if not config.llm.api_key:
         config.llm.api_key = environ.get("LITELLM_MASTER_KEY", "sk-ai-service-2024")
+    # Stack convention (PR-8): the .env/compose product variables seed the
+    # control plane unless the config file or AGENTD_CONTROL__* set them.
+    control_section = merged.get("control") if isinstance(merged.get("control"), dict) else {}
+    if not config.control.token and environ.get(CONTROL_TOKEN_ENV):
+        config.control.token = environ[CONTROL_TOKEN_ENV]
+    if "port" not in control_section and environ.get(CONTROL_PORT_ENV, "").strip().isdigit():
+        config.control.port = int(environ[CONTROL_PORT_ENV].strip())
     return config
 
 

@@ -543,9 +543,10 @@ The hardened isolation level (ADR-021, superseding the ADR-014 interim):
 ## Development & testing
 
 ```bash
-make swe-install     # venv + editable install with dev extras
+make swe-install     # venv + editable install with dev, browser + control extras
 make swe-test        # unit + integration tests (no network, no models)
 make swe-lint        # ruff
+ezaid --print-spec   # the control plane's OpenAPI contract (agentd[control], PR-8)
 ```
 
 The test suite runs **fully offline**: a `ScriptedLLM` replays canned

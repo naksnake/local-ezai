@@ -38,6 +38,12 @@ Documentation = "https://github.com/naksnake/local-ezai/blob/main/agentd/README.
 browser = [
     "playwright>=1.40,<2",
 ]
+# ezaid control plane (PR-8, ADR-028): the only web framework in agentd —
+# direct-mode CLI and every repo-work verb never import it.
+control = [
+    "fastapi>=0.111,<1",
+    "uvicorn>=0.29,<1",
+]
 dev = [
     "pytest>=8.0",
     "ruff>=0.5",
@@ -46,6 +52,7 @@ dev = [
 [project.scripts]
 local-ezai = "agentd.main_cli:main"
 ezai = "agentd.cli:main"
+ezaid = "agentd.control.main:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/agentd"]

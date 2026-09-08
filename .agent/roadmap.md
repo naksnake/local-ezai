@@ -56,9 +56,13 @@ install / validate / benchmark, catalog + recommender), PR-5 (activate /
 upgrade / rollback / retire + governance queue, atomic apply with
 self-rollback), PR-6 (CLI namespaces, role aliases in code — CF-3 closed),
 PR-7 (bootstrap core + `.env` seed consumption + cutover) implemented
-([docs/prs/](../docs/prs/)); all seven await human merge on
-`claude/next-ready-pr-bnq7r3`. Next ready: **PR-8** (`ezaid` service
-skeleton, phase P2, ADR-028 Proposed).
+([docs/prs/](../docs/prs/)). 🟡 **P2 in progress (ADR-028 Proposed)** —
+PR-8 (`ezaid` service skeleton: FastAPI app behind `agentd[control]`,
+service-token auth + forwarded identity, single audit log, `/v1/health`
+aggregation, OpenAPI contract artifact, opt-in compose overlay)
+implemented. All eight await human merge on `claude/next-ready-pr-bnq7r3`.
+Next ready: **PR-9** (lifecycle + governance endpoints, idempotency keys,
+errors shared with the CLI).
 
 **Product review (ADR-026, 2026-09-01):** agnosticism audit passed with
 remediations — roles/groups become the only stable names (role aliases

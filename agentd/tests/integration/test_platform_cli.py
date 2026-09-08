@@ -357,3 +357,23 @@ def test_bootstrap_cli_reports_seed_problems_before_downloading(fresh_platform, 
     (root / ".env").unlink()
     code = main(["bootstrap", "--config", str(cfg)])
     assert code == 2  # no .env → usage-level error with the fix
+
+
+# ── status: control plane health (PR-8) ──────────────────────────────────────
+
+
+def test_status_reports_control_plane_health(cli, monkeypatch, capsys):
+    code, out = cli("status", "--json", capsys=capsys)
+    assert code == 0 and json.loads(out)["health"] == {"engine": True, "router": True,
+                                                       "control": True}
+    monkeypatch.setenv(platform_cli.CONTROL_PORT_ENV, "8765")
+    probed: list[str] = []
+
+    def probe(url: str) -> int:
+        probed.append(url)
+        return 503 if ":8765/" in url else 200
+
+    monkeypatch.setattr(platform_cli, "http_probe", probe)
+    code, out = cli("status", capsys=capsys)
+    assert code == 0 and "engine up · router up · control down" in out
+    assert "http://localhost:8765/health" in probed

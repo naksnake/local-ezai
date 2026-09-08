@@ -124,6 +124,7 @@ section of `.env.example`.
 | **Qdrant** — vector database | http://localhost:6333 | none |
 | **SearXNG** — private web search | http://localhost:8092 | none |
 | **mcpo** — MCP tools proxy | http://localhost:8200 | `MCP_API_KEY` from `.env` |
+| **ezaid** — platform control plane (optional: `make control-up`) | http://localhost:8010 | `EZAI_CONTROL_TOKEN` from `.env` (bearer; `/health` open) |
 
 ---
 
@@ -291,6 +292,8 @@ make embed       Ingest ./documents into the Qdrant knowledge base
 make install-autorag  (optional) install the in-OpenWebUI RAG filter — RAG
                  already works via the LiteLLM hook without this
 make monitor     Open the monitor dashboard in your browser
+make control-up  Start the ezaid control plane overlay (:8010; V1 P2, optional)
+make control-down / control-logs / control-spec  Stop it · follow logs · regenerate docs/api/ezaid-openapi.json
 make update      Pull latest images and restart
 make k8s         Deploy to K3s Kubernetes
 make clean       Remove all containers, images, volumes (destructive)

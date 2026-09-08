@@ -842,3 +842,44 @@ hand-written variants become test fixtures; `make bootstrap` /
 `require-rendered`; every `make up*` adds the rendered engine override and
 `make setup-*` bootstraps before `up` (host venv created on demand — the
 first departure from "no host Python", by design). ADR-027 → Accepted.
+
+## ADR-028 — `ezaid` Platform Control Plane (P2)
+**Date:** 2026-09-08 · **Status:** Proposed (entered with PR-8; flips to
+Accepted with the P2 phase-close PR-12)
+**Context:** ADR-025 (1) requires one control plane wrapping the Python
+functions the platform already has, so that CLI connected mode, the Admin
+Center and the SWE tool server are thin clients of one contract and one
+audit log, while the CLI's direct mode keeps working with the stack down.
+P1 delivered the functions (Registry v2, lifecycle, governance, renderer,
+bootstrap) behind the direct-mode CLI; nothing served them.
+**Decision (PR-8 slice — service skeleton):** `agentd.control` is a FastAPI
+application shipped behind the optional extra `agentd[control]` (the only
+web framework in agentd; direct mode and every repo-work verb never import
+it) and started as the **opt-in compose overlay** `docker-compose.control.yml`
+(`ezaid` on `EZAI_CONTROL_PORT`, default 8010; `./config` mounted as the
+platform; ADR-002: rollback = don't start it). Surface of this slice:
+liveness `GET /health` (open), `GET /v1/health` (control info + the
+`local-ezai status` snapshot + one probe per stack service — the probe
+table is **data**, addresses services by compose name and the engine slot
+by its neutral `engine` alias, and `control.health_targets` edits it),
+`GET /v1/whoami`, `GET /v1/audit`, `/openapi.json`. **Authentication:** a
+bearer **service token** (`EZAI_CONTROL_TOKEN`, never defaulted in code —
+no token, no start; constant-time compare) plus **forwarded identity**
+(`X-EZAI-User`, `X-EZAI-Client`) recorded as the audit actor `<user> via
+<client>`; rejected calls are audited without the secret. **Single audit
+log:** `agentd/audit.py` (append-only JSONL) extracted from the governance
+queue without changing path or record shape — governance transitions and
+control-plane events share `config/governance/log.jsonl`. **One error
+envelope** `{"error": {"code", "message", "fix"}}` for every failure — the
+vocabulary the CLI (connected mode) and the Admin Center print verbatim.
+**Contract artifact:** `docs/api/ezaid-openapi.json`, `info.version =
+CONTRACT_VERSION` (`1.0.0-draft.8`), tripwire-tested on the contract
+surface; `make control-spec` regenerates. `local-ezai status` probes the
+control plane.
+**Consequences:** PR-9 (lifecycle + governance endpoints, idempotency keys,
+shared errors) and PR-10 (async run registry) build on the auth dependency,
+the audit log, the envelope and the snapshot; PR-11 gives the CLI its
+connected mode against the same contract; PR-12 freezes the contract at
+`1.0.0`, adds the kill-the-daemon and two-concurrent-runs tests and flips
+this ADR to Accepted. Until then the overlay stays opt-in (`make
+control-up`) and no existing behavior changes.

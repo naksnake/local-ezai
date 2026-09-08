@@ -75,6 +75,27 @@ the generation is rendered only (the default until the cutover, PR-7).
 `--by NAME` sets the actor recorded in `config/governance/log.jsonl`
 (default `$USER`).
 
+## The control plane daemon (`ezaid`, V1 · PR-8)
+
+`ezaid` (installed with the `agentd[control]` extra) serves the platform
+over OpenAPI on `:8010` (`EZAI_CONTROL_PORT`), authenticated by the bearer
+service token `EZAI_CONTROL_TOKEN`. Normally it runs as the compose overlay
+(`make control-up`); on the host, run it inside the checkout or point it at
+the platform with `--platform config/`.
+
+| Command | What it does |
+|---|---|
+| `ezaid [--host H] [--port P] [--config C] [--platform DIR]` | serve; refuses to start without a token (exit 2, the fix printed) |
+| `ezaid --print-spec` · `ezaid --write-spec [PATH]` | the OpenAPI contract document (needs neither platform nor token); default path `docs/api/ezaid-openapi.json` |
+| `ezaid --version` | package version + contract version |
+
+Endpoints of this slice: `GET /health` (liveness, open) · `GET /v1/health`
+(control info + platform snapshot + per-service probes) · `GET /v1/whoami`
+· `GET /v1/audit?limit=N` · `GET /openapi.json`, `/docs`. Forward the human
+behind a call with `X-EZAI-User` (and the surface with `X-EZAI-Client`).
+Every error is `{"error": {"code", "message", "fix"}}`. `local-ezai status`
+reports `control up|down`.
+
 ## Exit codes
 
 `0` success · `1` run/validation/review/evolution failed, or a platform

@@ -39,7 +39,10 @@ openwebui:3000 · litellm:4000 (auto-RAG hook `config/litellm_custom_callbacks.p
 routing rendered per model generation into `config/rendered/`)
 · vllm:8000 (engine slot, network alias `engine`; materialization rendered
 per generation) · embed-server:8001 · qdrant:6333 · searxng:8092
-· mcpo:8200 (filesystem/memory/fetch/qdrant-rag) · monitor:8888 (RBAC).
+· mcpo:8200 (filesystem/memory/fetch/qdrant-rag) · monitor:8888 (RBAC)
+· **ezaid:8010** (V1 control plane, opt-in overlay
+`docker-compose.control.yml` — `make control-up`; bearer
+`EZAI_CONTROL_TOKEN`, contract `docs/api/ezaid-openapi.json`).
 Profiles: GPU (base) / cpu / n97 / n97-igpu via compose overrides with
 `!override` on `deploy`, plus the rendered engine override on every start.
 Config via `.env` (`.env.example` = schema; model seeds read once by
@@ -206,10 +209,22 @@ through `local-ezai model …` + the governance queue. Modules:
   the one implicit approval → apply → `EZAI_SEEDS_CONSUMED` stamp;
   `config/rendered/` is the live LiteLLM + engine config; the hand-written
   LiteLLM variants are test fixtures.
+- **Control plane skeleton** (`control/`, `audit.py`, PR-8, ADR-028
+  Proposed): `ezaid` — FastAPI behind the `agentd[control]` extra (direct
+  mode never imports it): bearer service token + forwarded identity
+  (`X-EZAI-User`/`X-EZAI-Client` → audit actor), the **single audit log**
+  shared with the governance queue, one error envelope, `/v1/health`
+  aggregation (service table as data, engine via the `engine` alias),
+  `/v1/whoami`, `/v1/audit`, versioned OpenAPI artifact
+  `docs/api/ezaid-openapi.json` (contract-surface tripwire); opt-in
+  compose overlay + `make control-*`; `local-ezai status` probes it.
 
 ## Target additions (control/execution/knowledge planes)
 
 - **agentd** — agent runtime + workflow engine + permission engine (FastAPI).
+  As built (ADR-028, PR-8): the served control plane is `ezaid`
+  (`agentd.control`), an opt-in overlay over the same package; the runtime
+  itself stays an in-process library behind the CLI.
 - **toolgw** — tool gateway: registry, risk tiers T0–T4, per-run scoping,
   audit (mcpo stays for chat).
 - **sandboxd** — per-run runner containers + git worktrees

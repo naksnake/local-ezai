@@ -138,9 +138,17 @@ diffs attached. **ADR-027 → Accepted.**
 
 ### Phase P2 — `ezaid` control plane (ADR-028)
 
-**PR-8 · Service skeleton** — M: OpenAPI app, service-token auth +
-forwarded identity, append-only audit log, `/health` aggregation, compose
-overlay service (`EZAI_CONTROL_PORT`), versioned spec artifact.
+**PR-8 · Service skeleton** — M — ✅ **implemented**
+([prs/PR-8-control-plane-skeleton.md](prs/PR-8-control-plane-skeleton.md);
+22 tests, suite 504 green, goldens intact; **ADR-028 → Proposed**)
+Scope: OpenAPI app, service-token auth + forwarded identity, append-only
+audit log, `/health` aggregation, compose overlay service
+(`EZAI_CONTROL_PORT`), versioned spec artifact.
+As built: `agentd.control` (FastAPI behind the `agentd[control]` extra),
+`agentd/audit.py` shared with the governance queue, contract
+`1.0.0-draft.8` at `docs/api/ezaid-openapi.json` (contract-surface
+tripwire), opt-in overlay `docker-compose.control.yml` + `make control-*`,
+`local-ezai status` shows control health.
 **PR-9 · Lifecycle + governance endpoints** — M: expose PR-4/5 operations;
 idempotency keys; error objects shared with CLI.
 **PR-10 · Run endpoints** — M: async run registry (start/status/report/

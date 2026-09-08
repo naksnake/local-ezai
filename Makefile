@@ -40,6 +40,12 @@ RENDERED_ENGINE  = $(RENDERED_DIR)/docker-compose.engine.yml
 COMPOSE_RENDERED = -f $(RENDERED_ENGINE)
 AGENTD_CLI      ?= $(if $(wildcard .venv-agentd/bin/local-ezai),.venv-agentd/bin/local-ezai,local-ezai)
 
+# V1 P2 (ADR-028): the ezaid control plane is an OPT-IN compose overlay
+# (ADR-002 — rollback = don't start it) until CLI connected mode lands.
+COMPOSE_CONTROL  = -f docker-compose.control.yml
+EZAID_CLI       ?= $(if $(wildcard .venv-agentd/bin/ezaid),.venv-agentd/bin/ezaid,ezaid)
+EZAID_SPEC       = docs/api/ezaid-openapi.json
+
 CHAT_MODEL     ?= Qwen/Qwen2.5-7B-Instruct
 GPU_MODEL_DIR   = $(MODELS_DIR)/models--$(subst /,--,$(CHAT_MODEL))
 
@@ -281,16 +287,33 @@ clean: ## Remove all containers, images, and volumes (WARNING: deletes data)
 # ═══════════════════════════════════════════════════════════════════════════
 # Autonomous SWE runtime (agentd) — additive targets, see agentd/README.md
 # ═══════════════════════════════════════════════════════════════════════════
-.PHONY: swe-install swe-browsers swe-test swe-lint swe-run swe-plan
+.PHONY: swe-install swe-browsers swe-test swe-lint swe-run swe-plan \
+        control-up control-down control-logs control-spec
 
-swe-install: ## Install the agentd runtime into ./.venv-agentd (editable, dev + browser extras)
+swe-install: ## Install the agentd runtime into ./.venv-agentd (editable, dev + browser + control extras)
 	python3 -m venv .venv-agentd
 	.venv-agentd/bin/pip install --upgrade pip -q
-	.venv-agentd/bin/pip install -e './agentd[dev,browser]'
+	.venv-agentd/bin/pip install -e './agentd[dev,browser,control]'
 	@echo ""
 	@echo "  agentd installed. Try:  .venv-agentd/bin/ezai run \"...\" --repo /path/to/repo"
 	@echo "  For Browser QA, also run:  make swe-browsers"
 	@echo ""
+
+control-up: ## Start the ezaid control plane (:EZAI_CONTROL_PORT, default 8010) as a compose overlay
+	docker compose -f docker-compose.yml $(COMPOSE_CONTROL) up -d --build ezaid
+	@echo ""
+	@echo "  ezaid: http://localhost:$(or $(EZAI_CONTROL_PORT),8010)/health   (docs: /docs, spec: /openapi.json)"
+	@echo "  Calls under /v1 need:  Authorization: Bearer $$EZAI_CONTROL_TOKEN"
+	@echo ""
+
+control-down: ## Stop and remove the ezaid control plane container (the stack keeps running)
+	docker compose -f docker-compose.yml $(COMPOSE_CONTROL) rm -sf ezaid
+
+control-logs: ## Follow the ezaid control plane logs
+	docker compose -f docker-compose.yml $(COMPOSE_CONTROL) logs -f ezaid
+
+control-spec: ## Regenerate the versioned OpenAPI contract artifact ($(EZAID_SPEC)) from the app
+	$(EZAID_CLI) --write-spec $(EZAID_SPEC)
 
 swe-browsers: ## Download the Playwright Chromium used by Browser QA
 	.venv-agentd/bin/playwright install chromium

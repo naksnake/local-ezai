@@ -1,0 +1,666 @@
+{
+  "components": {
+    "schemas": {
+      "AuditPage": {
+        "properties": {
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/AuditRecord"
+            },
+            "title": "Records",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "records"
+        ],
+        "title": "AuditPage",
+        "type": "object"
+      },
+      "AuditRecord": {
+        "properties": {
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "details": {
+            "additionalProperties": true,
+            "title": "Details",
+            "type": "object"
+          },
+          "event": {
+            "title": "Event",
+            "type": "string"
+          },
+          "generation": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generation"
+          },
+          "request_id": {
+            "default": "",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "ts": {
+            "title": "Ts",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ts",
+          "event",
+          "actor"
+        ],
+        "title": "AuditRecord",
+        "type": "object"
+      },
+      "ControlInfo": {
+        "properties": {
+          "contract": {
+            "title": "Contract",
+            "type": "string"
+          },
+          "platform_root": {
+            "default": "",
+            "title": "Platform Root",
+            "type": "string"
+          },
+          "service": {
+            "default": "ezaid",
+            "title": "Service",
+            "type": "string"
+          },
+          "started_at": {
+            "title": "Started At",
+            "type": "string"
+          },
+          "uptime_s": {
+            "title": "Uptime S",
+            "type": "number"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "contract",
+          "started_at",
+          "uptime_s"
+        ],
+        "title": "ControlInfo",
+        "type": "object"
+      },
+      "ErrorBody": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "fix": {
+            "default": "",
+            "title": "Fix",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ErrorBody",
+        "type": "object"
+      },
+      "ErrorEnvelope": {
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorBody"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "title": "ErrorEnvelope",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HealthReport": {
+        "properties": {
+          "control": {
+            "$ref": "#/components/schemas/ControlInfo"
+          },
+          "ok": {
+            "description": "every probed service answered healthy",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "platform": {
+            "additionalProperties": true,
+            "description": "the `local-ezai status` snapshot: generation, rendered generation, slot runtime, model states, pending approvals",
+            "title": "Platform",
+            "type": "object"
+          },
+          "services": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceHealth"
+            },
+            "title": "Services",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ok",
+          "control",
+          "platform",
+          "services"
+        ],
+        "title": "HealthReport",
+        "type": "object"
+      },
+      "Identity": {
+        "properties": {
+          "actor": {
+            "description": "what the audit log records: `<user> via <client>`",
+            "title": "Actor",
+            "type": "string"
+          },
+          "client": {
+            "title": "Client",
+            "type": "string"
+          },
+          "user": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User"
+          }
+        },
+        "required": [
+          "actor",
+          "client"
+        ],
+        "title": "Identity",
+        "type": "object"
+      },
+      "Liveness": {
+        "properties": {
+          "contract": {
+            "title": "Contract",
+            "type": "string"
+          },
+          "service": {
+            "default": "ezaid",
+            "title": "Service",
+            "type": "string"
+          },
+          "status": {
+            "default": "ok",
+            "title": "Status",
+            "type": "string"
+          },
+          "uptime_s": {
+            "title": "Uptime S",
+            "type": "number"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "contract",
+          "uptime_s"
+        ],
+        "title": "Liveness",
+        "type": "object"
+      },
+      "ServiceHealth": {
+        "properties": {
+          "error": {
+            "default": "",
+            "title": "Error",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "latency_ms": {
+            "default": 0,
+            "title": "Latency Ms",
+            "type": "integer"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "url",
+          "ok"
+        ],
+        "title": "ServiceHealth",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "serviceToken": {
+        "description": "the platform service token (EZAI_CONTROL_TOKEN)",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "One authenticated control plane over the platform's declarative state \u2014 Registry v2 + generations, runtime descriptors, governance queue, rendered artifacts \u2014 for the `local-ezai` CLI (connected mode), the Admin Center and the SWE tool server. Every `/v1` call presents the service token as a bearer credential and may forward the human it acts for (`X-EZAI-User`) and its own name (`X-EZAI-Client`); the audit log records `<user> via <client>`.",
+    "title": "Local-EZAI Platform Control Plane (ezaid)",
+    "version": "1.0.0-draft.8",
+    "x-contract-status": "draft \u2014 frozen by the P2 phase-close PR"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "liveness",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Liveness"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Liveness (unauthenticated)",
+        "tags": [
+          "control"
+        ]
+      }
+    },
+    "/v1/audit": {
+      "get": {
+        "operationId": "audit_tail",
+        "parameters": [
+          {
+            "description": "newest records to return",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "newest records to return",
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "forwarded identity of the human the caller acts for",
+            "in": "header",
+            "name": "X-EZAI-User",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "forwarded identity of the human the caller acts for",
+              "title": "X-Ezai-User"
+            }
+          },
+          {
+            "description": "name of the calling surface (cli, admin-center, \u2026)",
+            "in": "header",
+            "name": "X-EZAI-Client",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "name of the calling surface (cli, admin-center, \u2026)",
+              "title": "X-Ezai-Client"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "missing or invalid service token"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "no audit log attached"
+          }
+        },
+        "security": [
+          {
+            "serviceToken": []
+          }
+        ],
+        "summary": "Tail of the platform audit log",
+        "tags": [
+          "governance"
+        ]
+      }
+    },
+    "/v1/health": {
+      "get": {
+        "operationId": "aggregated_health",
+        "parameters": [
+          {
+            "description": "forwarded identity of the human the caller acts for",
+            "in": "header",
+            "name": "X-EZAI-User",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "forwarded identity of the human the caller acts for",
+              "title": "X-Ezai-User"
+            }
+          },
+          {
+            "description": "name of the calling surface (cli, admin-center, \u2026)",
+            "in": "header",
+            "name": "X-EZAI-Client",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "name of the calling surface (cli, admin-center, \u2026)",
+              "title": "X-Ezai-Client"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "missing or invalid service token"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not attached to a platform"
+          }
+        },
+        "security": [
+          {
+            "serviceToken": []
+          }
+        ],
+        "summary": "Stack + platform health",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/v1/whoami": {
+      "get": {
+        "operationId": "whoami",
+        "parameters": [
+          {
+            "description": "forwarded identity of the human the caller acts for",
+            "in": "header",
+            "name": "X-EZAI-User",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "forwarded identity of the human the caller acts for",
+              "title": "X-Ezai-User"
+            }
+          },
+          {
+            "description": "name of the calling surface (cli, admin-center, \u2026)",
+            "in": "header",
+            "name": "X-EZAI-Client",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "name of the calling surface (cli, admin-center, \u2026)",
+              "title": "X-Ezai-Client"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Identity"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "missing or invalid service token"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "serviceToken": []
+          }
+        ],
+        "summary": "The identity the audit log records for this caller",
+        "tags": [
+          "control"
+        ]
+      }
+    }
+  },
+  "servers": [
+    {
+      "description": "compose overlay (EZAI_CONTROL_PORT)",
+      "url": "http://localhost:8010"
+    }
+  ]
+}

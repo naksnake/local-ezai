@@ -26,14 +26,14 @@ applies approved requests.
 
 from __future__ import annotations
 
-import json
-import time
 from pathlib import Path
 from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field
 
+from agentd.audit import AuditLog, AuditRecord
+from agentd.audit import now as _now
 from agentd.logging_setup import get_logger
 
 log = get_logger("governance")
@@ -90,26 +90,19 @@ class ChangeRequest(BaseModel):
         return self.status in OPEN_STATUSES
 
 
-class AuditRecord(BaseModel):
-    ts: str
-    event: str
-    actor: str
-    request_id: str = ""
-    generation: int | None = None
-    details: dict[str, Any] = Field(default_factory=dict)
-
-
-def _now() -> str:
-    return time.strftime("%Y-%m-%dT%H:%M:%S")
+__all__ = ["AuditRecord", "ChangeRequest", "Decision", "GovernanceError", "GovernanceQueue"]
 
 
 class GovernanceQueue:
-    """File-backed queue + append-only log under ``<config>/governance/``."""
+    """File-backed queue + append-only log under ``<config>/governance/``.
+    The log is the platform's single audit log (``agentd.audit``) — the
+    control plane appends to the same file."""
 
     def __init__(self, config_dir: Path) -> None:
         self.root = Path(config_dir) / GOVERNANCE_DIRNAME
         self.queue_dir = self.root / QUEUE_DIRNAME
         self.log_path = self.root / LOG_FILENAME
+        self.audit_log = AuditLog(self.log_path)
 
     # ── storage ──────────────────────────────────────────────────────────
 
@@ -145,20 +138,13 @@ class GovernanceQueue:
 
     def record(self, event: str, actor: str, *, request_id: str = "",
                generation: int | None = None, **details: Any) -> AuditRecord:
-        entry = AuditRecord(ts=_now(), event=event, actor=actor, request_id=request_id,
-                            generation=generation, details=details)
-        self.root.mkdir(parents=True, exist_ok=True)
-        with self.log_path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(entry.model_dump(mode="json"), sort_keys=True) + "\n")
+        entry = self.audit_log.record(event, actor, request_id=request_id,
+                                      generation=generation, **details)
         log.info("governance: %s %s %s", event, request_id or "", actor)
         return entry
 
     def audit(self, limit: int | None = None) -> list[AuditRecord]:
-        if not self.log_path.is_file():
-            return []
-        records = [AuditRecord.model_validate(json.loads(line))
-                   for line in self.log_path.read_text(encoding="utf-8").splitlines() if line]
-        return records[-limit:] if limit else records
+        return self.audit_log.tail(limit)
 
     # ── lifecycle of a request ───────────────────────────────────────────
 

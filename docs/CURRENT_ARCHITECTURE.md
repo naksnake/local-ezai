@@ -47,6 +47,16 @@ by container name. All external configuration flows through `.env`
 | 7 | **mcpo** | local build (`mcpo/Dockerfile`) | 8200 | MCP→OpenAPI proxy exposing 4 MCP servers as bearer-authenticated REST tools |
 | 8 | **monitor** | local build — FastAPI + SSE (`monitor/monitor.py`, 813 lines) | 8888 | Live health dashboard; RAG upload/list/delete UI; HTTP Basic RBAC (admin/viewer) + Bearer machine credential |
 
+**Optional overlay (V1 P2, PR-8 / ADR-028):** **ezaid** — local build
+`agentd/Dockerfile` (FastAPI, `agentd[control]`), port 8010
+(`EZAI_CONTROL_PORT`), the platform control plane: bearer service token
+`EZAI_CONTROL_TOKEN` + forwarded identity for the audit trail, the single
+audit log (`config/governance/log.jsonl`), `/v1/health` aggregation over the
+eight services + the platform snapshot, OpenAPI contract
+`docs/api/ezaid-openapi.json`. Defined in `docker-compose.control.yml`,
+started with `make control-up`; not part of `make up` until CLI connected
+mode (PR-11).
+
 ### Deployment profiles (same topology, different engine)
 
 | Profile | Compose files | Engine | Default model |

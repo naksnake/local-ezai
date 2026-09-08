@@ -33,6 +33,19 @@ surface. It is stateless over the declarative stores:
 | per-repo `.agent/*` | memory, repo registry overrides (existing) |
 | governance log | approvals/rejections, append-only |
 
+> **As built (PR-8, ADR-028 Proposed):** `ezaid` exists as `agentd.control`
+> (FastAPI behind the `agentd[control]` extra; direct mode never imports
+> it), started as the opt-in overlay `docker-compose.control.yml`
+> (`make control-up`, `EZAI_CONTROL_PORT`). This slice serves liveness
+> `/health`, `/v1/health` (control info + the `status` snapshot + one probe
+> per stack service, the table being data), `/v1/whoami`, `/v1/audit`, and
+> `/openapi.json`. Authentication is the service token `EZAI_CONTROL_TOKEN`
+> (bearer; no token → no start) with forwarded identity `X-EZAI-User` /
+> `X-EZAI-Client`, recorded in the **single audit log** — `agentd/audit.py`,
+> the same `config/governance/log.jsonl` the governance queue writes.
+> Lifecycle/governance/run endpoints (PR-9/10) and connected mode (PR-11)
+> follow on these primitives.
+
 ## 2. CLI offline-first guarantee (non-negotiable)
 
 The SWE runtime must keep working with the stack **down** (a laptop, CI, a
@@ -105,6 +118,14 @@ the CLI.
   verb and at most one WebUI action.
 - Errors are the same objects everywhere — the Admin Center shows the same
   message the CLI prints (no divergent failure vocabularies).
+
+> **As built (PR-8):** the contract is `docs/api/ezaid-openapi.json`,
+> `info.version` = `agentd.control.CONTRACT_VERSION` (`1.0.0-draft.8`; the
+> P2 close freezes `1.0.0`). A tripwire test compares the committed
+> document with the live app on the contract surface (operations,
+> parameters, response codes, security, schema names) — a contract change
+> ships its regenerated artifact (`make control-spec`). The error object is
+> `{"error": {"code", "message", "fix"}}` for every failure.
 
 ## 7. Consistency test (release gate)
 

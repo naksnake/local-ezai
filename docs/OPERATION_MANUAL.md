@@ -22,11 +22,28 @@ mcpo :8200. Every port is overridable in `.env`; occupied ports are
 auto-relocated on `make up*`.
 
 **Secrets** live in `.env` (never committed): `LITELLM_MASTER_KEY`,
-`WEBUI_SECRET_KEY`, `MCP_API_KEY`, `SEARXNG_SECRET`, monitor passwords.
-Generate with `openssl rand -hex 32`.
+`WEBUI_SECRET_KEY`, `MCP_API_KEY`, `SEARXNG_SECRET`, `EZAI_CONTROL_TOKEN`,
+monitor passwords. Generate with `openssl rand -hex 32`.
 
 **Monitor RBAC:** `admin` / `viewer` HTTP Basic (passwords in `.env`);
 scripts authenticate with `Authorization: Bearer $MCP_API_KEY`.
+
+### The control plane (`ezaid`, optional overlay — V1 P2)
+
+| Action | Command |
+|---|---|
+| Start / stop / logs | `make control-up` · `make control-down` · `make control-logs` |
+| Liveness (open) | `curl http://localhost:8010/health` |
+| Aggregated health (stack services + platform state) | `curl -H "Authorization: Bearer $EZAI_CONTROL_TOKEN" http://localhost:8010/v1/health` |
+| Audit tail | `curl -H "Authorization: Bearer $EZAI_CONTROL_TOKEN" "http://localhost:8010/v1/audit?limit=50"` |
+| Who am I (the audit actor) | `… -H "X-EZAI-User: nita" -H "X-EZAI-Client: cli" http://localhost:8010/v1/whoami` |
+| Contract | `http://localhost:8010/docs` · `/openapi.json` · committed at `docs/api/ezaid-openapi.json` (`make control-spec` regenerates) |
+
+Every `/v1` call presents the service token; the calling surface forwards
+the human it acts for in `X-EZAI-User` (and names itself in
+`X-EZAI-Client`), which the audit log records as `<user> via <client>`.
+Without a token the service refuses to start. `local-ezai status` shows
+`control up|down`. Port: `EZAI_CONTROL_PORT` (default 8010).
 
 ## 2. The Autonomous SWE runtime
 

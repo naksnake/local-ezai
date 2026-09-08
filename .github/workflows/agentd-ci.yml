@@ -19,7 +19,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install
-        run: pip install -e './agentd[dev,browser]'
+        run: pip install -e './agentd[dev,browser,control]'
       - name: Install Chromium for Browser QA tests
         run: python -m playwright install --with-deps chromium
       - name: Lint

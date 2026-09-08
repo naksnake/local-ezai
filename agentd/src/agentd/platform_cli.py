@@ -38,6 +38,8 @@ from agentd.activation import ComposeReloader, EngineHealth, Platform
 from agentd.capability import PROFILE_PRESETS, CapabilityVector, detect_vector
 from agentd.catalog import Catalog, CatalogError, load_catalog, recommend
 from agentd.config import AgentdConfig
+from agentd.control import DEFAULT_PORT as CONTROL_PORT
+from agentd.control import PORT_ENV as CONTROL_PORT_ENV
 from agentd.governance import ChangeRequest, GovernanceError, GovernanceQueue
 from agentd.lifecycle import (
     EngineHTTP,
@@ -474,38 +476,51 @@ def _manifest_generation(ctx: PlatformContext) -> int | None:
     return data.get("generation") if isinstance(data, dict) else None
 
 
-def cmd_status(ctx: PlatformContext, args: argparse.Namespace) -> int:
+def platform_snapshot(ctx: PlatformContext) -> dict[str, Any]:
+    """The platform's declarative state as one JSON-able mapping — what
+    ``local-ezai status`` prints and what the control plane's
+    ``GET /v1/health`` reports (PR-8). Read fresh on every call."""
     registry = ctx.registry(required=False)
     pending = ctx.queue.list(status="pending")
-    engine_port = os.environ.get("LLM_PORT", str(ENGINE_PORT))
-    router_port = os.environ.get("LITELLM_PORT", str(ROUTER_PORT))
-    health = {
-        "engine": http_probe(f"http://localhost:{engine_port}/health") == 200,
-        "router": http_probe(f"http://localhost:{router_port}/health/liveliness") == 200,
-    }
     models = {name: {"state": e.state, "runtime": e.provider, "size_gb": e.size_gb,
                      "tokens_per_s": e.benchmarks.get("tokens_per_s")}
               for name, e in (registry.models.items() if registry else {})}
     active_runtimes = sorted({e.provider for e in (registry.models.values() if registry else [])
                               if e.state == "active"})
-    data = {"platform_root": str(ctx.root), "config_dir": str(ctx.config_dir),
+    return {"platform_root": str(ctx.root), "config_dir": str(ctx.config_dir),
             "capability_class": ctx.platform.klass, "accelerator": ctx.platform.accel,
             "generation": registry.generation if registry else None,
             "note": registry.note if registry else None,
             "rendered_generation": _manifest_generation(ctx),
             "slot_runtime": active_runtimes[0] if len(active_runtimes) == 1 else active_runtimes,
-            "models": models, "pending_approvals": len(pending), "health": health}
+            "models": models, "pending_approvals": len(pending)}
+
+
+def cmd_status(ctx: PlatformContext, args: argparse.Namespace) -> int:
+    data = platform_snapshot(ctx)
+    engine_port = os.environ.get("LLM_PORT", str(ENGINE_PORT))
+    router_port = os.environ.get("LITELLM_PORT", str(ROUTER_PORT))
+    control_port = os.environ.get(CONTROL_PORT_ENV, str(CONTROL_PORT))
+    health = {
+        "engine": http_probe(f"http://localhost:{engine_port}/health") == 200,
+        "router": http_probe(f"http://localhost:{router_port}/health/liveliness") == 200,
+        "control": http_probe(f"http://localhost:{control_port}/health") == 200,
+    }
+    data["health"] = health
+    models, pending = data["models"], data["pending_approvals"]
+    bootstrapped = data["generation"] is not None
     lines = [f"platform:   {ctx.root}",
              f"hardware:   class {ctx.platform.klass} · accelerator {ctx.platform.accel} · "
              f"{ctx.vector.system_memory_gb:.0f} GB RAM · {ctx.vector.cpu_cores} cores",
-             f"generation: {data['generation'] if registry else '(none — not bootstrapped)'}"
-             + (f" — {registry.note}" if registry and registry.note else "")
+             f"generation: {data['generation'] if bootstrapped else '(none — not bootstrapped)'}"
+             + (f" — {data['note']}" if bootstrapped and data["note"] else "")
              + (f" · rendered {data['rendered_generation']}"
                 if data["rendered_generation"] is not None else " · not rendered"),
              f"runtime:    {data['slot_runtime'] or '(no active model)'}",
              f"health:     engine {'up' if health['engine'] else 'down'} · "
-             f"router {'up' if health['router'] else 'down'}",
-             f"approvals:  {len(pending)} pending"
+             f"router {'up' if health['router'] else 'down'} · "
+             f"control {'up' if health['control'] else 'down'}",
+             f"approvals:  {pending} pending"
              + (" — local-ezai governance list" if pending else "")]
     if models:
         lines.append("models:")
