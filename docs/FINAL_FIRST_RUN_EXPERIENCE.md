@@ -41,6 +41,12 @@ Rules that make this clean:
 1. **Model references are source URIs or catalog ids** — `hf:`, `gguf:`
    (URL or path), or a bare catalog id. Any family, any vendor. `auto`
    delegates to the requirements-driven recommender (R-5).
+   > **As-built (PR-4, `fetch.parse_source`):** the resolver accepts
+   > `hf:<org/repo>`, `gguf:<https url>`, `gguf:hf://<org/repo>/<file.gguf>`,
+   > `gguf:<local path>`, a catalog id, and `auto`; anything else is
+   > rejected with every accepted form listed (F8). The catalog is the
+   > packaged seed (`agentd/defaults/catalog.yaml`) merged with
+   > `config/catalog/*.yaml`.
 2. **Read once.** `make setup` consumes these seeds to build
    **generation 1** of the model registry and then *never reads them
    again* — no dual source of truth. Post-setup changes happen in the

@@ -91,7 +91,9 @@ capability negotiation failures name the missing capability (CF-6).
 Behavior notes: existing hand-written LiteLLM configs untouched until
 PR-7 (renderer writes to a parallel path until cutover).
 
-**PR-4 · Lifecycle: install / validate / benchmark** — L
+**PR-4 · Lifecycle: install / validate / benchmark** — L — ✅ **implemented**
+([prs/PR-4-lifecycle-install-benchmark.md](prs/PR-4-lifecycle-install-benchmark.md);
+35 tests, suite 413 green, PR-1/PR-3 goldens intact)
 Scope: source resolvers (`hf:`, `gguf:` url/path, catalog id), checksummed
 resumable download, provider `validate_model`, `bench` absorbing `make
 bench`; catalog as pluggable data + requirements-driven recommender

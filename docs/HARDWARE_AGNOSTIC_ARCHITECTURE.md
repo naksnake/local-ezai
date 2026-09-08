@@ -95,6 +95,14 @@ It estimates conservatively and **never blocks a user override**
 (`--i-know` / explicit WebUI confirmation): agnosticism includes the
 freedom to run something slowly.
 
+> **As-built (PR-4, `catalog.recommend`):** the recommender is the first
+> consumer of `fit()`: for a group it takes every catalog variant a runtime
+> serves, checks the group's role contracts against the (model × runtime)
+> pair on this class, ranks by placement (accelerator before system
+> memory) then declared size, and returns every candidate with its verdict
+> so `auto` choices are explainable (F9). Catalog entries declare sizes,
+> context, template, tool-call format, and license — never a brand.
+
 ## 4. Benchmarks replace assumptions
 
 Wherever a design would want a hardware assumption, it uses **measured

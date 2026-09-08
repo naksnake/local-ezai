@@ -35,6 +35,13 @@ Only the `benchmarked → active` and `active → active(new version)`
 transitions change what serves users — **those two require approval**.
 Everything else is freely self-service.
 
+> **As-built (PR-4, `lifecycle.TRANSITIONS`):** the machine is a data table
+> enforced by `transition()`: registered → installed | failed; installed →
+> installed (re-install) | benchmarked | failed; benchmarked → installed |
+> benchmarked | active | failed; active → active | retired; retired →
+> active | installed; failed → installed | failed (retry). The activation
+> paths are exercised by PR-5. `uninstall` is removal, not a state.
+
 ## 2. Operations
 
 ### `model install <name|source>`
@@ -46,6 +53,22 @@ dry-load + one-token probe) → `installed`. Idempotent; resumable;
 disk-budget-aware (warns against the runs/workspaces prune guidance,
 OPERATION_MANUAL).
 
+> **As-built (PR-4, `agentd/src/agentd/lifecycle.py` + `fetch.py` +
+> `catalog.py`):** `install()` resolves a registry name, `hf:<org/repo>`,
+> `gguf:<url | hf://org/repo/file.gguf | path>`, a catalog id, or `auto`
+> (group + recommender) into a model entry whose runtime is chosen by the
+> descriptor that serves the source format; fetches into the directory the
+> runtime descriptor mounts (`weights.host_dir`, compose-interpolated) — GGUF
+> natively with HTTP-Range resume and streaming SHA-256 (recorded back into
+> `source.sha256`; a mismatch discards the download), hub repositories
+> through the same `hf download` path the scripts use; then runs the
+> descriptor's `validate_model` verb against a **side-loaded** engine
+> (§PROVIDER_ABSTRACTION 6) and sets `installed` (measured `size_gb`,
+> `artifact`, `installed_at`) or `failed` (`error` names the step). Present
+> and verified weights are reused. Installing never touches groups or
+> routing; the generation is persisted when the registry is servable
+> (pre-bootstrap results stay in memory and say so).
+
 ### `model benchmark [<name>]`
 Extends the shipped `evaluate-models` machinery (ADR-020/024): per-role
 protocol probes + latency, **tokens/sec** (the existing `make bench`
@@ -54,6 +77,20 @@ recorded on the model entry and in `.agent/model_benchmarks.json` trend
 history; benchmarking a non-active model uses a **temporary side-load**
 (llama.cpp) or a scheduled engine swap window (vLLM) per
 [PROVIDER_ABSTRACTION.md](PROVIDER_ABSTRACTION.md) §6.
+
+> **As-built (PR-4, `lifecycle.benchmark`):** the tokens/sec measurement of
+> `make bench` is absorbed as the descriptor's `bench` verb — server-side
+> timings when the descriptor names the fields (`timings_field`,
+> `rate_key`, …), otherwise completion tokens over wall clock — run against
+> a side-loaded engine or, with `base_url`, the live one. The result lands
+> on the entry (`benchmarks`: tokens/s, prompt tokens/s, latency, via,
+> class) and as a capped per-model series under the new `models` key of
+> `.agent/model_benchmarks.json`, which `evaluate-models` now carries
+> forward untouched; the entry becomes `benchmarked` (an `active` model
+> keeps its state). Per-role protocol probes remain `evaluate-models`.
+> The scheduled swap window for runtimes whose side-load does not fit is
+> not implemented in this slice — side-load is attempted; the fit verdict is
+> advisory data for PR-5/PR-6 to gate on.
 
 ### `model activate <name> [--group G] [--role R --pin]`
 Creates an **activation request**: proposed generation diff (groups/roles

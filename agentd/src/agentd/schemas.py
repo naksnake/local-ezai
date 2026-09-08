@@ -416,6 +416,10 @@ class ModelEvalReport(BaseModel):
     metrics: RunMetrics | None = None
     #: Compact summaries of previous evaluations (trend data, capped).
     history: list[dict] = Field(default_factory=list)
+    #: Per-model lifecycle benchmarks (tokens/sec measurements, capped per
+    #: model) recorded by ``local-ezai model benchmark`` (PR-4); carried
+    #: forward untouched by evaluate-models.
+    models: dict[str, list[dict]] = Field(default_factory=dict)
 
 
 # ── Run report ───────────────────────────────────────────────────────────────

@@ -167,6 +167,16 @@ foundations:
   path until the PR-7 cutover). The compose slot service carries the
   neutral network alias **`engine`** (ADR-026 R-3); `vllm:8000` still
   works.
+- **Lifecycle install / validate / benchmark** (`lifecycle.py`,
+  `fetch.py`, `catalog.py`, `defaults/catalog.yaml`, PR-4): source
+  resolver (`hf:` · `gguf:` · catalog id · `auto`), resumable checksummed
+  GGUF fetch + delegated hub download into the descriptor's weights dir,
+  state machine as data, `validate_model`/`bench` verbs run against a
+  **side-loaded** engine (standalone compose project from the PR-3
+  materialization, ephemeral port, always torn down), tokens/sec on the
+  entry + per-model trend series in `.agent/model_benchmarks.json`
+  (coexists with `evaluate-models`), catalog as pluggable data with a
+  `fit()`-driven recommender. No CLI yet (PR-6); no activation (PR-5).
 
 ## Target additions (control/execution/knowledge planes)
 

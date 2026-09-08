@@ -34,7 +34,12 @@ verbs:
     retries: 3
     healthcheck: [CMD-SHELL, "curl -f http://localhost:{port}{path} || exit 1"]
   validate_model: {probe: chat_completion, max_tokens: 1}
-  bench: {max_tokens: 120, timings_field: timings}   # server-side timings
+  bench:                     # server-side timings in the completion response
+    max_tokens: 120
+    timings_field: timings
+    rate_key: predicted_per_second
+    prompt_rate_key: prompt_per_second
+    count_key: predicted_n
 
 weights:
   # legacy variable name kept so existing installs keep their model folder

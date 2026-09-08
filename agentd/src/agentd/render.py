@@ -44,7 +44,7 @@ from pydantic import BaseModel, Field
 
 from agentd.capability import CapabilityVector, classify
 from agentd.logging_setup import get_logger
-from agentd.registry_v2 import ModelEntry, RegistryV2, Resolution
+from agentd.registry_v2 import ModelEntry, RegistryV2, Resolution, RoleContract
 from agentd.runtime_descriptor import RuntimeDescriptor
 
 log = get_logger("render")
@@ -183,19 +183,13 @@ def _ctx_budget(descriptor: RuntimeDescriptor, tuning: dict[str, str]) -> int:
             f"to an integer, got {tuning['ctx_size']!r}") from exc
 
 
-def _check_model(role: str, model: str, position: str, entry: ModelEntry,
-                 registry: RegistryV2, descriptors: dict[str, RuntimeDescriptor],
-                 capability_class: str, accelerator: str) -> CapabilityCheck:
-    descriptor = descriptors.get(entry.provider)
-    if descriptor is None:
-        return CapabilityCheck(
-            role=role, model=model, runtime=entry.provider, position=position,
-            ok=False,
-            failures=[f"runtime '{entry.provider}' has no descriptor under "
-                      "config/providers/ (known: "
-                      + ", ".join(sorted(descriptors)) + ")"])
-
-    requires = registry.roles[role].requires
+def check_contract(model: str, entry: ModelEntry, descriptor: RuntimeDescriptor,
+                   requires: RoleContract, capability_class: str,
+                   accelerator: str = "none") -> tuple[dict[str, bool], list[str]]:
+    """Does this model, served by this runtime on this class, satisfy a role
+    contract? Returns (checks, failures) — failures name the missing
+    capability. Shared by render-time negotiation and the catalog
+    recommender (PR-4)."""
     checks: dict[str, bool] = {}
     failures: list[str] = []
 
@@ -241,7 +235,23 @@ def _check_model(role: str, model: str, position: str, entry: ModelEntry,
                 f"'{descriptor.runtime}' gets {effective} on class "
                 f"{capability_class} (model context {entry.context or 'unset'}, "
                 f"class budget {budget})")
+    return checks, failures
 
+
+def _check_model(role: str, model: str, position: str, entry: ModelEntry,
+                 registry: RegistryV2, descriptors: dict[str, RuntimeDescriptor],
+                 capability_class: str, accelerator: str) -> CapabilityCheck:
+    descriptor = descriptors.get(entry.provider)
+    if descriptor is None:
+        return CapabilityCheck(
+            role=role, model=model, runtime=entry.provider, position=position,
+            ok=False,
+            failures=[f"runtime '{entry.provider}' has no descriptor under "
+                      "config/providers/ (known: "
+                      + ", ".join(sorted(descriptors)) + ")"])
+    checks, failures = check_contract(model, entry, descriptor,
+                                      registry.roles[role].requires,
+                                      capability_class, accelerator)
     return CapabilityCheck(role=role, model=model, runtime=descriptor.runtime,
                            position=position, ok=not failures, checks=checks,
                            failures=failures)
@@ -446,13 +456,27 @@ def slot_problems(descriptor: RuntimeDescriptor, accelerator: str,
     return problems
 
 
-def render_engine(registry: RegistryV2, descriptor: RuntimeDescriptor,
-                  vector: CapabilityVector, capability_class: str,
-                  accelerator: str, served: dict[str, ModelEntry],
-                  rendered_dir_rel: str) -> tuple[str, str | None]:
-    """Engine-slot materialization: the compose override for the slot
-    service (+ the multi-model preset text when the runtime hosts several
-    models). Everything runtime-specific comes from the descriptor."""
+def served_id_for(descriptor: RuntimeDescriptor, name: str, entry: ModelEntry,
+                  capability_class: str, accelerator: str = "none") -> str:
+    """The id the engine answers to for a registry model (descriptor
+    ``materialize.served_id`` template) — LiteLLM and probes address it."""
+    tuning = descriptor.tuning_for(capability_class, accelerator)
+    return _fill(descriptor.materialize.served_id,
+                 _model_context(name, entry, descriptor, tuning),
+                 f"descriptor '{descriptor.runtime}' materialize.served_id")
+
+
+def materialize_service(descriptor: RuntimeDescriptor, vector: CapabilityVector,
+                        capability_class: str, accelerator: str,
+                        served: dict[str, ModelEntry],
+                        rendered_dir_rel: str = f"./config/{RENDERED_DIRNAME}",
+                        ) -> tuple[dict[str, Any], str | None]:
+    """``materialize(model_set, vector) → engine spec``: the compose service
+    mapping for the engine slot (+ the multi-model preset text when the
+    runtime hosts several models). Everything runtime-specific comes from
+    the descriptor. ``deploy`` is returned as an ``_Override`` mapping (a
+    dict subclass) so the compose renderer can tag it; standalone consumers
+    (the PR-4 side-load) may use it as a plain dict."""
     origin = f"descriptor '{descriptor.runtime}'"
     problems = slot_problems(descriptor, accelerator, served)
     if problems:
@@ -525,7 +549,16 @@ def render_engine(registry: RegistryV2, descriptor: RuntimeDescriptor,
     service = _merge(service, extras)
     if "deploy" in service:
         service["deploy"] = _Override(service["deploy"])
+    return service, preset_text
 
+
+def render_engine(registry: RegistryV2, descriptor: RuntimeDescriptor,
+                  vector: CapabilityVector, capability_class: str,
+                  accelerator: str, served: dict[str, ModelEntry],
+                  rendered_dir_rel: str) -> tuple[str, str | None]:
+    """Engine-slot materialization as the rendered compose override text."""
+    service, preset_text = materialize_service(
+        descriptor, vector, capability_class, accelerator, served, rendered_dir_rel)
     header = _banner([
         f"generation {registry.generation} · runtime {descriptor.runtime} · "
         f"class {capability_class} · accelerator {accelerator} · "
@@ -581,12 +614,8 @@ def render(registry: RegistryV2, descriptors: dict[str, RuntimeDescriptor],
     compose_text, preset_text = render_engine(
         registry, descriptor, vector, capability_class, accelerator, active,
         rendered_dir_rel)
-    served_ids = {
-        name: _fill(descriptor.materialize.served_id,
-                    _model_context(name, entry, descriptor,
-                                   descriptor.tuning_for(capability_class, accelerator)),
-                    f"descriptor '{descriptor.runtime}' materialize.served_id")
-        for name, entry in active.items()}
+    served_ids = {name: served_id_for(descriptor, name, entry, capability_class, accelerator)
+                  for name, entry in active.items()}
 
     artifacts = {
         LITELLM_FILENAME: render_litellm(registry, resolutions, served_ids, embedding),

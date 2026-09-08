@@ -130,6 +130,15 @@ remain as thin wrappers — nothing breaks). Every provider exposes:
 `materialize`, `start/stop/restart`, `ready?`, `bench(tokens/sec)`,
 `validate_model(load+probe)` — the verbs the lifecycle manager calls.
 
+> **As-built (PR-3/PR-4):** `materialize` and `capabilities` are realized
+> by the renderer (PR-3); `ready?`, `validate_model`, and `bench` are
+> executed by `lifecycle.py` against a side-loaded engine from descriptor
+> data (`verbs.ready`, `verbs.validate_model`, `verbs.bench` incl. the
+> timing field names). `start/stop/restart` of the live slot remain
+> declared (`verbs.control: compose`) and are executed by the activation
+> protocol in PR-5. `scripts/bench.sh` is untouched; its measurement logic
+> lives in `lifecycle.measure_tokens_per_s`.
+
 ## 6. Side-load slot (benchmark without downtime)
 
 Benchmarking a *candidate* model must not displace the serving set. The
@@ -139,6 +148,17 @@ gated by VRAM/RAM checks for vLLM — on small profiles the fallback is a
 scheduled swap window with explicit user confirmation). Side-loads are
 never registered in LiteLLM's public alias space; only the benchmark
 harness addresses them.
+
+> **As-built (PR-4, `lifecycle.SideLoad`):** a side-load is the PR-3
+> `materialize_service()` of exactly one model, written as a standalone
+> compose project (`ezai-sideload-<model>`) with an ephemeral published
+> host port, brought up with `docker compose up -d`, polled on the
+> descriptor's `ready` probe within its `timeout_s`, and always torn down
+> (`down -v`). It powers `validate_model` (one-token chat completion) and
+> `bench`. Runtime knowledge stays in the descriptor; the lifecycle code
+> only resolves `${VAR:-default}` host paths and declares named volumes.
+> The vLLM memory gate / scheduled swap window is not implemented in this
+> slice (fit verdicts exist; gating lands with activation in PR-5).
 
 ## 7. Deliberate V1 boundaries
 

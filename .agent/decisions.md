@@ -725,3 +725,31 @@ primaries); llama.cpp multi-model via router preset (upstream-verified);
 the reference default set spans two runtimes and is therefore reported as
 a slot conflict — LiteLLM/role-map rendering remains independently
 callable for explain/approval surfaces.
+**PR-4 slice (2026-09-08) — lifecycle install / validate / benchmark:**
+`fetch.py` resolves `hf:` · `gguf:` (url / `hf://org/repo/file` / path) ·
+catalog id · `auto` (every other form is rejected with the accepted forms
+listed, F8) and fetches GGUF natively (HTTP-Range resume, streaming
+SHA-256 recorded into `source.sha256`) or hub repositories through the
+`hf download` path the scripts already use (local CLI or the same
+throwaway container). `catalog.py` is data with pluggable sources
+(packaged `defaults/catalog.yaml` seed — hub-verified sizes — merged with
+`config/catalog/*.yaml`) and a requirements-driven recommender: variants a
+runtime serves × the group's role contracts × `fit()` placement, every
+candidate returned with its verdict (R-5/F9). `lifecycle.py` holds the
+state machine as a data table (`TRANSITIONS`, enforced by `transition`),
+`install()` (resolve → fetch into the descriptor's `weights.host_dir` →
+`validate_model` via a **side-loaded** engine → `installed` with measured
+`size_gb` | `failed` with the reason; idempotent on verified weights) and
+`benchmark()` (`bench` verb: descriptor-named server timings or
+tokens/wall-clock → entry `benchmarks` + capped per-model series under a
+new `models` key of `.agent/model_benchmarks.json`, carried forward by
+`evaluate-models`; → `benchmarked`). The side-load is the PR-3
+`materialize_service()` of one model as a standalone compose project on an
+ephemeral port, always torn down. Generations are persisted when the
+registry is servable; pre-bootstrap results stay in memory and say so
+(PR-1's write-time invariant is respected, not worked around). Additive
+schema: `ModelEntry.artifact/installed_at/error/license`,
+`BenchVerb.rate_key/prompt_rate_key/count_key`, `ModelEvalReport.models`.
+Not in this slice: activation/rollback/retire (PR-5), CLI verbs (PR-6),
+the vLLM side-load memory gate / scheduled swap window (gating lands with
+activation), curated per-class catalog content (P5).

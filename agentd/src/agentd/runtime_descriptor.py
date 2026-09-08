@@ -112,8 +112,14 @@ class ValidateVerb(BaseModel):
 
 class BenchVerb(BaseModel):
     max_tokens: int = 120
-    #: Response field carrying server-side timings ("" → measure client-side).
+    #: Response field carrying server-side timings ("" → measure client-side
+    #: from ``usage.completion_tokens`` and wall clock).
     timings_field: str = ""
+    #: Keys inside the timings object (generation tokens/s, prompt tokens/s,
+    #: generated token count) — runtime-specific names live here, not in code.
+    rate_key: str = ""
+    prompt_rate_key: str = ""
+    count_key: str = ""
 
 
 class Verbs(BaseModel):
