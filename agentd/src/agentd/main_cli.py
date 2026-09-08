@@ -1,0 +1,765 @@
+"""local-ezai — the production CLI of the autonomous SWE runtime (Phase 5).
+
+    local-ezai [PATH] [COMMAND] ...
+
+Path selection (cross-platform, pathlib throughout):
+    local-ezai .                          # open chat for the current project
+    local-ezai /home/test/project/CRM     # open chat for that project
+    local-ezai -C /path run "..."         # git-style explicit path
+    local-ezai run "..."                  # commands default to the cwd
+
+Commands:
+    chat                       interactive session with the local model
+    plan "<task>"              produce an execution plan (dry-run, traceless)
+    run  "<task>"              full pipeline: plan → code → validate →
+                               self-heal → commit (worktree branch)
+    code "<task>"              plan + implement only; changes left uncommitted
+    test                       run validation (commands + Browser QA) in place
+    fix                        repair failing validation via the debug loop,
+                               commit on the current branch when green
+    review                     adversarial review of the working-tree diff
+    commit                     validate, then commit the working tree
+                               (blocked until validation is green)
+    memory                     inspect / add to the project's memory
+    sprint <spec-file>         autonomous sprint: requirement analysis →
+                               dependency waves → parallel task pipelines
+    docs                       Documentation Agent → the four repo guides
+    evolve                     evolution cycle → PR proposal (human approves)
+    roadmap                    show .agent/roadmap.md milestones
+    evaluate-models            probe every routed role + quality metrics
+    models                     live model routing (primary/fallback per role)
+    explain-run [run-id]       which model handled each stage of a run
+
+Every command drives the existing agents: Planner, Coder, Validator,
+Debugger, Browser QA, Memory, Reviewer, Sprint, Documentation, Evolution,
+Git — through the execution sandbox and the mandatory reviewer gate.
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+from agentd import __version__
+from agentd.config import AgentdConfig, load_config
+from agentd.logging_setup import get_logger, setup_logging
+
+log = get_logger("local-ezai")
+
+COMMANDS = ("chat", "plan", "run", "code", "test", "fix", "review",
+            "commit", "memory", "sprint", "docs", "evolve", "roadmap",
+            "evaluate-models", "models", "explain-run", "version")
+
+
+# ── argv preprocessing: leading path selection ────────────────────────────────
+
+
+def split_path_argument(argv: list[str]) -> tuple[str | None, list[str]]:
+    """Support ``local-ezai <path> [command ...]`` and bare ``local-ezai <path>``.
+
+    The first argument is treated as the project path when it is not a
+    command, not a flag, and names an existing directory.
+    """
+    if argv and argv[0] not in COMMANDS and not argv[0].startswith("-"):
+        candidate = Path(argv[0]).expanduser()
+        if candidate.is_dir():
+            return argv[0], argv[1:]
+    return None, argv
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="local-ezai",
+        description="Local Autonomous Software Engineer — runs entirely on "
+                    "your own hardware.",
+    )
+    parser.add_argument("-C", "--path", default=None,
+                        help="Project directory (default: current directory)")
+    parser.add_argument("--config", default=None,
+                        help="agentd YAML config file (or $AGENTD_CONFIG)")
+    parser.add_argument("--verbose", action="store_true", help="Debug logging")
+    parser.add_argument("--version", action="version",
+                        version=f"local-ezai {__version__}")
+
+    # Global options are also accepted AFTER the subcommand
+    # (`local-ezai test --config x.yaml`); SUPPRESS keeps a post-command
+    # value from being clobbered by subparser defaults.
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--config", default=argparse.SUPPRESS)
+    common.add_argument("--verbose", action="store_true",
+                        default=argparse.SUPPRESS)
+    common.add_argument("-C", "--path", default=argparse.SUPPRESS)
+
+    sub = parser.add_subparsers(dest="command")
+
+    sub.add_parser("chat", help="Interactive session with the local model",
+                   parents=[common])
+
+    plan_p = sub.add_parser("plan", help="Produce an execution plan (dry-run)",
+                            parents=[common])
+    plan_p.add_argument("task")
+
+    run_p = sub.add_parser("run", help="Full pipeline on a worktree branch",
+                           parents=[common])
+    run_p.add_argument("task")
+    run_p.add_argument("--push", action="store_true",
+                       help="Allow pushing the run branch (off by default)")
+    run_p.add_argument("--in-place", action="store_true",
+                       help="Edit the repo directly instead of a worktree")
+    run_p.add_argument("--max-iterations", type=int, default=None)
+    run_p.add_argument("--json", action="store_true", dest="as_json")
+
+    code_p = sub.add_parser("code", help="Plan + implement only (no commit)",
+                            parents=[common])
+    code_p.add_argument("task")
+    code_p.add_argument("--in-place", action="store_true")
+    code_p.add_argument("--json", action="store_true", dest="as_json")
+
+    test_p = sub.add_parser("test", help="Run validation (commands + Browser QA)",
+                            parents=[common])
+    test_p.add_argument("--json", action="store_true", dest="as_json")
+
+    fix_p = sub.add_parser("fix", help="Repair failing validation in place",
+                           parents=[common])
+    fix_p.add_argument("--goal", default="repair failing validation checks")
+    fix_p.add_argument("--max-iterations", type=int, default=None)
+    fix_p.add_argument("--json", action="store_true", dest="as_json")
+
+    review_p = sub.add_parser("review", help="Review the working-tree diff",
+                              parents=[common])
+    review_p.add_argument("--json", action="store_true", dest="as_json")
+
+    commit_p = sub.add_parser("commit", help="Validate, then commit the tree",
+                              parents=[common])
+    commit_p.add_argument("-m", "--message", default=None)
+    commit_p.add_argument("--push", action="store_true")
+
+    memory_p = sub.add_parser("memory", help="Inspect / add project memory",
+                              parents=[common])
+    memory_p.add_argument("--add", default=None, metavar="TEXT",
+                          help="Persist a curated memory entry")
+    memory_p.add_argument("--kind", default="project_rule",
+                          choices=["project_rule", "coding_style",
+                                   "architecture_decision"])
+    memory_p.add_argument("--search", default=None)
+    memory_p.add_argument("--limit", type=int, default=20)
+
+    sprint_p = sub.add_parser("sprint", help="Autonomous sprint execution",
+                              parents=[common])
+    sprint_p.add_argument("spec_file")
+    sprint_p.add_argument("--keep-going", action="store_true",
+                          help="Continue with remaining tasks after a failure")
+    sprint_p.add_argument("--push", action="store_true")
+    sprint_p.add_argument("--simple", action="store_true",
+                          help="Skip requirement analysis: parse checklist "
+                               "items and run them sequentially (Phase 5 mode)")
+    sprint_p.add_argument("--max-parallel", type=int, default=None,
+                          help="Concurrent tasks per dependency wave")
+    sprint_p.add_argument("--json", action="store_true", dest="as_json")
+
+    docs_p = sub.add_parser("docs", help="Generate/refresh the four repo guides",
+                            parents=[common])
+    docs_p.add_argument("--focus", default="")
+    docs_p.add_argument("--json", action="store_true", dest="as_json")
+
+    evolve_p = sub.add_parser(
+        "evolve", help="Evolution cycle: analyze → propose → implement → "
+                       "validate → benchmark → PR (human approves)",
+        parents=[common])
+    evolve_p.add_argument("--focus", default="",
+                          help="Optional human focus for this cycle")
+    evolve_p.add_argument("--push", action="store_true",
+                          help="Allow pushing the evolve branch (T3)")
+    evolve_p.add_argument("--json", action="store_true", dest="as_json")
+
+    roadmap_p = sub.add_parser("roadmap", help="Show the project roadmap",
+                               parents=[common])
+    roadmap_p.add_argument("--full", action="store_true",
+                           help="Print the whole file (default: milestones)")
+
+    eval_p = sub.add_parser("evaluate-models",
+                            help="Probe every routed model role and record "
+                                 "benchmarks to .agent/model_benchmarks.json",
+                            parents=[common])
+    eval_p.add_argument("--json", action="store_true", dest="as_json")
+    eval_p.add_argument("--report", action="store_true",
+                        help="Also write docs/MODEL_GOVERNANCE_REPORT.md")
+
+    models_p = sub.add_parser(
+        "models", help="Show the live model routing (primary + fallback per "
+                       "agent role) from .agent/model_registry.yaml",
+        parents=[common])
+    models_p.add_argument("--json", action="store_true", dest="as_json")
+
+    explain_p = sub.add_parser(
+        "explain-run", help="Show which model handled each stage of a run",
+        parents=[common])
+    explain_p.add_argument("run_id", nargs="?", default=None,
+                           help="Run id (default: the project's latest run)")
+    explain_p.add_argument("--json", action="store_true", dest="as_json")
+
+    sub.add_parser("version", help="Print the version")
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw = list(sys.argv[1:]) if argv is None else list(argv)
+    leading_path, rest = split_path_argument(raw)
+    args = build_parser().parse_args(rest)
+
+    if args.command == "version":
+        print(f"local-ezai {__version__}")
+        return 0
+
+    config = load_config(args.config)
+    if args.verbose:
+        config.log_level = "DEBUG"
+    setup_logging(config.log_level)
+
+    project = Path(args.path or leading_path or ".").expanduser().resolve()
+    command = args.command or "chat"  # bare `local-ezai [path]` opens chat
+
+    from agentd.workspace import WorkspaceError, ensure_git_repo
+
+    try:
+        if command not in ("chat",):  # chat works in any directory
+            ensure_git_repo(project)
+        return _dispatch(command, args, config, project)
+    except WorkspaceError as exc:
+        log.error("%s", exc)
+        return 2
+    except KeyboardInterrupt:
+        print()
+        log.error("interrupted")
+        return 130
+
+
+def _dispatch(command: str, args, config: AgentdConfig, project: Path) -> int:
+    if command == "chat":
+        return cmd_chat(config, project)
+    if command == "plan":
+        return cmd_plan(config, project, args.task)
+    if command == "run":
+        return cmd_run(config, project, args)
+    if command == "code":
+        return cmd_code(config, project, args)
+    if command == "test":
+        return cmd_test(config, project, args.as_json)
+    if command == "fix":
+        return cmd_fix(config, project, args)
+    if command == "review":
+        return cmd_review(config, project, args.as_json)
+    if command == "commit":
+        return cmd_commit(config, project, args)
+    if command == "memory":
+        return cmd_memory(config, project, args)
+    if command == "sprint":
+        return cmd_sprint(config, project, args)
+    if command == "docs":
+        return cmd_docs(config, project, args)
+    if command == "evolve":
+        return cmd_evolve(config, project, args)
+    if command == "roadmap":
+        return cmd_roadmap(config, project, args)
+    if command == "evaluate-models":
+        return cmd_evaluate_models(config, project, args)
+    if command == "models":
+        return cmd_models(config, project, args)
+    if command == "explain-run":
+        return cmd_explain_run(config, project, args)
+    raise ValueError(f"unknown command {command}")  # unreachable
+
+
+# ── commands ──────────────────────────────────────────────────────────────────
+
+
+def cmd_chat(config: AgentdConfig, project: Path) -> int:
+    """Interactive REPL with the local model, aware of project memory."""
+    from agentd.llm import LLMError, build_llm
+    from agentd.memory import KIND_RULE, KIND_STYLE, MemoryStore
+
+    llm = build_llm(config.llm)
+    system = (
+        f"You are local-ezai, an autonomous software-engineering assistant "
+        f"running entirely on local hardware. Current project: {project}. "
+        "Answer concisely. For actual code changes, tell the user to run "
+        "'local-ezai run \"<task>\"' (full pipeline) or "
+        "'local-ezai plan \"<task>\"' (dry run)."
+    )
+    store = MemoryStore(project / config.memory.dir)
+    rules = store.recent([KIND_RULE, KIND_STYLE], limit=10) if store.exists else []
+    if rules:
+        system += "\nProject rules and styles:\n" + "\n".join(
+            f"- {r.title}: {r.content[:150]}" for r in rules
+        )
+    store.close()
+
+    print(f"local-ezai chat — project: {project}")
+    print("type a message; /reset clears history, /exit quits")
+    messages: list[dict] = [{"role": "system", "content": system}]
+    while True:
+        try:
+            line = input("you> ").strip()
+        except EOFError:
+            print()
+            return 0
+        if not line:
+            continue
+        if line in ("/exit", "/quit"):
+            return 0
+        if line == "/reset":
+            messages = messages[:1]
+            print("(history cleared)")
+            continue
+        messages.append({"role": "user", "content": line})
+        try:
+            response = llm.chat("chat", messages)
+        except LLMError as exc:
+            log.error("model unavailable: %s", exc)
+            return 3
+        reply = response.content or "(no reply)"
+        messages.append({"role": "assistant", "content": reply})
+        print(f"ezai> {reply}")
+
+
+def cmd_plan(config: AgentdConfig, project: Path, task: str) -> int:
+    from agentd.runner import plan_only
+
+    plan = plan_only(config, project, task)
+    print(plan.model_dump_json(indent=2))
+    return 0
+
+
+def cmd_run(config: AgentdConfig, project: Path, args) -> int:
+    from agentd.cli import _print_report
+    from agentd.runner import execute_run
+
+    if args.push:
+        config.git.allow_push = True
+    if args.in_place:
+        config.workspace.mode = "in-place"
+    if args.max_iterations is not None:
+        config.limits.max_heal_iterations = max(0, args.max_iterations)
+    report = execute_run(config, project, args.task)
+    _print_report(report, as_json=args.as_json)
+    return 0 if report.status == "completed" else 1
+
+
+def cmd_code(config: AgentdConfig, project: Path, args) -> int:
+    from agentd.cli import _print_report
+    from agentd.runner import code_only
+
+    if args.in_place:
+        config.workspace.mode = "in-place"
+    report = code_only(config, project, args.task)
+    _print_report(report, as_json=args.as_json)
+    if report.status == "completed":
+        where = ("your working tree" if args.in_place
+                 else f"workspace {report.workspace_path}")
+        print(f"changes are UNCOMMITTED in {where} — review them, then use "
+              f"'local-ezai test' and 'local-ezai commit'")
+    return 0 if report.status == "completed" else 1
+
+
+def cmd_test(config: AgentdConfig, project: Path, as_json: bool) -> int:
+    from agentd.runner import validate_repo
+
+    report, journal = validate_repo(config, project)
+    if as_json:
+        print(report.model_dump_json(indent=2))
+    else:
+        for check in report.checks:
+            mark = "PASS" if check.ok else "FAIL"
+            print(f"  [{mark}] {check.name:24} {check.command[:70]}")
+            if not check.ok and check.output_tail:
+                tail = check.output_tail.strip().splitlines()[-3:]
+                for line in tail:
+                    print(f"         {line[:100]}")
+        print(f"\nvalidation: {report.summary}")
+        print(f"journal:    {journal.path}")
+    return 0 if report.passed else 1
+
+
+def cmd_fix(config: AgentdConfig, project: Path, args) -> int:
+    from agentd.cli import _print_report
+    from agentd.runner import heal_run
+
+    if args.max_iterations is not None:
+        config.limits.max_heal_iterations = max(0, args.max_iterations)
+    report = heal_run(config, project, goal=args.goal)
+    _print_report(report, as_json=args.as_json)
+    return 0 if report.status == "completed" else 1
+
+
+def cmd_review(config: AgentdConfig, project: Path, as_json: bool) -> int:
+    from agentd.runner import review_repo
+
+    review, journal = review_repo(config, project)
+    if as_json:
+        print(review.model_dump_json(indent=2))
+    else:
+        print(f"review: {review.verdict.upper()} — {review.summary}")
+        for finding in review.findings:
+            location = finding.file + (f":{finding.line}" if finding.line else "")
+            print(f"  [{finding.severity:6}] {location}: {finding.issue}")
+            if finding.suggestion:
+                print(f"           suggestion: {finding.suggestion}")
+        print(f"journal: {journal.path}")
+    return 0 if review.verdict == "approve" else 1
+
+
+def cmd_commit(config: AgentdConfig, project: Path, args) -> int:
+    from agentd.runner import commit_repo
+
+    if args.push:
+        config.git.allow_push = True
+    try:
+        info, report = commit_repo(config, project, message=args.message)
+    except RuntimeError as exc:  # the commit gate
+        log.error("%s", exc)
+        return 1
+    if not info.sha:
+        print("nothing to commit — working tree is clean")
+        return 0
+    push_state = ("pushed" if info.pushed else "not pushed")
+    print(f"committed {info.sha[:12]} on {info.branch} ({push_state})")
+    print(f"validation: {report.summary}")
+    return 0
+
+
+def cmd_memory(config: AgentdConfig, project: Path, args) -> int:
+    from agentd.memory import MemoryStore
+
+    store = MemoryStore(project / config.memory.dir)
+    try:
+        if args.add:
+            record_id = store.record(kind=args.kind,
+                                     title=args.add[:60], content=args.add,
+                                     run_id="manual")
+            store.export_lessons()
+            print(f"remembered #{record_id} [{args.kind}] — {store.db_path}")
+            return 0
+        if not store.exists:
+            print("(no memory yet for this project)")
+            return 0
+        records = (store.search(args.search, limit=args.limit) if args.search
+                   else store.recent(limit=args.limit))
+        for record in records:
+            print(f"#{record.id:<4} {record.created_at}  [{record.kind}]"
+                  f"  (run {record.run_id or '-'})")
+            print(f"      {record.title}")
+        print(f"\n{store.count()} total memories — {store.db_path}")
+        return 0
+    finally:
+        store.close()
+
+
+def cmd_sprint(config: AgentdConfig, project: Path, args) -> int:
+    from agentd.runner import run_sprint
+    from agentd.sprint import load_sprint_tasks
+
+    spec = Path(args.spec_file).expanduser()
+    if not spec.is_file():
+        spec = project / args.spec_file  # allow specs relative to the project
+    if not spec.is_file():
+        log.error("sprint spec not found: %s", args.spec_file)
+        return 2
+
+    if args.push:
+        config.git.allow_push = True
+    if args.max_parallel is not None:
+        config.sprint.max_parallel = max(1, args.max_parallel)
+
+    if args.simple:
+        try:
+            tasks = load_sprint_tasks(spec)
+        except ValueError as exc:
+            log.error("%s", exc)
+            return 2
+        print(f"sprint (simple): {len(tasks)} task(s) from {spec.name}")
+        report = run_sprint(config, project, tasks, spec_file=str(spec),
+                            keep_going=args.keep_going)
+    else:
+        from agentd.sprint_exec import run_sprint_autonomous
+
+        print(f"sprint: analyzing {spec.name} ...")
+        report = run_sprint_autonomous(
+            config, project, spec.read_text(encoding="utf-8"),
+            spec_file=str(spec), keep_going=args.keep_going,
+        )
+
+    if args.as_json:
+        print(report.model_dump_json(indent=2))
+        return 0 if report.status == "completed" else 1
+
+    if report.plan:
+        print(f"goal: {report.plan.goal}")
+        print(f"{len(report.plan.tasks)} task(s) in {report.waves} wave(s)")
+    for task in report.tasks:
+        mark = {"completed": "DONE", "failed": "FAIL",
+                "skipped": "SKIP"}[task.status]
+        commit = f" ({task.commit_sha[:10]})" if task.commit_sha else ""
+        wave = f" [wave {task.wave}]" if task.wave else ""
+        deps = f" <- {','.join(task.depends_on)}" if task.depends_on else ""
+        print(f"  [{mark}] {task.task_id or task.index}. "
+              f"{task.task[:60]}{wave}{deps}{commit}")
+        if task.error:
+            print(f"         {task.error[:110]}")
+    print(f"\nsprint {report.sprint_id}: {report.status.upper()} — "
+          f"{report.completed_count}/{len(report.tasks)} task(s) on "
+          f"branch {report.branch}")
+    if report.report_doc:
+        print(f"report:    {report.report_doc} "
+              f"({'committed' if report.status == 'completed' else 'not committed'})")
+    print(f"workspace: {report.workspace_path}")
+    return 0 if report.status == "completed" else 1
+
+
+def cmd_docs(config: AgentdConfig, project: Path, args) -> int:
+    from agentd.agents import DocumentationAgent
+    from agentd.llm import build_llm
+    from agentd.runner import build_memory_store, build_registry, new_run_id, prepare_run
+
+    run_config = config.model_copy(deep=True)
+    run_config.workspace.mode = "in-place"
+    run_config, workspace, journal = prepare_run(run_config, project, new_run_id())
+    llm = build_llm(run_config.llm)
+    store = build_memory_store(run_config, workspace)
+    try:
+        agent = DocumentationAgent(run_config, llm,
+                                   build_registry(run_config, journal),
+                                   journal, memory=store)
+        result = agent.run(workspace, focus=args.focus)
+    finally:
+        if store is not None:
+            store.close()
+    if args.as_json:
+        print(result.model_dump_json(indent=2))
+    else:
+        print(f"documentation: {result.status} — {result.summary[:120]}")
+        for file in result.files_written:
+            print(f"  wrote: {file}")
+        print("changes are UNCOMMITTED — review, then 'local-ezai commit'")
+    return 0 if result.status == "done" else 1
+
+
+def cmd_evolve(config: AgentdConfig, project: Path, args) -> int:
+    from agentd.evolution import run_evolution
+
+    if args.push:
+        config.git.allow_push = True
+    print("evolve: analyzing history, failures, and bottlenecks ...")
+    report = run_evolution(config, project, focus=args.focus)
+    if args.as_json:
+        print(report.model_dump_json(indent=2))
+        return 0 if report.status == "completed" else 1
+    if report.proposal:
+        print(f"proposal: {report.proposal.title}")
+        for pattern in report.proposal.failure_patterns[:5]:
+            print(f"  pattern:    {pattern[:90]}")
+        for bottleneck in report.proposal.bottlenecks[:5]:
+            print(f"  bottleneck: {bottleneck[:90]}")
+    for task in report.tasks:
+        mark = {"completed": "DONE", "failed": "FAIL", "skipped": "SKIP"}[task.status]
+        commit = f" ({task.commit_sha[:10]})" if task.commit_sha else ""
+        print(f"  [{mark}] {task.task_id}: {task.task[:65]}{commit}")
+    if report.benchmark_before and report.benchmark_after:
+        before, after = report.benchmark_before, report.benchmark_after
+        print(f"benchmark: before {'PASS' if before.passed else 'FAIL'} "
+              f"({before.duration_seconds}s) -> after "
+              f"{'PASS' if after.passed else 'FAIL'} ({after.duration_seconds}s)")
+    if report.pull_request:
+        pr = report.pull_request
+        print(f"pull request: {pr.url or pr.bundle_path} — {pr.note}")
+    print(f"\nevolution {report.evolution_id}: {report.status.upper()} on "
+          f"branch {report.branch} — awaiting human review")
+    return 0 if report.status == "completed" else 1
+
+
+def cmd_roadmap(config: AgentdConfig, project: Path, args) -> int:
+    from agentd.runner import resolve_origin_root
+
+    roadmap = resolve_origin_root(project) / config.memory.dir / "roadmap.md"
+    if not roadmap.is_file():
+        print(f"(no roadmap at {roadmap} — create .agent/roadmap.md)")
+        return 0
+    text = roadmap.read_text(encoding="utf-8")
+    if args.full:
+        print(text)
+        return 0
+    shown = False
+    for line in text.splitlines():
+        if line.startswith("#") or line.startswith("| M") or \
+                line.startswith("| ID") or line.startswith("|--"):
+            print(line)
+            shown = True
+    if not shown:
+        print(text)
+    return 0
+
+
+def cmd_evaluate_models(config: AgentdConfig, project: Path, args) -> int:
+    from agentd.evaluate import evaluate_models, write_governance_report
+
+    report = evaluate_models(config, project)
+    report_path = None
+    if getattr(args, "report", False):
+        report_path = write_governance_report(report, project)
+    if args.as_json:
+        print(report.model_dump_json(indent=2))
+        return 0 if report.passed else 1
+    print(f"model evaluation @ {report.base_url}")
+    for result in report.results:
+        mark = "ok  " if result.ok else "FAIL"
+        fallbacks = f" (fallback: {', '.join(result.fallbacks)})" \
+            if result.fallbacks else ""
+        print(f"  [{mark}] {result.role:14} {result.model:20} "
+              f"{result.latency_ms:5d} ms{fallbacks}")
+        if result.error:
+            print(f"         {result.error[:100]}")
+    metrics = report.metrics
+    if metrics and metrics.runs_total:
+        def pct(v):
+            return f"{v * 100:.0f}%" if v is not None else "—"
+        print(f"\nrun history ({metrics.runs_total} run(s)): "
+              f"planning {pct(metrics.planning_accuracy)} · "
+              f"coding {pct(metrics.coding_success_rate)} · "
+              f"validation {pct(metrics.validation_pass_rate)} · "
+              f"debugging {pct(metrics.debugging_success_rate)} · "
+              f"review {pct(metrics.review_approval_rate)}")
+    print(f"\n{'all roles passed' if report.passed else 'SOME ROLES FAILED'} — "
+          f"recorded in .agent/model_benchmarks.json")
+    if report_path is not None:
+        print(f"governance report: {report_path}")
+    return 0 if report.passed else 1
+
+
+# ── model transparency (Phases H4/H5) ────────────────────────────────────────
+
+#: Stage display order for `models` / `explain-run` — the mandated roster
+#: first, then the remaining routed roles.
+_ROLE_ORDER = ("planner", "coder", "debugger", "reviewer", "documentation",
+               "memory", "evolution", "sprint", "chat", "validator", "git")
+
+
+def cmd_models(config: AgentdConfig, project: Path, args) -> int:
+    """`local-ezai models` — the live routing from .agent/model_registry.yaml
+    merged over the config, exactly as a run would resolve it."""
+    from agentd.model_registry import apply_model_registry
+    from agentd.runner import resolve_origin_root
+
+    origin = resolve_origin_root(project)
+    effective = apply_model_registry(config, origin)
+    registry_path = origin / ".agent" / "model_registry.yaml"
+
+    roles = [r for r in _ROLE_ORDER if r in effective.llm.roles]
+    roles += sorted(set(effective.llm.roles) - set(roles) - {"default"})
+
+    if args.as_json:
+        import json as _json
+
+        print(_json.dumps({
+            "registry": str(registry_path) if registry_path.is_file() else None,
+            "endpoint": effective.llm.base_url,
+            "roles": {
+                role: {
+                    "primary": effective.llm.model_for_role(role),
+                    "fallback": effective.llm.role_fallbacks.get(role, []),
+                } for role in roles
+            },
+        }, indent=2))
+        return 0
+
+    source = (str(registry_path) if registry_path.is_file()
+              else "(no registry — global config defaults)")
+    print(f"model routing for {origin.name}")
+    print(f"registry: {source}")
+    print(f"endpoint: {effective.llm.base_url}\n")
+    for role in roles:
+        fallbacks = effective.llm.role_fallbacks.get(role, [])
+        print(f"{role.capitalize()}:")
+        print(f"  primary:  {effective.llm.model_for_role(role)}")
+        print(f"  fallback: {', '.join(fallbacks) if fallbacks else '(none)'}")
+    print("\nverify availability: local-ezai evaluate-models")
+    return 0
+
+
+def cmd_explain_run(config: AgentdConfig, project: Path, args) -> int:
+    """`local-ezai explain-run [run-id]` — which model handled each stage."""
+    import json as _json
+
+    runs_dir = Path(config.runs_dir)
+    run_id = args.run_id
+    if run_id is None:
+        run_id = _latest_run_for(runs_dir, project)
+        if run_id is None:
+            log.error("no runs recorded for %s under %s", project, runs_dir)
+            return 2
+    report_file = runs_dir / run_id / "report.json"
+    if not report_file.is_file():
+        log.error("no report for run '%s' (looked in %s)", run_id, report_file)
+        return 2
+    data = _json.loads(report_file.read_text(encoding="utf-8"))
+    models_used = data.get("models_used", {}) or {}
+
+    stages = [(role.capitalize(), models_used[role])
+              for role in _ROLE_ORDER if role in models_used]
+    if data.get("validation") is not None:
+        stages.append(("Validation", "deterministic harness (no LLM)"))
+        if (data["validation"] or {}).get("browser") is not None:
+            stages.append(("Browser QA", "Playwright (deterministic)"))
+
+    if args.as_json:
+        print(_json.dumps({
+            "run_id": run_id,
+            "status": data.get("status"),
+            "task": data.get("request", ""),
+            "branch": data.get("branch", ""),
+            "stages": dict(stages),
+            "models_used": models_used,
+        }, indent=2))
+        return 0
+
+    print(f"run:    {run_id} [{data.get('status', '?').upper()}]")
+    print(f"task:   {data.get('request', '')}")
+    if data.get("branch"):
+        print(f"branch: {data['branch']}")
+    print()
+    if not stages:
+        print("(no stage attribution recorded — report predates Phase H5)")
+    for label, model in stages:
+        print(f"{label + ':':13} {model}")
+    review = data.get("review")
+    if review is not None:
+        print(f"\nreview:  {review.get('verdict', '?')} "
+              f"({len(review.get('findings', []))} finding(s))")
+    if data.get("iterations_used"):
+        print(f"healing: {data['iterations_used']} debug/fix iteration(s)")
+    return 0
+
+
+def _latest_run_for(runs_dir: Path, project: Path) -> str | None:
+    """Most recent run whose report belongs to this repository."""
+    if not runs_dir.is_dir():
+        return None
+    candidates: list[tuple[float, str]] = []
+    for run_dir in runs_dir.iterdir():
+        report_file = run_dir / "report.json"
+        if not report_file.is_file():
+            continue
+        try:
+            import json as _json
+
+            data = _json.loads(report_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if data.get("repo_path") in (str(project), str(project.resolve())):
+            candidates.append((report_file.stat().st_mtime, run_dir.name))
+    if not candidates:
+        return None
+    return max(candidates)[1]
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

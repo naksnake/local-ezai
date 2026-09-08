@@ -14,6 +14,28 @@ Monitor:            Real-time dashboard (http://localhost:8888)
 
 ---
 
+## Autonomous SWE runtime (new)
+
+Beyond chat, local-ezai now ships **agentd** — a minimum viable autonomous
+software engineer that uses the stack's local models to plan a change, edit
+a git repository on an isolated branch, run its tests, and commit the
+result:
+
+```bash
+make swe-install && . .venv-agentd/bin/activate
+cd ~/code/myapp
+local-ezai run "fix the failing date parser and add a test"
+local-ezai sprint sprint28.md     # or run a whole markdown spec
+```
+
+`local-ezai` works on Linux, macOS, and Windows (chat · plan · run · code ·
+test · fix · review · commit · memory · sprint). It is fully additive — the
+chat stack above is unchanged. Guide: **[agentd/README.md](agentd/README.md)**
+· install: **[agentd/INSTALL.md](agentd/INSTALL.md)** · architecture:
+**[docs/TARGET_ARCHITECTURE.md](docs/TARGET_ARCHITECTURE.md)**.
+
+---
+
 ## Requirements
 
 The same stack runs on anything from a fanless mini-PC to a GPU server —

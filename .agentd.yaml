@@ -1,0 +1,16 @@
+# Self-validation configuration — lets Local-EZAI's autonomous SWE runtime
+# work on THIS repository (bootstrap exit: the platform maintains itself).
+#
+#   local-ezai test        run the platform's own lint + test suite
+#   local-ezai fix         self-heal a failing suite (commits when green)
+#   local-ezai evolve      autonomous improvement cycle ending in a PR
+#
+# Commands run in the environment that launches the CLI — install dev deps
+# first (make swe-install, or: pip install -e './agentd[dev]').
+
+validation:
+  commands:
+    lint:
+      - "python3 -m ruff check agentd/src agentd/tests"
+    test:
+      - "python3 -m pytest agentd/tests -q --color=no"

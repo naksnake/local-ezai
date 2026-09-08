@@ -1,0 +1,87 @@
+# Reference default data set — the CLAUDE.md agent_model_map expressed as
+# Registry v2 data (docs/MODEL_ROUTING_DESIGN.md, ADR-026 R-1).
+#
+# This file is DATA: the sanctioned home for model names. It seeds nothing
+# by itself — the bootstrap (PR-7) and tests consume it. The golden test
+# (tests/unit/test_registry_v2.py) proves resolution reproduces the
+# ADR-020 per-repo registry byte-for-byte.
+version: 2
+generation: 0
+providers: [llamacpp, vllm]
+
+models:
+  hermes3:
+    provider: vllm
+    source: {hf: NousResearch/Hermes-3-Llama-3.1-8B}
+    groups: [reasoning, chat]
+    context: 16384
+    state: active
+    template: chatml
+    tool_call_format: hermes
+  deepseek-r1:
+    provider: llamacpp
+    source: {gguf: deepseek-r1-distill-qwen-7b-q4_k_m.gguf}
+    groups: [reasoning, coding]
+    context: 16384
+    state: active
+    template: chatml
+    tool_call_format: hermes
+  qwen3-coder:
+    provider: vllm
+    source: {hf: Qwen/Qwen3-Coder}
+    groups: [coding]
+    context: 32768
+    state: active
+    template: chatml
+    tool_call_format: hermes
+  llama3:
+    provider: llamacpp
+    source: {gguf: llama-3-8b-instruct-q4_k_m.gguf}
+    groups: [chat, reasoning]
+    context: 8192
+    state: active
+    template: llama3
+    tool_call_format: hermes
+
+# Ordered = priority = fallback order (docs/MODEL_ROUTING_DESIGN.md §4).
+groups:
+  reasoning: [hermes3, deepseek-r1]
+  coding: [qwen3-coder, deepseek-r1]
+  chat: [llama3, hermes3]
+
+# Pins are explicit chains (no inherited group fallbacks) — exactly the
+# CLAUDE.md agent_model_map. Unpinned roles resolve through their group.
+roles:
+  orchestrator:
+    group: reasoning
+    requires: {tool_calling: true, min_context: 8192}
+  planner:
+    group: reasoning
+    requires: {tool_calling: true, min_context: 8192}
+  coder:
+    group: coding
+    requires: {tool_calling: true, min_context: 8192}
+  debugger:
+    group: reasoning
+    pin: [deepseek-r1, hermes3]
+    requires: {tool_calling: true, json_output: true}
+  reviewer:
+    group: reasoning
+    pin: llama3
+    requires: {tool_calling: true, json_output: true}
+  documentation:
+    group: chat
+    pin: llama3
+  memory:
+    group: chat
+    pin: hermes3
+  evolution:
+    group: reasoning
+    pin: deepseek-r1
+    requires: {json_output: true}
+  chat:
+    group: chat
+    requires: {min_context: 4096}
+  sprint:
+    group: reasoning
+    requires: {json_output: true}

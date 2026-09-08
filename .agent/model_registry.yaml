@@ -1,0 +1,33 @@
+# Model governance registry (CLAUDE.md "Model Routing").
+#
+# Per-role primary/fallback model routing for the autonomous SWE agents.
+# Loaded automatically from <repo>/.agent/model_registry.yaml on every run
+# and merged over the global config (agentd/src/agentd/model_registry.py).
+# Model names must be served by the model plane (LiteLLM aliases or the
+# engine's served-model-name). Verify with:  local-ezai evaluate-models
+
+agent_model_map:
+
+  planner:
+    primary: hermes3
+    fallback: deepseek-r1
+
+  coder:
+    primary: qwen3-coder
+    fallback: deepseek-r1
+
+  debugger:
+    primary: deepseek-r1
+    fallback: hermes3
+
+  reviewer:
+    primary: llama3
+
+  documentation:
+    primary: llama3
+
+  memory:
+    primary: hermes3
+
+  evolution:
+    primary: deepseek-r1

@@ -1,0 +1,66 @@
+# Example Browser QA configuration — customer CRUD workflows.
+#
+# Copy the `browser_qa:` section into your repository's `.agentd.yaml` and
+# adapt the start command, URL, and selectors to your application. When
+# enabled, agentd launches your app, drives these workflows in a real
+# (headless) Chromium via Playwright, fails validation on any step failure,
+# failed verification, or console error — and blocks git commits until the
+# whole stage passes.
+#
+# Step vocabulary: goto, click, fill, select, expect_text, expect_no_text,
+# expect_visible, expect_url, expect_title, wait_for, screenshot.
+
+browser_qa:
+  enabled: true
+  app:
+    # {port} is replaced with a free port; the command runs in the workspace
+    # root and is terminated (whole process group) after the stage.
+    start: "python3 app.py"
+    url: "http://127.0.0.1:{port}"
+    ready_path: "/"
+    startup_timeout: 30
+  headless: true
+  step_timeout: 10
+
+  workflows:
+    - name: login
+      steps:
+        - goto: "/"
+        - fill: {selector: "#username", value: "admin"}
+        - fill: {selector: "#password", value: "secret"}
+        - click: "#login-btn"
+        - expect_url: {contains: "/customers"}
+        - expect_text: {selector: "#welcome", contains: "Welcome"}
+        - screenshot: "after-login"
+
+    - name: create-customer
+      steps:
+        - goto: "/customers"
+        - fill: {selector: "#name", value: "Ada Lovelace"}
+        - click: "#create-btn"
+        - expect_text: {selector: "#customer-list", contains: "Ada Lovelace"}
+        - screenshot: "after-create"
+
+    - name: update-customer
+      steps:
+        - goto: "/customers"
+        - click: "#edit-1"
+        - fill: {selector: "#edit-name", value: "Grace Hopper"}
+        - click: "#save-btn"
+        - expect_text: {selector: "#customer-list", contains: "Grace Hopper"}
+        - expect_no_text: {selector: "#customer-list", contains: "Ada Lovelace"}
+        - screenshot: "after-update"
+
+    - name: delete-customer
+      steps:
+        - goto: "/customers"
+        - click: "#delete-1"
+        - expect_no_text: {selector: "#customer-list", contains: "Grace Hopper"}
+        - screenshot: "after-delete"
+
+# Validation commands still run first (fail fast — the app is only launched
+# on code that passes its unit checks):
+validation:
+  commands:
+    test:
+      - "python3 -m py_compile app.py"

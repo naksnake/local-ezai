@@ -80,3 +80,7 @@ tmp/
 temp/
 .tmp/
 *.tmp
+
+# ── agentd (autonomous SWE runtime) ───────────────────────────────────────
+.venv-agentd/
+.agentd/
