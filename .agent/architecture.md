@@ -187,6 +187,13 @@ foundations:
   as a new generation on any failure; rollback without approval (audited,
   notifies); reconcile for half-applied states; `retire`/`uninstall`
   guards. Reload/health are pluggable seams, render-only until PR-7.
+- **Role aliases + platform CLI** (`routing.py`, `platform_cli.py`,
+  PR-6): agentd defaults bind to `role-<role>` aliases (no model name in
+  code; the hand-written LiteLLM profiles serve the aliases as data);
+  routing layers aliases < platform role map < per-repo ADR-020 registry
+  (repo pin = exact chain), platform found via `platform.config_dir` or
+  walk-up from the project; `local-ezai model|governance|project|status|
+  up|down` namespaces in direct mode over the PR-3/4/5 modules.
 
 ## Target additions (control/execution/knowledge planes)
 
@@ -201,8 +208,10 @@ foundations:
 - **memoryd** — layered memory: working / episodic (SQLite+JSONL journal) /
   semantic (Qdrant) / procedural (CLAUDE.md-style files, T3-gated writes).
 - **ezai CLI** + web console page + chat-ops MCP tools.
-- Model **role aliases** in LiteLLM: `swe-planner / swe-coder / swe-reviewer /
-  swe-fast / swe-embed` — agents bind to roles, never model names. (ADR-007)
+- Model **role aliases** in LiteLLM — agents bind to roles, never model
+  names (ADR-007). As built (ADR-026 R-1, PR-3/PR-6): the aliases are
+  `role-<role>` (`role-planner`, `role-coder`, …), rendered from Registry v2
+  and carried by the shipped LiteLLM profiles.
 
 ## Workflow (summary)
 

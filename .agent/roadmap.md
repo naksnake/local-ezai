@@ -53,9 +53,11 @@ queue. Status: 🟡 **P1 in progress** — PR-1 (Registry v2 store +
 generations), PR-2 (capability vector/classes/fit), PR-3 (runtime
 descriptors + renderer, `engine` alias), PR-4 (lifecycle install /
 validate / benchmark, catalog + recommender), PR-5 (activate / upgrade /
-rollback / retire + governance queue, atomic apply with self-rollback)
-implemented ([docs/prs/](../docs/prs/)); next ready: PR-6 (CLI
-namespaces + role aliases in code). ADR-027 stays Proposed until PR-7.
+rollback / retire + governance queue, atomic apply with self-rollback),
+PR-6 (CLI namespaces `model|governance|project|status|up|down`, role
+aliases in code — CF-3 closed) implemented ([docs/prs/](../docs/prs/));
+next ready: PR-7 (bootstrap core + `.env` seed consumption + cutover,
+ADR-027 → Accepted).
 
 **Product review (ADR-026, 2026-09-01):** agnosticism audit passed with
 remediations — roles/groups become the only stable names (role aliases

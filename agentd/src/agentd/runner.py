@@ -57,9 +57,19 @@ def prepare_run(
     # Re-read overrides from the workspace itself (worktree == repo content
     # at HEAD; a repo may carry .agentd.yaml only on the checked-out branch).
     config = merge_repo_overrides(config, load_repo_overrides(workspace.root))
-    # Model governance: the ORIGIN repo's .agent/model_registry.yaml wins
-    # (CLAUDE.md agent_model_map, ADR-020).
-    config = apply_model_registry(config, resolve_origin_root(workspace.repo_path))
+    # Model routing (MODEL_ROUTING_DESIGN §5): code defaults are role
+    # aliases; the platform's Registry v2 seeds concrete primaries + fallback
+    # chains when this run is attached to one (PR-6); the ORIGIN repo's
+    # .agent/model_registry.yaml wins per role (CLAUDE.md agent_model_map,
+    # ADR-020) — a repo pin is an exact chain.
+    from agentd.model_registry import load_model_registry
+    from agentd.routing import apply_platform_routing, find_platform_config
+
+    origin = resolve_origin_root(workspace.repo_path)
+    repo_map = load_model_registry(origin / config.memory.dir) or {}
+    config, _ = apply_platform_routing(
+        config, find_platform_config(config, repo), skip_roles=set(repo_map))
+    config = apply_model_registry(config, origin)
     journal = Journal(config.runs_dir / run_id)
     # Execution sandbox (ADR-021): one executor per run — allowlist, host or
     # container execution, audit log in the run directory.

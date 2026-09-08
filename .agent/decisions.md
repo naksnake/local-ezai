@@ -777,3 +777,24 @@ active only; primary or last member blocked) and `uninstall`
 (retired/failed only; rollback target ⇒ `force`). Deferred: CLI verbs
 (PR-6), bootstrap gen 1 (PR-7), git-committing generations (bootstrap
 flag), the proposal-creating evolution lane (N6′).
+**PR-6 slice (2026-09-08) — CLI namespaces + role aliases in code (CF-3
+closed):** `config.py` defaults every role to `role-<role>`
+(`ROLE_ALIAS_PREFIX`, `LLM_ROLES`; no model name remains in code — tested
+by source grep); the shipped hand-written LiteLLM profiles gain the
+`role-*` alias entries as data so every profile keeps working before the
+cutover. `routing.py` implements the three layers of MODEL_ROUTING_DESIGN
+§5 — aliases < platform role map (rendered `role_map.yaml`, else Registry
+v2 resolution) < per-repo ADR-020 registry, where a role the repo declares
+is taken exactly (repo pin = explicit chain, platform fallbacks not
+inherited); the platform is found via `platform.config_dir` /
+`$AGENTD_PLATFORM__CONFIG_DIR` or by walking up from the project, never
+from cwd or the package (hermetic). `prepare_run`, `evaluate-models`, and
+`models` share the resolution. `platform_cli.py` adds the direct-mode
+namespaces `model install|benchmark|activate|upgrade|rollback|retire|
+uninstall|explain|history|catalog`, `governance list|show|approve|reject`
+(approve applies the PR-5 protocol; policy-approved proposals apply at
+once), `project add|list|remove` (`config/projects.yaml`, audited),
+`status`, `up|down` (compose wrappers; profile file chain derived from the
+profile name). Behavior note: the default routing path changes as the plan
+foresaw (one pre-existing assertion of the old hard-coded default updated);
+the PR-1 golden test passes unchanged — the tripwire held.

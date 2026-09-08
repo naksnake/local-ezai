@@ -65,11 +65,12 @@ def evaluate_models(
     llm: LLMClient | None = None,
 ) -> ModelEvalReport:
     """Probe every routed role; persist results into <repo>/.agent/."""
-    from agentd.model_registry import apply_model_registry
+    from agentd.routing import effective_routing
     from agentd.runner import resolve_origin_root
 
     repo = Path(repo).resolve()
-    config = apply_model_registry(config, resolve_origin_root(repo))
+    # the same three routing layers a run resolves (aliases < platform < repo)
+    config, _ = effective_routing(config, resolve_origin_root(repo), project=repo)
     client = llm or build_llm(config.llm)
 
     results: list[ModelProbeResult] = []

@@ -112,7 +112,9 @@ atomic render→reload→health→self-rollback protocol
 Tests: approval-gated activation; failed-health self-rollback; rollback
 to generation N; blocked retire of a last serving member; audit records.
 
-**PR-6 · CLI namespaces + role aliases in code** — M
+**PR-6 · CLI namespaces + role aliases in code** — M — ✅ **implemented**
+([prs/PR-6-cli-namespaces-role-aliases.md](prs/PR-6-cli-namespaces-role-aliases.md);
+24 tests, suite 459 green, PR-1 golden intact through the alias switch)
 Scope: `local-ezai model …`, `governance …`, `project …`, `status`,
 `up/down` wrappers; agentd role defaults switch to `role-*` aliases
 (**removes the last model names from code — CF-3**); `prepare_run` seeds

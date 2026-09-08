@@ -71,9 +71,10 @@ def test_apply_model_registry(tmp_path):
     assert merged.llm.role_fallbacks["planner"] == ["deepseek-r1"]
     assert merged.llm.roles["coder"] == "qwen3-coder"
     assert "reviewer" not in merged.llm.role_fallbacks  # no fallback declared
-    # original untouched; unrelated roles keep defaults
-    assert config.llm.roles["planner"] == "qwen2.5-7b"
-    assert merged.llm.roles["debugger"] == "qwen2.5-7b"
+    # original untouched; unrelated roles keep defaults — which are role
+    # aliases since PR-6 (ADR-026 R-1: no model name in code)
+    assert config.llm.roles["planner"] == "role-planner"
+    assert merged.llm.roles["debugger"] == "role-debugger"
 
 
 def test_repo_registry_applied_by_prepare_run(config, tmp_repo):

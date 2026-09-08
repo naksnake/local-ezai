@@ -9,6 +9,31 @@ model_list:
       api_base: http://vllm:8000/v1
       api_key: "not-needed-locally"
 
+  # ── Role aliases (ADR-007 / ADR-026 R-1) ────────────────────────────────
+  # The autonomous SWE agents bind to logical roles, never model names. On
+  # this single-model profile every role is served by the chat model above;
+  # the V1 renderer generates this section from the model registry.
+  - model_name: role-orchestrator
+    litellm_params: {model: openai/qwen2.5-1.5b, api_base: http://vllm:8000/v1, api_key: "not-needed-locally"}
+  - model_name: role-planner
+    litellm_params: {model: openai/qwen2.5-1.5b, api_base: http://vllm:8000/v1, api_key: "not-needed-locally"}
+  - model_name: role-coder
+    litellm_params: {model: openai/qwen2.5-1.5b, api_base: http://vllm:8000/v1, api_key: "not-needed-locally"}
+  - model_name: role-debugger
+    litellm_params: {model: openai/qwen2.5-1.5b, api_base: http://vllm:8000/v1, api_key: "not-needed-locally"}
+  - model_name: role-reviewer
+    litellm_params: {model: openai/qwen2.5-1.5b, api_base: http://vllm:8000/v1, api_key: "not-needed-locally"}
+  - model_name: role-memory
+    litellm_params: {model: openai/qwen2.5-1.5b, api_base: http://vllm:8000/v1, api_key: "not-needed-locally"}
+  - model_name: role-chat
+    litellm_params: {model: openai/qwen2.5-1.5b, api_base: http://vllm:8000/v1, api_key: "not-needed-locally"}
+  - model_name: role-documentation
+    litellm_params: {model: openai/qwen2.5-1.5b, api_base: http://vllm:8000/v1, api_key: "not-needed-locally"}
+  - model_name: role-evolution
+    litellm_params: {model: openai/qwen2.5-1.5b, api_base: http://vllm:8000/v1, api_key: "not-needed-locally"}
+  - model_name: role-sprint
+    litellm_params: {model: openai/qwen2.5-1.5b, api_base: http://vllm:8000/v1, api_key: "not-needed-locally"}
+
   # ── Embedding model ─────────────────────────────────────────────────────
   # Served by embed-server at http://embed-server:8001
   - model_name: nomic-embed

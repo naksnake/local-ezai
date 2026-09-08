@@ -136,6 +136,23 @@ Registry v2 (platform)  <  per-repo .agent/model_registry.yaml (ADR-020)
   config from Registry v2 resolution first (via the rendered defaults),
   then applies repo overrides — same override philosophy as `.agentd.yaml`.
 
+> **As-built (PR-6, `agentd/src/agentd/routing.py`):** three layers —
+> (1) code defaults are **role aliases** (`role-<role>`; `config.py` holds
+> no model name, CF-3 closed); (2) the platform's role map — the rendered
+> `config/rendered/role_map.yaml` when present (what LiteLLM serves after
+> cutover), else `config/models/registry.yaml` resolution — seeds concrete
+> primaries + fallback chains; (3) the per-repo ADR-020 registry wins per
+> role, and a role it declares is taken **exactly** as declared (a repo pin
+> is an explicit chain; the platform's fallbacks for that role are not
+> inherited). The platform is located via `platform.config_dir`,
+> `$AGENTD_PLATFORM__CONFIG_DIR`, or by walking up from the project to a
+> directory holding `docker-compose.yml` + `config/providers/`; never from
+> the package location or the cwd, so runs against arbitrary repositories
+> stay hermetic. `local-ezai models` and `evaluate-models` resolve the same
+> layers. The stack's hand-written LiteLLM configs gained the `role-*`
+> aliases (data) so the alias switch keeps every profile working before
+> the PR-7 cutover.
+
 ## 6. Rendered artifacts (never hand-edited after install)
 
 From `registry.yaml` + provider descriptors, the control plane **renders**:

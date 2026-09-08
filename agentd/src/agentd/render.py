@@ -43,6 +43,7 @@ import yaml
 from pydantic import BaseModel, Field
 
 from agentd.capability import CapabilityVector, classify
+from agentd.config import ROLE_ALIAS_PREFIX
 from agentd.logging_setup import get_logger
 from agentd.registry_v2 import ModelEntry, RegistryV2, Resolution, RoleContract
 from agentd.runtime_descriptor import RuntimeDescriptor
@@ -57,7 +58,6 @@ ENGINE_PORT = 8000
 #: compatibility; this constant is the only place code spells it.
 ENGINE_SERVICE = "vllm"
 
-ROLE_ALIAS_PREFIX = "role-"
 RENDERED_DIRNAME = "rendered"
 LITELLM_FILENAME = "litellm-config.yaml"
 ENGINE_COMPOSE_FILENAME = "docker-compose.engine.yml"

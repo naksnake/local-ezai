@@ -26,6 +26,12 @@ Consequences (remediation R-1/R-6, [V1_PRODUCT_REVIEW.md](V1_PRODUCT_REVIEW.md))
 - LiteLLM serves **role aliases** (`role-chat`, `role-planner`, …);
   agentd defaults bind to aliases — **no model name lives in code**
   (completes ADR-007; fixes CF-3).
+  > **As-built (PR-6):** `agentd/config.py` defaults every role to
+  > `role-<role>` (`ROLE_ALIAS_PREFIX`, `LLM_ROLES`); the renderer emits the
+  > same aliases (PR-3) and the shipped hand-written LiteLLM profiles carry
+  > them as data until the cutover. The `local-ezai model|governance|
+  > project|status|up|down` namespaces (direct mode) are the CLI half of
+  > the two management surfaces (`platform_cli.py`).
 - OpenWebUI's selector leads with role entries; raw names behind an
   advanced toggle ([WEBUI_PRODUCT_STRATEGY.md](WEBUI_PRODUCT_STRATEGY.md) §4).
 - `.env` bootstrap uses **group seeds** (`REASONING_MODEL`, `CODING_MODEL`,

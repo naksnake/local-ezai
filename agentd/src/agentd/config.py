@@ -28,6 +28,14 @@ from pydantic import BaseModel, Field, field_validator
 ENV_PREFIX = "AGENTD_"
 REPO_CONFIG_FILENAME = ".agentd.yaml"
 
+#: LiteLLM alias prefix for logical roles (ADR-026 R-1): ``role-planner``…
+ROLE_ALIAS_PREFIX = "role-"
+#: Every role the runtime may route to a model (the mandated roster +
+#: orchestrator + the deterministic roles, which never call a model but
+#: keep an alias for uniformity).
+LLM_ROLES = ("orchestrator", "planner", "coder", "debugger", "reviewer", "memory",
+             "chat", "documentation", "evolution", "sprint", "validator", "git")
+
 
 class LLMConfig(BaseModel):
     """How agents reach a model. Default: the LiteLLM proxy of the stack."""
@@ -45,22 +53,14 @@ class LLMConfig(BaseModel):
     max_tokens: int = 4096
     #: Bounded retries for transport errors and malformed structured output.
     retries: int = 2
-    #: Role → model alias (ADR-007). All roles default to the stack's
-    #: default chat model; profiles override per role.
+    #: Role → LiteLLM alias (ADR-007, completed by ADR-026 R-1): agents bind
+    #: to ``role-<role>`` aliases — no model name lives in code. The platform
+    #: seeds concrete primaries/fallbacks at run preparation (routing.py) and
+    #: a repository's .agent/model_registry.yaml overrides per role.
     roles: dict[str, str] = Field(
         default_factory=lambda: {
-            "default": "qwen2.5-7b",
-            "planner": "qwen2.5-7b",
-            "coder": "qwen2.5-7b",
-            "validator": "qwen2.5-7b",
-            "git": "qwen2.5-7b",
-            "debugger": "qwen2.5-7b",
-            "memory": "qwen2.5-7b",
-            "reviewer": "qwen2.5-7b",
-            "chat": "qwen2.5-7b",
-            "sprint": "qwen2.5-7b",
-            "documentation": "qwen2.5-7b",
-            "evolution": "qwen2.5-7b",
+            "default": f"{ROLE_ALIAS_PREFIX}chat",
+            **{role: f"{ROLE_ALIAS_PREFIX}{role}" for role in LLM_ROLES},
         }
     )
     #: Ordered fallback models per role (ADR-020): tried when the primary
@@ -68,7 +68,8 @@ class LLMConfig(BaseModel):
     role_fallbacks: dict[str, list[str]] = Field(default_factory=dict)
 
     def model_for_role(self, role: str) -> str:
-        return self.roles.get(role) or self.roles.get("default") or "qwen2.5-7b"
+        return (self.roles.get(role) or self.roles.get("default")
+                or f"{ROLE_ALIAS_PREFIX}{role}")
 
 
 class LimitsConfig(BaseModel):
@@ -259,8 +260,18 @@ class WorkspaceConfig(BaseModel):
     root: Path = Field(default_factory=lambda: Path.home() / ".agentd" / "workspaces")
 
 
+class PlatformConfig(BaseModel):
+    """Where this runtime finds the Local-EZAI platform it belongs to (PR-6).
+    ``config_dir`` is the platform's ``config/`` directory (Registry v2,
+    descriptors, rendered artifacts, governance queue). Unset → discovered by
+    walking up from the project (self-hosting) or none (aliases only)."""
+
+    config_dir: Path | None = None
+
+
 class AgentdConfig(BaseModel):
     llm: LLMConfig = Field(default_factory=LLMConfig)
+    platform: PlatformConfig = Field(default_factory=PlatformConfig)
     limits: LimitsConfig = Field(default_factory=LimitsConfig)
     validation: ValidationConfig = Field(default_factory=ValidationConfig)
     browser_qa: BrowserQAConfig = Field(default_factory=BrowserQAConfig)
