@@ -160,8 +160,17 @@ serves — parity tested), 19 `/v1` operations with their CLI mapping,
 prints the same `{"error": …}` in `--json` mode), audited mutating calls,
 reload refused where the daemon cannot run compose; contract
 `1.0.0-draft.9`.
-**PR-10 · Run endpoints** — M: async run registry (start/status/report/
-cancel for run/sprint/fix/evolve), concurrency limits.
+**PR-10 · Run endpoints** — M — ✅ **implemented**
+([prs/PR-10-run-endpoints.md](prs/PR-10-run-endpoints.md); 11 tests incl.
+a real scripted run through the daemon, suite 537 green, goldens intact)
+Scope: async run registry (start/status/report/cancel for run/sprint/fix/
+evolve), concurrency limits.
+As built: `control/runs.py` + `runs_api.py` over the existing pipelines
+(+ `plan` as the A0 kind), records under `config/control/runs/` recovered
+on restart, cooperative cancellation through the model client, limits
+`control.max_concurrent_runs`/`max_queued_runs`, one in-place job per
+project, registered projects only and never a push; contract
+`1.0.0-draft.10`.
 **PR-11 · CLI connected mode** — M: transport auto-detect, identical UX
 and outputs both modes; management verbs fail fast offline; parity smoke.
 **PR-12 · Phase close** — S: kill-the-daemon test, two-concurrent-runs

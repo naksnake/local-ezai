@@ -31,5 +31,10 @@ services:
       # The platform's declarative state: Registry v2 + generations,
       # descriptors, governance queue + audit log, rendered artifacts.
       - ./config:/platform/config
+      # SWE runs through the API (PR-10) need the registered projects on
+      # this container's filesystem AT THE SAME PATH as registered — mount
+      # the directory that holds them, e.g.:
+      #   - /home/me/projects:/home/me/projects
+      # (or run `ezaid` on the host instead; the P2 close decides the default)
     networks:
       - ai-net

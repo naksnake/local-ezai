@@ -405,6 +405,18 @@ def add_project(ctx: PlatformContext, path_arg: str, *, name: str | None = None)
     return {"project": project, "removed": None, "message": f"registered project {name} → {path}"}
 
 
+def resolve_project(ctx: PlatformContext, ref: str) -> dict[str, str]:
+    """The registered project named or located at ``ref`` — the allowlist
+    the chat-ops boundary relies on (OPENWEBUI_INTEGRATION §5): a run may
+    only start on a project a human registered."""
+    resolved = str(Path(ref).expanduser().resolve()) if "/" in ref else ref
+    for project in _load_projects(ctx):
+        if project["name"] == resolved or project["path"] == resolved:
+            return project
+    raise LifecycleError(f"no registered project named or located at '{ref}' — register it "
+                         "first: local-ezai project add <path>")
+
+
 def remove_project(ctx: PlatformContext, target: str) -> dict[str, Any]:
     projects = _load_projects(ctx)
     resolved = str(Path(target).expanduser().resolve()) if "/" in target else target

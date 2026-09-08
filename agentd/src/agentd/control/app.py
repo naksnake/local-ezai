@@ -72,6 +72,9 @@ from agentd.control.health import (
 from agentd.control.idempotency import DIRNAME as IDEMPOTENCY_DIRNAME
 from agentd.control.idempotency import HEADER as IDEMPOTENCY_HEADER
 from agentd.control.idempotency import MAX_KEY_LENGTH, REPLAYED_HEADER, IdempotencyStore
+from agentd.control.runs import DIRNAME as RUNS_DIRNAME
+from agentd.control.runs import REFUSAL_STATUS, RunRefused, RunRegistry
+from agentd.control.runs_api import router as runs_router
 from agentd.logging_setup import get_logger
 from agentd.platform_cli import PlatformContext, platform_snapshot
 from agentd.platform_errors import classify, platform_exceptions
@@ -147,11 +150,13 @@ def _operation_id(request: Request) -> str:
 def create_app(settings: ControlConfig, ctx: PlatformContext | None = None, *,
                audit: AuditLog | None = None, prober: Prober | None = None,
                targets: tuple[ServiceTarget, ...] | None = None,
-               environ: Mapping[str, str] | None = None) -> FastAPI:
+               environ: Mapping[str, str] | None = None,
+               runs: RunRegistry | None = None) -> FastAPI:
     """Build the service. ``ctx`` is the platform (None only for spec
     generation — the platform endpoints then answer 503); ``audit`` defaults
     to the platform's governance log; ``prober``/``targets``/``environ`` are
-    the test seams of the health aggregation."""
+    the test seams of the health aggregation; ``runs`` replaces the run
+    registry (tests inject fake pipelines)."""
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -163,6 +168,8 @@ def create_app(settings: ControlConfig, ctx: PlatformContext | None = None, *,
         log.info("ezaid %s (contract %s) serving %s:%s", __version__, CONTRACT_VERSION,
                  settings.host, settings.port)
         yield
+        if app.state.runs is not None:
+            app.state.runs.shutdown(wait=False)
         record(app, "control.stopped", SERVICE_NAME)
 
     app = FastAPI(title=TITLE, version=CONTRACT_VERSION, description=DESCRIPTION,
@@ -181,6 +188,15 @@ def create_app(settings: ControlConfig, ctx: PlatformContext | None = None, *,
     app.state.idempotency = (
         IdempotencyStore(ctx.config_dir / CONTROL_DIRNAME / IDEMPOTENCY_DIRNAME)
         if ctx is not None else None)
+    if runs is not None:
+        app.state.runs = runs
+    elif ctx is not None:
+        app.state.runs = RunRegistry(ctx.config, ctx.config_dir / CONTROL_DIRNAME / RUNS_DIRNAME,
+                                     audit=app.state.audit,
+                                     max_concurrent=settings.max_concurrent_runs,
+                                     max_queued=settings.max_queued_runs)
+    else:
+        app.state.runs = None
 
     def control_info() -> ControlInfo:
         return ControlInfo(version=__version__, contract=CONTRACT_VERSION,
@@ -215,6 +231,10 @@ def create_app(settings: ControlConfig, ctx: PlatformContext | None = None, *,
 
     for exception_class in platform_exceptions():
         app.add_exception_handler(exception_class, _platform_failure)
+
+    @app.exception_handler(RunRefused)
+    async def _run_refused(_: Request, exc: RunRefused) -> JSONResponse:
+        return envelope(REFUSAL_STATUS.get(exc.code, 409), exc.code, exc.message, exc.fix)
 
     # ── mutating calls: idempotency + audit ──────────────────────────────
 
@@ -302,6 +322,7 @@ def create_app(settings: ControlConfig, ctx: PlatformContext | None = None, *,
         return AuditPage(total=audit_log.count(), records=audit_log.tail(limit))
 
     app.include_router(v1_router)  # PR-9: lifecycle · governance · projects
+    app.include_router(runs_router)  # PR-10: async run registry
 
     # ── the contract document ────────────────────────────────────────────
 

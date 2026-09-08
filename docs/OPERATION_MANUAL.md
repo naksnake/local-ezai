@@ -41,6 +41,8 @@ scripts authenticate with `Authorization: Bearer $MCP_API_KEY`.
 | Models / queue / projects (PR-9) | `GET /v1/models` · `GET /v1/governance` · `GET /v1/projects` · `GET /v1/roles/<role>` · `GET /v1/generations` · `GET /v1/catalog` |
 | Request an activation (idempotent retry-safe) | `curl -X POST -H "Authorization: Bearer $EZAI_CONTROL_TOKEN" -H "X-EZAI-User: nita" -H "Idempotency-Key: $(uuidgen)" -H "Content-Type: application/json" -d '{"group":"coding"}' http://localhost:8010/v1/models/<name>/activate` |
 | Approve and apply a pending request | `curl -X POST … -d '{"reason":"benchmarked, fits"}' http://localhost:8010/v1/governance/cr-0001/approve` (then `make up` to reload consumers) |
+| Start an SWE run on a registered project (PR-10) | `curl -X POST … -d '{"kind":"run","project":"my-app","task":"add input validation to the signup form"}' http://localhost:8010/v1/runs` → `202` with `run_id` |
+| Follow / inspect / cancel a run | `GET /v1/runs` · `GET /v1/runs/<id>` · `GET /v1/runs/<id>/report` · `GET /v1/runs/<id>/journal?tail=50` · `POST /v1/runs/<id>/cancel` |
 
 Every `/v1` call presents the service token; the calling surface forwards
 the human it acts for in `X-EZAI-User` (and names itself in
@@ -53,6 +55,15 @@ object `local-ezai … --json` prints. The full verb ↔ endpoint table:
 [CLI_REFERENCE.md](CLI_REFERENCE.md). Without a token the service refuses
 to start. `local-ezai status` shows `control up|down`. Port:
 `EZAI_CONTROL_PORT` (default 8010).
+
+**Runs through the control plane** execute the same pipelines as the CLI,
+but only on projects registered with `local-ezai project add`, never with
+push, and within `control.max_concurrent_runs` / `max_queued_runs`. The
+daemon needs the project on its own filesystem: run `ezaid` on the host
+(`.venv-agentd/bin/ezaid`) for SWE runs, or mount the projects directory
+into the container at the same path (see the commented hint in
+`docker-compose.control.yml`). A daemon restart marks its interrupted runs
+`failed` (the journal on disk shows how far they got).
 
 ## 2. The Autonomous SWE runtime
 

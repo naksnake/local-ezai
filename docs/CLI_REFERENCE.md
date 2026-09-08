@@ -122,13 +122,31 @@ answer; a different payload is `409 idempotency_conflict`) and are audited as
 | `governance reject <id> --reason R` | `POST /v1/governance/{id}/reject` `{reason}` (`governance_reject`) |
 | `project add <path> [--name]` · `list` · `remove <name\|path>` | `POST /v1/projects` `{path, name?}` (`project_add`) · `GET /v1/projects` (`projects_list`) · `DELETE /v1/projects?target=` (`project_remove`) |
 
+### Run endpoints (PR-10) — the async run protocol
+
+| CLI verb | Endpoint (operationId) |
+|---|---|
+| `run "<task>"` · `fix [--goal]` · `sprint <spec>` · `evolve [--focus]` · `plan "<task>"` | `POST /v1/runs` `{kind, project, task?, goal?, spec?, focus?, simple?, keep_going?, in_place?, max_iterations?, max_parallel?}` → `202` run record (`run_start`). `project` must be **registered** (`project add`); jobs never push |
+| `ezai runs` (legacy listing) | `GET /v1/runs?kind=&status=&project=&limit=` (`runs_list`; active count + limits) |
+| — | `GET /v1/runs/{id}` (`run_get`; record + journal progress) |
+| `explain-run <id>` / `report.json` | `GET /v1/runs/{id}/report` (`run_report`; `409 report_pending` while unfinished) |
+| `ezai journal <id>` | `GET /v1/runs/{id}/journal?tail=N` (`run_journal`) |
+| Ctrl-C (direct mode) | `POST /v1/runs/{id}/cancel` (`run_cancel`; queued → cancelled now, running → stops at its next model call; `409 run_finished` afterwards) |
+
+Limits: `control.max_concurrent_runs` (2) workers + `control.max_queued_runs`
+(8) waiting, then `429 too_many_runs`; one in-place job (`fix`) per project
+at a time (`409 project_busy`). The daemon must see the project on its own
+filesystem (host `ezaid`, or the projects directory mounted into the
+container at the same path).
+
 `reload: true` is refused with `409 reload_unavailable` where the daemon
 cannot run compose (the shipped container): apply without reload, then
 `make up`, or run the verb with `--reload` from the host CLI. Error codes:
 `not_found` 404 · `lifecycle_refused` / `governance_rule` /
-`resolution_incomplete` / `idempotency_conflict` / `reload_unavailable` 409 ·
-`invalid_request` / `registry_invalid` / `render_refused` / `catalog_refused`
-422 · `unauthorized` 401 · `platform_unavailable` 503. The CLI returns exit
+`resolution_incomplete` / `idempotency_conflict` / `reload_unavailable` /
+`project_busy` / `run_finished` / `report_pending` 409 · `too_many_runs`
+429 · `invalid_request` / `registry_invalid` / `render_refused` /
+`catalog_refused` 422 · `unauthorized` 401 · `platform_unavailable` 503. The CLI returns exit
 `1` for the 4xx refusals and `2` for `platform_unavailable`, printing the same
 object in `--json` mode.
 

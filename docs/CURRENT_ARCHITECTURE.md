@@ -54,8 +54,10 @@ by container name. All external configuration flows through `.env`
 audit log (`config/governance/log.jsonl`), `/v1/health` aggregation over the
 eight services + the platform snapshot, the model lifecycle / governance
 queue / project allowlist operations of the CLI as `/v1` endpoints (PR-9:
-same functions, same JSON, idempotency keys, one error vocabulary), OpenAPI
-contract `docs/api/ezaid-openapi.json`. Defined in `docker-compose.control.yml`,
+same functions, same JSON, idempotency keys, one error vocabulary), the
+async run registry (PR-10: `POST /v1/runs` for run/fix/sprint/evolve/plan
+on registered projects, status/report/journal/cancel, concurrency limits),
+OpenAPI contract `docs/api/ezaid-openapi.json`. Defined in `docker-compose.control.yml`,
 started with `make control-up`; not part of `make up` until CLI connected
 mode (PR-11).
 

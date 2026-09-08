@@ -903,3 +903,26 @@ serialized in the daemon; `reload: true` is refused (`reload_unavailable`)
 where no docker CLI exists — the shipped container — before the apply
 protocol starts. Contract `1.0.0-draft.9`. Deferred: run endpoints (PR-10),
 connected mode (PR-11), freeze + phase-close tests (PR-12).
+**PR-10 slice (2026-09-08) — run endpoints, the async run registry:**
+`control/runs.py` executes the platform's **existing** pipelines (`run` /
+`fix` / `sprint` / `evolve` / `plan` = the A0 dry-run) on a bounded worker
+pool with the job's id as the run id — the CLI's journals and reports are
+what the API serves; records persist under `config/control/runs/` and are
+recovered on restart (interrupted jobs → `failed`, audited `run.orphaned`).
+**Cancellation without touching the core graph:** queued jobs cancel at
+once; a running job's model client is wrapped (`CancellableLLM`) so the
+pipeline stops at its next model call. **Limits:** `control.
+max_concurrent_runs` + `max_queued_runs` (beyond → `429 too_many_runs`),
+one in-place job per project (`409 project_busy`). **The chat-ops
+ceiling** is enforced in the registry: runs start only on registered
+projects (`resolve_project`, else `404` with the `project add` fix) and
+every job runs with `git.allow_push = False`. Endpoints: `POST /v1/runs`
+(202), `GET /v1/runs`, `GET /v1/runs/{id}` (+ journal progress),
+`/report` (`409 report_pending` while unfinished), `/journal?tail=`,
+`POST /v1/runs/{id}/cancel`; `run.submitted` / `run.finished` /
+`run.cancel_requested` audited with the forwarded actor. Contract
+`1.0.0-draft.10`. Deployment constraint recorded, not changed: a job needs
+the project on the daemon's filesystem (host `ezaid`, or the projects
+directory mounted at the same path) — the shipped overlay mounts only
+`config/`; PR-12/P3 decide the default. Deferred: connected mode (PR-11),
+freeze + kill-the-daemon + two-concurrent-runs tests (PR-12).

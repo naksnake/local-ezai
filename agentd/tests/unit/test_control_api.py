@@ -335,7 +335,9 @@ def test_openapi_documents_every_verb_with_its_cli_mapping(api):
                 "generation_rollback", "model_retire", "model_uninstall", "role_explain",
                 "generation_history", "catalog_list", "catalog_recommend", "governance_list",
                 "governance_show", "governance_approve", "governance_reject", "projects_list",
-                "project_add", "project_remove"}
+                "project_add", "project_remove",
+                # PR-10: the async run registry
+                "run_start", "runs_list", "run_get", "run_report", "run_journal", "run_cancel"}
     assert set(operations) == expected
     for op_id, (method, path, op) in operations.items():
         if not path.startswith(V1):
@@ -343,6 +345,8 @@ def test_openapi_documents_every_verb_with_its_cli_mapping(api):
         assert op["security"] == [{"serviceToken": []}], op_id
         if method in ("post", "delete"):
             assert "409" in op["responses"] and "404" in op["responses"], op_id
-            assert "CLI: local-ezai" in op["summary"], op_id
+            if not path.startswith(f"{V1}/runs") or op_id == "run_start":
+                # run_cancel is the Admin Center's asymmetry (CLI_AND_WEBUI §3)
+                assert "CLI: local-ezai" in op["summary"], op_id
     assert "ChangeRequest" in spec["components"]["schemas"]
     assert spec["components"]["schemas"]["Recommendations"]["properties"]["class"]

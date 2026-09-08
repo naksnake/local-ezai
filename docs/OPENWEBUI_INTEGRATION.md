@@ -56,6 +56,17 @@ return `{run_id, status: started, follow: swe_status}` within seconds; the
 model (or user) polls `swe_status`/`swe_report`. The Control Plane owns
 run lifecycle and concurrency limits; the tool server stays stateless.
 
+> **As built (PR-10, ADR-028):** the control plane serves this protocol —
+> `POST /v1/runs` (kind `run|fix|sprint|evolve|plan`, a **registered**
+> project, the task/goal/spec/focus) answers `202` with the run record;
+> `GET /v1/runs/{id}` (journal progress), `/report`, `/journal?tail=`,
+> `POST /v1/runs/{id}/cancel` follow it. Jobs run the existing pipelines
+> with `git.allow_push` forced off; limits are `control.max_concurrent_runs`
+> / `max_queued_runs` (`429 too_many_runs`) and one in-place job per
+> project. The tool server (PR-13) maps `swe_run`/`swe_fix`/`swe_sprint`/
+> `swe_evolve`/`swe_plan`/`swe_status`/`swe_report`/`swe_journal` onto these
+> six operations one to one.
+
 ## 3. S3 — the Orchestrator persona
 
 A curated OpenWebUI model entry, **"Local-EZAI Orchestrator"**:

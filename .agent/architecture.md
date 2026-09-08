@@ -227,6 +227,15 @@ through `local-ezai model …` + the governance queue. Modules:
   (`classify()` → `{code, message, fix}` + status/exit) printed by the CLI
   in `--json` and returned by the API; mutating calls audited as
   `api.<operationId>`; reload refused where the daemon cannot run compose.
+- **Run endpoints** (`control/runs.py`, `control/runs_api.py`, PR-10): the
+  async run registry — `POST /v1/runs` (202) starts `run`/`fix`/`sprint`/
+  `evolve`/`plan` jobs through the existing pipelines on a bounded worker
+  pool; status with journal progress, report, bounded journal excerpt,
+  cancel (queued now; running at the next model call via a wrapped model
+  client — no core-graph change); records under `config/control/runs/`
+  recovered on restart; limits (`control.max_concurrent_runs`,
+  `max_queued_runs`; one in-place job per project); registered projects
+  only and never a push (the chat-ops ceiling).
 
 ## Target additions (control/execution/knowledge planes)
 

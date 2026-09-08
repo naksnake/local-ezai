@@ -62,10 +62,13 @@ service-token auth + forwarded identity, single audit log, `/v1/health`
 aggregation, OpenAPI contract artifact, opt-in compose overlay) and PR-9
 (lifecycle + governance + project endpoints over shared operations with
 CLI/API parity, idempotency keys, one error vocabulary for CLI and API,
-audited mutations) implemented. All nine await human merge on
-`claude/next-ready-pr-bnq7r3`. Next ready: **PR-10** (run endpoints:
-async run registry — start/status/report/cancel for run/sprint/fix/evolve,
-concurrency limits).
+audited mutations) and PR-10 (run endpoints: async run registry over the
+existing pipelines — start/status/report/journal/cancel for
+run/fix/sprint/evolve/plan, cooperative cancellation, concurrency limits,
+registered projects only, never a push) implemented. All ten await human
+merge on `claude/next-ready-pr-bnq7r3`. Next ready: **PR-11** (CLI
+connected mode: transport auto-detect, identical UX both modes, management
+verbs fail fast offline, parity smoke).
 
 **Product review (ADR-026, 2026-09-01):** agnosticism audit passed with
 remediations — roles/groups become the only stable names (role aliases

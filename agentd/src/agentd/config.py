@@ -285,6 +285,10 @@ class ControlConfig(BaseModel):
     port: int = CONTROL_DEFAULT_PORT
     token: str | None = None
     health_targets: dict[str, str] = Field(default_factory=dict)
+    #: Run registry (PR-10): worker threads executing pipelines, and how many
+    #: submissions may wait for one; beyond that a start is refused (429).
+    max_concurrent_runs: int = 2
+    max_queued_runs: int = 8
 
 
 class AgentdConfig(BaseModel):

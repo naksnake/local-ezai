@@ -80,6 +80,13 @@ every existing behavior and test.
 
 Legend: ✅ full · 🔍 read-only · ❌ deliberately absent.
 
+> **As built (PR-10):** the first row's "start via tools / view, cancel"
+> path exists in the control plane — `POST /v1/runs` starts run / fix /
+> sprint / evolve / plan jobs on **registered projects only**, `GET
+> /v1/runs…` views status, report and journal, `POST /v1/runs/{id}/cancel`
+> cancels (queued now, running at the next model call). `cancel` has no CLI
+> verb on purpose (direct mode is interactive: Ctrl-C); the API never pushes.
+
 ## 4. Deliberate asymmetries (and why)
 
 1. **Chat can start work but never govern** — approval/activation/rollback
