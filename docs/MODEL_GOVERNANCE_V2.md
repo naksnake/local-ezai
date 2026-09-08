@@ -45,6 +45,16 @@ Consequences (remediation R-1/R-6, [V1_PRODUCT_REVIEW.md](V1_PRODUCT_REVIEW.md))
 | rollback to a prior generation | no (audited, notifies) | restores an approved state; incident speed |
 | bootstrap generation 1 | implicit (the human wrote `.env`) | there is no prior state to protect |
 
+> **As-built (PR-5, `agentd/src/agentd/governance.py` +
+> `activation.py`):** the matrix is computed, not declared per verb: a
+> proposal's `requires_approval` is true iff some role's resolution chain
+> changes (`affected_roles`, before → after) or the slot runtime changes;
+> otherwise the queue approves it **by policy** on submission — recorded as
+> a decision by actor `policy`, never silent. Rejections need a reason;
+> decisions are made once. Every transition appends to
+> `config/governance/log.jsonl` (who, when, what, evidence keys). Rollback
+> bypasses the queue, is audited (`generation.rolled_back`) and notifies.
+
 ## 3. Role contracts (new, closes the loop with agnosticism)
 
 Each role carries a declarative **contract** — requirements a resolved
@@ -100,6 +110,13 @@ Safeguards (mostly already shipped, now bound to this lane):
 Net effect: the platform notices its own model-quality problems, does the
 research, fills in the paperwork — and a human remains the only one
 holding the pen that signs.
+
+> **As-built (PR-5):** the queue enforces the lane's boundaries as data
+> rules on `ChangeRequest.proposed_by == "evolution"`: benchmark evidence
+> is mandatory on submission ("evidence or silence"), at most one open
+> evolution proposal exists at a time, and such requests are never
+> policy-approved. The lane that *creates* proposals is post-V1 (N6′); the
+> queue format is ready for it.
 
 ## 6. Migration note (from MODEL_ROUTING_DESIGN/MODEL_LIFECYCLE v1 docs)
 

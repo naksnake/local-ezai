@@ -119,6 +119,20 @@ member of a group any role depends on); uninstall additionally deletes
 weights (blocked unless retired; requires `--force` if it would empty a
 rollback target).
 
+> **As-built (PR-5, `lifecycle.retire` / `lifecycle.uninstall`):** retire
+> is self-service only for a **non-serving** active model — a current
+> primary of any role is blocked ("activate a replacement first", which
+> is approval-gated), as is the last member a role depends on. Uninstall
+> is blocked for installed/benchmarked/active models; when any stored
+> generation lists the model as active it is a rollback target and
+> `force` is required; weights are removed and the model dropped from
+> groups and pin chains. `activate`/`upgrade` create change requests
+> (`activation.activate` / `activation.upgrade`); `activate` requires the
+> `benchmarked` state (evidence), places the model as primary of a group
+> (position 0 by default), pinned to a role, or as a fallback of its
+> declared groups; `upgrade` swaps the versions in every group and pin and
+> retires the old one.
+
 ### `model explain <role>` / `models` / `explain-run`
 The transparency triad — see
 [MODEL_ROUTING_DESIGN.md](MODEL_ROUTING_DESIGN.md) §7.
@@ -135,6 +149,16 @@ directory is a repo (it is, for self-hosted installs). Properties:
 - diffable (`model history`, Routing page diff view);
 - the *unit* of rollback and of audit.
 
+> **As-built (PR-1/PR-5):** history is strictly append-only — a rollback
+> (explicit or self-) is a **new** generation whose content equals the
+> target (`note: rollback to generation N`), so `registry.yaml` is always
+> the latest number and the trail shows what happened. Rendered artifacts
+> are not copied into the snapshot: they are deterministic outputs of the
+> registry + descriptors and are re-rendered on rollback. Evidence lives
+> on the change request (`config/governance/queue/<id>.yaml`) which the
+> generation note references. Committing generations to git is deferred to
+> the bootstrap (PR-7) behind an explicit flag.
+
 ## 4. Renders & reloads (atomicity)
 
 ```
@@ -149,6 +173,22 @@ loaded weights change) → health probe (`wait-ready` machinery) →
 An engine-weight change is the only operation with a serving gap; the
 Admin Center/CLI states the expected gap up front (per hardware profile)
 and requires an extra confirmation.
+
+> **As-built (PR-5, `agentd/src/agentd/activation.py`):** `apply()` runs
+> exactly this pipeline for an approved request: stale check (registry
+> moved ⇒ request `superseded`), reconcile (a registry ahead of its
+> rendered manifest is re-rendered first), **dry render** (nothing is
+> written that cannot render), `save_generation` N+1, `write_rendered`
+> (drift-checked), reload of the **changed artifacts only**
+> (`ComposeReloader`: engine `up -d` when the slot override or router
+> preset changed, router `restart` when its config changed), health
+> (`EngineHealth`: descriptor `ready` probe + one completion for a role's
+> primary). Any exception past the snapshot — health, reload, drift, or a
+> crash-injected error — triggers **self-rollback**: generation N's content
+> is saved as generation N+2, re-rendered and reloaded; the request is
+> marked `failed` with the reason and the restored generation. Reload and
+> health are seams; until the PR-7 cutover the default is render-only and
+> the audit record says `reloaded: false`.
 
 ## 5. "No config editing" — how it is actually guaranteed
 

@@ -176,7 +176,17 @@ foundations:
   materialization, ephemeral port, always torn down), tokens/sec on the
   entry + per-model trend series in `.agent/model_benchmarks.json`
   (coexists with `evaluate-models`), catalog as pluggable data with a
-  `fit()`-driven recommender. No CLI yet (PR-6); no activation (PR-5).
+  `fit()`-driven recommender. No CLI yet (PR-6).
+- **Activation + governance** (`governance.py`, `activation.py`, PR-5):
+  file-backed change-request queue + append-only audit log under
+  `config/governance/`; proposals (`activate`, `upgrade`) carry diff,
+  affected roles, evidence and are validated by a dry render; computed
+  approval matrix (policy-approved when no role chain/slot runtime
+  changes); bounded evolution lane; **atomic apply**: dry render → save
+  generation → write artifacts → reload changed → health → self-rollback
+  as a new generation on any failure; rollback without approval (audited,
+  notifies); reconcile for half-applied states; `retire`/`uninstall`
+  guards. Reload/health are pluggable seams, render-only until PR-7.
 
 ## Target additions (control/execution/knowledge planes)
 

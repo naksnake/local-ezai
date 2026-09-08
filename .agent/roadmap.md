@@ -52,9 +52,10 @@ P4 (web console) supersedes N4; N5′/N6′ land post-V1 on the P2 governance
 queue. Status: 🟡 **P1 in progress** — PR-1 (Registry v2 store +
 generations), PR-2 (capability vector/classes/fit), PR-3 (runtime
 descriptors + renderer, `engine` alias), PR-4 (lifecycle install /
-validate / benchmark, catalog + recommender) implemented
-([docs/prs/](../docs/prs/)); next ready: PR-5 (activate / upgrade /
-rollback / retire + governance queue). ADR-027 stays Proposed until PR-7.
+validate / benchmark, catalog + recommender), PR-5 (activate / upgrade /
+rollback / retire + governance queue, atomic apply with self-rollback)
+implemented ([docs/prs/](../docs/prs/)); next ready: PR-6 (CLI
+namespaces + role aliases in code). ADR-027 stays Proposed until PR-7.
 
 **Product review (ADR-026, 2026-09-01):** agnosticism audit passed with
 remediations — roles/groups become the only stable names (role aliases

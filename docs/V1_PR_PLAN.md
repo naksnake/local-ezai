@@ -101,7 +101,10 @@ bench`; catalog as pluggable data + requirements-driven recommender
 Tests: state machine transitions; resolver matrix; recommender fit
 against fixture vectors; benchmark recording into registry + trend file.
 
-**PR-5 · Lifecycle: activate / upgrade / rollback / retire + governance queue** — L
+**PR-5 · Lifecycle: activate / upgrade / rollback / retire + governance queue** — L — ✅ **implemented**
+([prs/PR-5-activation-governance.md](prs/PR-5-activation-governance.md);
+22 tests incl. failed-health self-rollback and crash injection, suite 435
+green, goldens intact)
 Scope: activation request objects (generation diff + evidence), file-backed
 approval queue (approve/reject with reason, append-only governance log),
 atomic render→reload→health→self-rollback protocol

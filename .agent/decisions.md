@@ -753,3 +753,27 @@ schema: `ModelEntry.artifact/installed_at/error/license`,
 Not in this slice: activation/rollback/retire (PR-5), CLI verbs (PR-6),
 the vLLM side-load memory gate / scheduled swap window (gating lands with
 activation), curated per-class catalog content (P5).
+**PR-5 slice (2026-09-08) — activate / upgrade / rollback / retire +
+governance queue:** `governance.py` is the file-backed queue
+(`config/governance/queue/<id>.yaml`, one file per request for life) and
+append-only audit log (`log.jsonl`); a `ChangeRequest` carries the full
+proposed generation, the diff, **affected roles** before → after, and
+evidence (benchmarks, fit, capability report, runtime). Rules are code:
+decisions once, rejection needs a reason, the **approval matrix is
+computed** (no role chain or slot-runtime change ⇒ approved by actor
+`policy`, audited), the **evolution lane** is bounded (evidence required,
+≤1 open, never auto-approved). `activation.py`: `activate`/`upgrade`/
+`propose` validate a proposal exactly as apply will (dry render) and
+enter the queue; `apply` runs MODEL_LIFECYCLE §4 — stale check
+(`superseded`), reconcile, dry render, save N+1, write artifacts
+(drift-checked), reload **changed artifacts only**, health — and on ANY
+failure past the snapshot **self-rolls-back** by saving N's content as a
+new generation (history is append-only; rollbacks are generations);
+`rollback` reuses the protocol without approval, audited + notifying;
+`reconcile` heals a registry ahead of its rendered manifest. Reload/health
+are seams (`ComposeReloader`, `EngineHealth`) defaulting to render-only
+until the PR-7 cutover (audited as such). `lifecycle.retire` (non-serving
+active only; primary or last member blocked) and `uninstall`
+(retired/failed only; rollback target ⇒ `force`). Deferred: CLI verbs
+(PR-6), bootstrap gen 1 (PR-7), git-committing generations (bootstrap
+flag), the proposal-creating evolution lane (N6′).

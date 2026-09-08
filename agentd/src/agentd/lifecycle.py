@@ -652,3 +652,94 @@ def benchmark(registry: RegistryV2, name: str, *, descriptors: dict[str, Runtime
                                         f"benchmark {name}: {result.tokens_per_s:.1f} tok/s")
     log.info("benchmark %s: %.1f tok/s (%s)", name, result.tokens_per_s, result.via)
     return updated, result
+
+
+# ── retire / uninstall (PR-5; MODEL_LIFECYCLE §2, MODEL_GOVERNANCE_V2 §2) ─────
+
+
+def retire(registry: RegistryV2, name: str, *,
+           persist_dir: Path | None = None) -> tuple[RegistryV2, bool]:
+    """``model retire <name>``: remove an ACTIVE model from resolution while
+    keeping its weights for rollback. Self-service only when the model
+    serves nothing: a current primary, or the last active member a role
+    depends on, is blocked — activate a replacement (approval-gated) first."""
+    entry = registry.models.get(name)
+    if entry is None:
+        raise LifecycleError(f"unknown model '{name}'")
+    if entry.state != "active":
+        raise LifecycleError(f"'{name}' is {entry.state} — only active models are retired "
+                             "(uninstall removes installed/failed ones)")
+    serving = sorted(role for role, resolution in registry.resolve_all().items()
+                     if resolution.primary == name)
+    if serving:
+        raise LifecycleError(
+            f"'{name}' is the primary of role(s) {', '.join(serving)} — retiring it changes "
+            "what serves users: activate a replacement (approval-gated) first")
+    updated = registry.model_copy(deep=True)
+    transition(updated.models[name], "retired", reason="retire")
+    try:
+        updated.resolve_all()
+    except RegistryResolutionError as exc:
+        raise LifecycleError(
+            f"'{name}' is the last active member a role depends on — retire blocked:\n{exc}"
+        ) from exc
+    updated, persisted = persist(updated, persist_dir, f"retire {name}")
+    log.info("retired %s", name)
+    return updated, persisted
+
+
+def _remove_path(path: Path) -> None:
+    import shutil
+
+    if path.is_dir():
+        shutil.rmtree(path)
+    elif path.exists():
+        path.unlink()
+
+
+def rollback_targets(config_dir: Path, name: str) -> list[int]:
+    """Generations in which the model was active — rolling back to them
+    needs its weights."""
+    from agentd.registry_v2 import list_generations, load_generation
+
+    targets: list[int] = []
+    for number in list_generations(config_dir):
+        snapshot = load_generation(config_dir, number)
+        entry = snapshot.models.get(name)
+        if entry is not None and entry.state == "active":
+            targets.append(number)
+    return targets
+
+
+def uninstall(registry: RegistryV2, name: str, *, config_dir: Path | None = None,
+              force: bool = False, remover: Callable[[Path], None] = _remove_path,
+              persist_dir: Path | None = None) -> tuple[RegistryV2, bool]:
+    """``model uninstall <name>``: delete weights and forget the model.
+    Blocked unless the model is retired (or never validly installed);
+    needs ``force`` when a stored generation would need it for rollback."""
+    entry = registry.models.get(name)
+    if entry is None:
+        raise LifecycleError(f"unknown model '{name}'")
+    if entry.state in ("installed", "benchmarked", "active"):
+        raise LifecycleError(f"'{name}' is {entry.state} — retire it first (an active model "
+                             "needs a replacement; installed/benchmarked ones: retire is "
+                             "not applicable, activate-then-retire or keep it)")
+    if config_dir is not None:
+        targets = rollback_targets(config_dir, name)
+        if targets and not force:
+            raise LifecycleError(
+                f"generation(s) {', '.join(map(str, targets))} list '{name}' as active — "
+                "rolling back to them would need its weights; pass force=True to delete "
+                "anyway (those generations stop being rollback targets)")
+    if entry.artifact:
+        remover(Path(entry.artifact))
+    updated = registry.model_copy(deep=True)
+    del updated.models[name]
+    for group, members in updated.groups.items():
+        updated.groups[group] = [m for m in members if m != name]
+    for spec in updated.roles.values():
+        spec.pin = [p for p in spec.pin if p != name]
+    updated = RegistryV2.model_validate(updated.model_dump(mode="json"))
+    updated, persisted = persist(updated, persist_dir, f"uninstall {name}")
+    log.info("uninstalled %s", name)
+    return updated, persisted
