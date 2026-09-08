@@ -1,11 +1,10 @@
 name: agentd CI
 
+# Manual trigger only (2026-09-08, by request): the suite runs locally before
+# every push (`make swe-test` + `make swe-lint`, or `cd agentd && python -m
+# pytest tests`). Start a hosted run from the Actions tab when one is wanted.
 on:
-  push:
-    branches: ["main", "claude/**", "feature/**"]
-    paths: ["agentd/**", ".github/workflows/agentd-ci.yml"]
-  pull_request:
-    paths: ["agentd/**", ".github/workflows/agentd-ci.yml"]
+  workflow_dispatch:
 
 jobs:
   test:
