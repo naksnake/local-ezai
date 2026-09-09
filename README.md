@@ -270,6 +270,8 @@ openssl rand -hex 32
 make help        List all commands
 make setup       First run, all steps: ./install.sh (edit .env once) → local-ezai setup (bootstrap, images, up, smoke, report)
 make setup-system  System packages for a fresh Ubuntu host (Docker, NVIDIA toolkit, Python venv, Node)
+make setup-offline  First run on an air-gapped host from a bundle (BUNDLE=<dir>), nothing downloaded
+make bundle      Offline bundle of this bootstrapped platform: images + weights + seeds (BUNDLE=<dir>)
 make install     First run, steps 1–3 only: detect hardware, create/repair .env with minted secrets, validate the seeds
 make build       Build embed-server, mcpo, and monitor images
 make pull        Pull official Docker images
@@ -307,6 +309,7 @@ make control-up  Start the ezaid control plane overlay (:8010; V1 P2, optional)
 make control-down / control-logs / control-spec  Stop it · follow logs · regenerate docs/api/ezaid-openapi.json
 make control-serve  Run ezaid on this host instead (sees your repos → SWE runs through the API)
 make swe-drill   Chat-ops boundary drill (offline): governance unreachable from chat, prompt-injection red-team, chat/RAG byte-identical
+make swe-accept  First-run acceptance suite F1–F11 (offline)
 make update      Pull latest images and restart
 make k8s         Deploy to K3s Kubernetes
 make clean       Remove all containers, images, volumes (destructive)
@@ -383,6 +386,14 @@ Models are stored in `./models` (inside the project folder) and mounted
 read-only into the containers. For **gated models** (Llama, Gemma): get a
 token at https://huggingface.co/settings/tokens and add
 `HF_TOKEN=hf_your_token` to `.env`.
+
+**Air-gapped host?** On a connected machine that already ran `make setup`:
+`make bundle BUNDLE=/media/usb/local-ezai-bundle` saves the images, the
+model weights and the seeds of its generation. On the offline machine:
+`./install.sh --offline /media/usb/local-ezai-bundle && make setup-offline
+BUNDLE=/media/usb/local-ezai-bundle` — the same steps, nothing downloaded
+(the bundle is a directory; `tar` it for transport; Docker and Python 3 are
+still needed on the host).
 
 ### 4. Check
 

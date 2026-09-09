@@ -11,6 +11,8 @@ runtime. Maintenance/repair procedures: [MAINTENANCE_GUIDE.md](MAINTENANCE_GUIDE
 | First run, steps 1–3 only: detect hardware, create or repair `.env` (secrets minted, model seeds validated before any download), one review edit | `./install.sh` (or `make install`; `--yes` skips the edit stop, `--check` writes nothing, `--profile n97` asserts a class) |
 | First run, steps 4–8 only | `local-ezai setup [--profile P] [--skip-images] [--skip-smoke] [--skip-banner]`; no seeds in `.env`? `local-ezai init` proposes the catalog's recommended set first |
 | System packages on a fresh Ubuntu host (Docker, NVIDIA toolkit, Python venv, Node) | `make setup-system` |
+| Air-gapped host (no egress) | on a connected host that ran `make setup`: `make bundle BUNDLE=/media/usb/local-ezai-bundle` (images + weights + seeds of its generation); on the air-gapped host: `./install.sh --offline /media/usb/local-ezai-bundle && make setup-offline BUNDLE=/media/usb/local-ezai-bundle` — the same steps, nothing downloaded; remove `EZAI_OFFLINE` from `.env` to go online later |
+| First-run acceptance suite (F1–F11, offline) | `make swe-accept` |
 | The first-run report and the WebUI card | `config/first-run/report.md` (+ `report.json`); the card is the OpenWebUI banner written to `config/first-run/openwebui.env` — delete the file and `docker compose up -d openwebui` to drop it |
 | Start / stop / restart | `make up-n97` (or `up-cpu`/`up`) · `make down` · `make restart` |
 | Health of all 8 services | `make health` |

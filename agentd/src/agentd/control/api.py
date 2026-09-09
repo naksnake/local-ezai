@@ -232,6 +232,15 @@ class MemoryAdded(BaseModel):
     message: str
 
 
+class FirstRunView(BaseModel):
+    """The first-run report `local-ezai setup` wrote (contract 1.2.0, PR-23) —
+    what the Admin Center's Platform-ready card shows."""
+
+    recorded: bool
+    path: str
+    report: dict[str, Any] = Field(default_factory=dict)
+
+
 # ── models ───────────────────────────────────────────────────────────────────
 
 
@@ -444,3 +453,13 @@ def project_memory_add(request: Request, ctx: PlatformDep, name: str,
                        body: MemoryAdd) -> MemoryAdded:
     with request.app.state.mutation_lock:
         return MemoryAdded(**ops.add_project_memory(ctx, name, kind=body.kind, text=body.text))
+
+
+# ── first run (contract 1.2.0, PR-23 — additive) ─────────────────────────────
+
+
+@router.get("/first-run", response_model=FirstRunView, operation_id="first_run_report",
+            tags=["platform"], summary="The first-run report written by `local-ezai setup` "
+                                       "(the Platform-ready card)", responses=PLATFORM_ERRORS)
+def first_run_report(ctx: PlatformDep) -> FirstRunView:
+    return FirstRunView(**ops.first_run_report(ctx))

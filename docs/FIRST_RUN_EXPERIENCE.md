@@ -33,8 +33,20 @@ image+weights bundle; steps are otherwise identical.
 > never a wipe: backup, user values untouched, only missing or placeholder
 > secrets minted). Ports relocate through the existing
 > `scripts/check-ports.sh`. `docker compose up` + wait-ready and the ✔ line
-> are PR-22; `--offline <bundle>` is PR-23. `make install` runs the script;
-> `make setup` is not yet the alias (it still installs system packages).
+> are PR-22 (`local-ezai setup`; `make setup` is the alias since then, the
+> system-package script became `make setup-system`).
+
+> **As-built (PR-23), the air-gapped variant:** on a connected machine that
+> already ran `make setup`, `local-ezai bundle create <dir>` (`make bundle
+> BUNDLE=<dir>`) saves every compose image, the registry's GGUF artifacts,
+> the hub cache the engine and the embedding server mount, and a manifest
+> with the seeds and checksums. On the air-gapped host `./install.sh
+> --offline <dir> && make setup-offline BUNDLE=<dir>`: images loaded,
+> weights placed where the runtime descriptors mount them (checksums
+> verified), the seeds and `EZAI_OFFLINE=1` written to `.env`, then the same
+> pipeline with image pull/build replaced by a presence check and fetchers
+> that refuse the network — F6, no egress. The bundle is a directory; `tar`
+> it for transport. Host Python and Docker remain prerequisites.
 
 ## 2. What `.env` is — and is not
 
@@ -137,3 +149,19 @@ A closing card, mirrored in `local-ezai status`:
 The FRE is itself validated by the platform's own Browser QA agent
 (scripted onboarding workflow) in CI — the installer becomes a tested
 artifact, not a README ([V1_IMPLEMENTATION_PLAN.md](V1_IMPLEMENTATION_PLAN.md) §P5).
+
+> **As-built (PR-23):** F1–F6 (and FINAL_FIRST_RUN_EXPERIENCE's F7–F11) are
+> scripted in `agentd/tests/acceptance/test_fre_acceptance.py` (`make
+> swe-accept`), one offline test each over the setup pipeline with Docker,
+> HTTP, the planner, the evaluator and the downloads faked; the bootstrap,
+> the registry and its generations, the renderer, git and the `.env` editing
+> are real. F1's wall clock is a host measurement (the P6 soak runbook); the
+> suite asserts that the network-shaped steps are the only ones excluded and
+> times the platform's own work. F4 aborts at every step and re-runs; F5
+> re-runs the installer and the pipeline after a first run; F6 builds a
+> bundle on a connected fake host and consumes it on an air-gapped one where
+> every network-shaped command is refused. Onboarding under Browser QA: the
+> Platform-ready card on the Admin Center Overview is journey
+> `j0-first-run-card` of `agentd/examples/browser-qa.admin-center.yaml`, run
+> in real Chromium by the platform's own harness; the OpenWebUI banner itself
+> is not in CI.

@@ -47,6 +47,7 @@ import time
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Any
 
 from agentd.activation import Platform
 from agentd.bootstrap import (
@@ -122,6 +123,9 @@ class Options:
     interactive: bool | None = None
     #: Editor command (shell-split); None → $VISUAL, $EDITOR, nano, vi.
     editor: str | None = None
+    #: An offline bundle to consume after .env is written (PR-23): images
+    #: loaded, weights placed, the bundle's seeds written — no review stop.
+    offline_bundle: Path | None = None
     as_json: bool = False
 
 
@@ -149,6 +153,8 @@ class Report:
     editor_opened: bool = False
     #: ``--check``: nothing was written; ``changes`` says what would be.
     dry_run: bool = False
+    #: The consumed offline bundle's summary (PR-23), or "".
+    bundle: str = ""
     exit_code: int = EXIT_OK
 
     @property
@@ -179,6 +185,8 @@ class Report:
             state = "unchanged — nothing to repair"
         out.append(f"  .env      {state} → {self.env}")
         out += [f"            {change}" for change in self.changes]
+        if self.bundle:
+            out.append(f"  bundle    {self.bundle}")
         if self.consumed:
             out.append(f"  seeds     consumed into generation {self.consumed} — models are managed "
                        "with `local-ezai model …` or the Admin Center; the seeds are history")
@@ -459,7 +467,8 @@ def open_in_editor(path: Path, editor: list[str]) -> None:
 def run_install(options: Options, *, vector_fn: Callable[[], CapabilityVector] = detect_vector,
                 mint_fn: Callable[[str], str] = mint,
                 editor_fn: Callable[[Path, list[str]], None] = open_in_editor,
-                now: str | None = None, say: Callable[[str], None] = print) -> Report:
+                now: str | None = None, say: Callable[[str], None] = print,
+                runner: Callable[[list[str]], Any] | None = None) -> Report:
     root = Path(options.root).expanduser().resolve()
     env_path = (options.env_path or root / ENV_FILENAME).resolve()
     example_path = (options.example_path or root / EXAMPLE_FILENAME).resolve()
@@ -504,7 +513,25 @@ def run_install(options: Options, *, vector_fn: Callable[[], CapabilityVector] =
     if options.check:
         report.changed, report.dry_run = False, True  # nothing written; `changes` = would be
 
-    if report.created and not options.assume_yes and not options.check:
+    consumed = False
+    if options.offline_bundle is not None:
+        bundle_path = Path(options.offline_bundle).expanduser().resolve()
+        if options.check:
+            report.bundle = f"would consume {bundle_path} (--check: nothing written)"
+        else:
+            from agentd.bundle import BundleError, consume_bundle
+
+            try:
+                outcome = consume_bundle(bundle_path, root, env_path=env_path,
+                                         descriptors=descriptors, runner=runner, now=stamp)
+            except BundleError as exc:
+                raise InstallError(str(exc)) from exc
+            report.bundle = outcome.summary()
+            report.changes += [f"bundle: {change}" for change in outcome.env_changes]
+            text = env_path.read_text(encoding="utf-8")
+            consumed = True  # the bundle's seeds ARE the decision — no review stop
+
+    if report.created and not options.assume_yes and not options.check and not consumed:
         interactive = options.interactive
         if interactive is None:
             interactive = sys.stdin.isatty() and sys.stdout.isatty()
@@ -573,6 +600,9 @@ def build_parser() -> argparse.ArgumentParser:
                         help=f"Set {RUNTIME_KEY} explicitly (default: from the descriptors)")
     parser.add_argument("--no-editor", action="store_true", dest="no_editor",
                         help="Never open an editor (print the instruction instead)")
+    parser.add_argument("--offline", default=None, metavar="BUNDLE",
+                        help="Consume an offline bundle (local-ezai bundle create) after .env is "
+                             "written: images loaded, weights placed, seeds set, no egress")
     parser.add_argument("--json", action="store_true", dest="as_json")
     return parser
 
@@ -582,7 +612,9 @@ def main(argv: list[str] | None = None) -> int:
     options = Options(root=Path(args.root), env_path=Path(args.env) if args.env else None,
                       assume_yes=args.assume_yes, check=args.check, profile=args.profile,
                       capability_class=args.capability_class, runtime=args.runtime,
-                      open_editor=not args.no_editor, as_json=args.as_json)
+                      open_editor=not args.no_editor,
+                      offline_bundle=Path(args.offline) if args.offline else None,
+                      as_json=args.as_json)
     try:  # the detector is looked up here so tests can seam it on the module
         report = run_install(options, vector_fn=detect_vector,
                              say=(lambda text: None) if args.as_json else print)

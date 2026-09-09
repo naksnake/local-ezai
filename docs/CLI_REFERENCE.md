@@ -80,8 +80,10 @@ always act on this host.
 | `status` | platform root, capability class, generation vs rendered generation, slot runtime, model states, pending approvals, engine/router health | — |
 | `up [--profile gpu\|cpu\|n97\|n97-igpu] [--rendered]` · `down [--profile P]` | `docker compose` wrappers over the profile files; `--rendered` adds `config/rendered/docker-compose.engine.yml` | — |
 | `bootstrap [--env PATH] [--dry-run] [--skip-benchmark] [--force] [--reload]` | consume the `.env` model seeds **once** into generation 1: validate (every problem with its fix, before any download) → install → benchmark → activate → render → stamp `EZAI_SEEDS_CONSUMED`; legacy `CHAT_MODEL`/`CPU_*`/`N97_*` migrated automatically; `--dry-run` shows the planned diff; `--force` on a bootstrapped platform files a governed change request instead | implicit (generation 1 only) |
-| `setup [--profile P] [--skip-images] [--skip-smoke] [--skip-banner] [--env PATH]` | the first run's steps 4–8 (after `./install.sh`; `make setup` runs both): the bootstrap when no registry exists → images (`docker compose pull` / `build` with the rendered engine override) → the embedding model → `docker compose up -d` → wait-ready (the runtime descriptor's `ready` verb, then every service) → smoke (chat turn **required**; RAG · `plan_only` on the bundled sample project · evaluate-models advisory) → `config/first-run/report.{json,md}`, the "Platform ready" WebUI banner, the Orchestrator persona; every step idempotent; exit 0 = ready | implicit (generation 1 only) |
+| `setup [--profile P] [--skip-images] [--skip-smoke] [--skip-banner] [--offline] [--env PATH]` | the first run's steps 4–8 (after `./install.sh`; `make setup` runs both): the bootstrap when no registry exists → images (`docker compose pull` / `build` with the rendered engine override) → the embedding model → `docker compose up -d` → wait-ready (the runtime descriptor's `ready` verb, then every service) → smoke (chat turn **required**; RAG · `plan_only` on the bundled sample project · evaluate-models advisory) → `config/first-run/report.{json,md}`, the "Platform ready" WebUI banner, the Orchestrator persona; every step idempotent; exit 0 = ready | implicit (generation 1 only) |
 | `init [--yes] [--profile P] [--env PATH]` | the fallback wizard when `.env` has no model seeds: hardware check → the recommended set per group (catalog recommender, fit verdicts) → accept (Enter / `--yes`) or type a catalog id / `hf:` / `gguf:` → seeds written to `.env` as catalog ids → `setup`; seeds already present are respected; exit 3 without a terminal unless `--yes` | implicit (generation 1 only) |
+| `bundle create <dir> [--profile P]` | on a connected, bootstrapped host: every compose image (`docker save`), the registry's GGUF artifacts, the hub cache, and a manifest with the seeds and checksums → an offline bundle directory (`make bundle BUNDLE=<dir>`; `tar` it for transport) | — |
+| `bundle consume <dir> [--env PATH]` | on the air-gapped host (what `install.sh --offline <dir>` runs after writing `.env`): `docker load`, weights placed where the descriptors mount them (checksums verified, present files skipped), seeds + `EZAI_OFFLINE=1` into `.env`; then `setup --offline` (`make setup-offline BUNDLE=<dir>`) — image pull/build become a presence check, the fetchers refuse the network | — |
 
 `--reload` (activate/upgrade/rollback/approve) reloads consumers and
 health-checks the new generation through the descriptor's probes; without it
@@ -92,7 +94,9 @@ the generation is rendered only (the default until the cutover, PR-7).
 ## The installer (`install.sh`, V1 · PR-21)
 
 `./install.sh [--yes] [--check] [--profile gpu|cpu|n97|n97-igpu | --class C]
-[--runtime R] [--no-editor] [--json]` — also `make install`; the logic is
+[--runtime R] [--no-editor] [--offline <bundle dir>] [--json]` — also `make
+install`; `--offline` consumes a bundle after writing `.env` (no review stop:
+the bundle's seeds are the decision) and needs Docker present; the logic is
 `python -m agentd.installer --root <checkout>` and runs from the agentd venv
 the script creates on demand. Steps 1–3 of the first run: **detect** the
 capability class (or assert one — `--profile cpu|n97|n97-igpu` / `--class`

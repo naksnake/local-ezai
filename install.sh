@@ -17,7 +17,11 @@
 # `make setup`); this script starts nothing and downloads nothing.
 #
 #   ./install.sh [--yes] [--check] [--profile gpu|cpu|n97|n97-igpu | --class <class>]
-#                [--runtime <id>] [--no-editor] [--json]
+#                [--runtime <id>] [--no-editor] [--offline <bundle dir>] [--json]
+#
+# --offline <dir>: the air-gapped first run (F6) — after .env is written the bundle
+#   made with `local-ezai bundle create` is consumed (images loaded, weights placed,
+#   its seeds set, EZAI_OFFLINE=1); then `make setup-offline BUNDLE=<dir>`.
 #
 # Exit codes: 0 ready · 1 problems printed (fix .env, re-run) · 2 usage / preflight
 #             · 3 review stop (edit .env once, re-run)
@@ -33,14 +37,15 @@ say()  { echo -e "${CYAN}[install]${NC} $*" >&2; }
 warn() { echo -e "${YELLOW}[install]${NC} $*" >&2; }
 fail() { echo -e "${RED}[install]${NC} $*" >&2; exit 2; }
 
-CHECK=0; JSON=0
+CHECK=0; JSON=0; OFFLINE=0
 for arg in "$@"; do
     case "$arg" in
         -h|--help)
-            sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+            sed -n '2,29p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
             exit 0 ;;
-        --check) CHECK=1 ;;
-        --json)  JSON=1 ;;
+        --check)   CHECK=1 ;;
+        --json)    JSON=1 ;;
+        --offline) OFFLINE=1 ;;
     esac
 done
 
@@ -74,6 +79,8 @@ fi
 DOCKER_OK=0
 if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
     DOCKER_OK=1
+elif [[ $OFFLINE -eq 1 && $CHECK -eq 0 ]]; then
+    fail "Docker with the compose plugin is required to load the bundle's images (--offline). Ubuntu: bash scripts/setup.sh"
 else
     warn "Docker with the compose plugin is not available yet — it is needed from 'make bootstrap' on, not by this script. Ubuntu: bash scripts/setup.sh"
 fi

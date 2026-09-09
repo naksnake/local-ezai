@@ -145,6 +145,31 @@ def default_fetcher(fmt: str, directory: Path) -> Fetcher:
     return HFFetcher(directory)
 
 
+#: Set in .env by a consumed offline bundle (PR-23): no egress — the fetchers
+#: only accept weights already on this host, the setup pipeline skips image
+#: pull/build.
+OFFLINE_KEY = "EZAI_OFFLINE"
+
+
+def _offline_opener(url: str, headers: dict[str, str]):
+    raise FetchError(f"offline mode ({OFFLINE_KEY}=1): {url} is not on this host — add it to "
+                     f"the bundle, or remove {OFFLINE_KEY} from .env to download")
+
+
+def _offline_runner(command: list[str], env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.CompletedProcess(
+        command, 1, "", f"offline mode ({OFFLINE_KEY}=1): refusing `{' '.join(command[:3])} …` — "
+                        "the repository is not in the bundle's hub cache")
+
+
+def offline_fetcher(fmt: str, directory: Path) -> Fetcher:
+    """The fetchers with the network refused: present, verified weights are
+    reused; anything else fails with the fix (F6: same wizard, no egress)."""
+    if fmt == "gguf":
+        return GGUFFetcher(directory, opener=_offline_opener)
+    return HFFetcher(directory, runner=_offline_runner, mode="local")
+
+
 FetcherFactory = Callable[[str, Path], Fetcher]
 
 

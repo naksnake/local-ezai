@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 import os
 import shutil
 import subprocess
@@ -70,6 +71,8 @@ def build_platform(state: Path):
         .ProbeResult(True, "", 0.2, name))
     control_api.docker_available = lambda: False
 
+    write_first_run_report(root, saved)
+
     cfg = state / "agentd.yaml"
     cfg.write_text(yaml.safe_dump({
         "llm": {"provider": "scripted", "script_path": str(state / "script.json")},
@@ -77,6 +80,30 @@ def build_platform(state: Path):
         "runs_dir": str(state / "runs")}), encoding="utf-8")
     (state / "script.json").write_text("[]")
     return build_context(load_config(cfg), root, actor="ezaid")
+
+
+def write_first_run_report(root, registry) -> None:
+    """What `local-ezai setup` records (PR-22) — the Overview's Platform-ready
+    card (PR-23, journey 0) reads it through the contract's first_run_report."""
+    from agentd.setup_pipeline import SetupReport, SmokeCheck
+
+    models = {group: members[0] for group, members in registry.groups.items() if members}
+    runtime = registry.models[next(iter(models.values()))].provider
+    report = SetupReport(root=str(root), profile="n97", capability_class="cpu-low",
+                         accelerator="none", runtime=runtime, generation=registry.generation,
+                         models=models, ready=True, created_at="2026-09-09T12:00:00",
+                         smoke=[SmokeCheck("chat", True, "answered", required=True),
+                                SmokeCheck("RAG", True, "answered"),
+                                SmokeCheck("swe_plan", True, "1 task"),
+                                SmokeCheck("models", True, "12/12")],
+                         urls={"webui": "http://localhost:3000",
+                               "admin": "http://localhost:8888/overview",
+                               "orchestrator": "http://localhost:3000/?models=local-ezai-orchestrator"},
+                         banner="shown in the WebUI", persona="after your first login")
+    out = root / "config" / "first-run"
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "report.json").write_text(json.dumps(report.as_dict(), indent=2, default=str),
+                                     encoding="utf-8")
 
 
 def build_sample_project(state: Path) -> Path:

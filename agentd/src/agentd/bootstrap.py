@@ -375,12 +375,16 @@ def bootstrap(seeds: Seeds, platform: Platform, queue: GovernanceQueue, catalog:
     names: dict[str, str] = {}
     installed_refs: dict[str, str] = {}
     for group, seed in seeds.models.items():
-        if seed.ref in installed_refs:  # the same model seeds several groups
-            names[group] = installed_refs[seed.ref]
+        is_auto = parse_source(seed.ref).kind == "auto"
+        # `auto` is the recommender's answer PER GROUP (F9), never one model for
+        # all groups; an explicit reference seeding several groups is one model.
+        key = f"auto:{group}" if is_auto else seed.ref
+        if key in installed_refs:
+            names[group] = installed_refs[key]
             continue
         if dry_run:
-            name = seed_name(seed) if parse_source(seed.ref).kind != "auto" else f"auto:{group}"
-            names[group] = installed_refs[seed.ref] = name
+            name = f"auto:{group}" if is_auto else seed_name(seed)
+            names[group] = installed_refs[key] = name
             parsers = platform.descriptors[runtime].capabilities.tool_call_parsers
             registry.models[name] = lifecycle.ModelEntry(
                 provider=runtime, groups=[group], context=seed.context,
@@ -388,6 +392,12 @@ def bootstrap(seeds: Seeds, platform: Platform, queue: GovernanceQueue, catalog:
                 tool_call_format=seed.tool_call_format or (
                     GENERIC_TOOL_FORMAT if GENERIC_TOOL_FORMAT in parsers else ""))
             continue
+        if is_auto:
+            recommended = _recommended_for(seeds, platform, catalog, group)
+            if recommended in registry.models:  # another group already brought it in
+                names[group] = installed_refs[key] = recommended
+                registry.models[recommended].groups.append(group)
+                continue
         result = lifecycle.install(
             registry, seed.ref, descriptors=platform.descriptors, vector=platform.vector,
             platform_root=platform.platform_root, validator=validator, catalog=catalog,
@@ -409,7 +419,7 @@ def bootstrap(seeds: Seeds, platform: Platform, queue: GovernanceQueue, catalog:
                 raise BootstrapError("benchmarking needs a benchmark function (or skip it "
                                      "explicitly)")
             registry = benchmark_fn(registry, result.name)
-        names[group] = installed_refs[seed.ref] = result.name
+        names[group] = installed_refs[key] = result.name
 
     proposed = plan_generation(seeds, registry, names)
     for name in set(names.values()):
@@ -462,6 +472,17 @@ def bootstrap(seeds: Seeds, platform: Platform, queue: GovernanceQueue, catalog:
                            + ", ".join(f"{g} ← {n}" for g, n in names.items())
                            + f" on {runtime}" + (" (seeds stamped as consumed)" if stamped else ""),
                            diff, stamped=stamped)
+
+
+def _recommended_for(seeds: Seeds, platform: Platform, catalog: Catalog, group: str) -> str:
+    """The catalog id `auto` resolves to for a group on this host — the same
+    call ``validate_seeds`` already made, so it does not raise here."""
+    contracts = [spec.requires for spec in reference_registry().roles.values()
+                 if spec.group == group]
+    return recommend_one(catalog, group, platform.vector, platform.descriptors,
+                         runtime=seeds.runtime, contracts=contracts,
+                         capability_class=platform.capability_class,
+                         accelerator=platform.accelerator).catalog_id
 
 
 def stamp_env(env_path: Path, generation: int, now: str | None = None) -> None:

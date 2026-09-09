@@ -114,8 +114,8 @@ confirmations instead of native dialogs; the Overview banner rolls back the
 last change in three clicks; the five zero-CLI journeys as one Browser-QA
 workflow file run by the platform's own harness in real Chromium against a
 launcher that serves the monitor over an in-process daemon; P4 exit
-criterion 1 proven on both surfaces) implemented. 🟡 **P5 in progress
-(ADR-031 Proposed)** — PR-21 (`install.sh` → `python -m agentd.installer`:
+criterion 1 proven on both surfaces) implemented. ✅ **P5 closed
+(ADR-031 Accepted)** — PR-21 (`install.sh` → `python -m agentd.installer`:
 hardware detected with the platform's own capability code or asserted with
 `--profile` / `--class` and recorded in `.env`; a fresh `.env` from the
 example with the seven secrets minted and `AI_RUNTIME` chosen from the
@@ -132,10 +132,15 @@ evaluate-models advisory —, `config/first-run/report.{json,md}`, the
 "Platform ready" card as an OpenWebUI banner with automatic rollback, the
 persona attempted; `make setup-system` for the system packages;
 `setup-gpu|cpu|n97` assert their profile; `local-ezai init` proposes the
-catalog's recommended set when the seeds are missing) implemented. All
-twenty-two await human merge on `claude/next-ready-pr-bnq7r3`. Next ready by
-plan order: **PR-23** (offline bundle + the F1–F11 acceptance suite +
-onboarding under Browser QA → ADR-031 Accepted, P5 closed).
+catalog's recommended set when the seeds are missing) and PR-23 (offline
+bundle: `local-ezai bundle create` on a connected host, `install.sh
+--offline` + `make setup-offline` on the air-gapped one, fetchers that refuse
+the network; the F1–F11 acceptance suite, `make swe-accept`, which surfaced
+and fixed the bootstrap's `auto` dedupe; contract 1.2.0 `first_run_report`
+and the Platform-ready card on the Overview under Browser QA) implemented.
+All twenty-three await human merge on `claude/next-ready-pr-bnq7r3`. Next
+ready by plan order: **PR-24** (parity harness — opens P6, the release
+train).
 
 **Product review (ADR-026, 2026-09-01):** agnosticism audit passed with
 remediations — roles/groups become the only stable names (role aliases

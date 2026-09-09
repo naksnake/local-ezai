@@ -129,7 +129,7 @@ def test_overview_renders_the_platform_from_the_control_plane(center):
     assert response.status_code == 200, response.text
     data = response.json()
     assert data["connected"] is True and data["ok"] is True
-    assert data["control_url"] == CONTROL_URL and data["control"]["contract"] == "1.1.0"
+    assert data["control_url"] == CONTROL_URL and data["control"]["contract"] == "1.2.0"
     platform = data["platform"]
     assert platform["generation"] == 1 and platform["capability_class"] == "cpu-low"
     assert platform["slot_runtime"] == "llamacpp" and platform["pending_approvals"] == 0

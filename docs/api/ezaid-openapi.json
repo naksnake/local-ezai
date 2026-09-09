@@ -482,6 +482,30 @@
         "title": "ErrorEnvelope",
         "type": "object"
       },
+      "FirstRunView": {
+        "description": "The first-run report `local-ezai setup` wrote (contract 1.2.0, PR-23) \u2014\nwhat the Admin Center's Platform-ready card shows.",
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "recorded": {
+            "title": "Recorded",
+            "type": "boolean"
+          },
+          "report": {
+            "additionalProperties": true,
+            "title": "Report",
+            "type": "object"
+          }
+        },
+        "required": [
+          "recorded",
+          "path"
+        ],
+        "title": "FirstRunView",
+        "type": "object"
+      },
       "GenerationHistory": {
         "properties": {
           "generations": {
@@ -1621,8 +1645,8 @@
   "info": {
     "description": "One authenticated control plane over the platform's declarative state \u2014 Registry v2 + generations, runtime descriptors, governance queue, rendered artifacts \u2014 for the `local-ezai` CLI (connected mode), the Admin Center and the SWE tool server. Every `/v1` call presents the service token as a bearer credential and may forward the human it acts for (`X-EZAI-User`) and its own name (`X-EZAI-Client`); the audit log records `<user> via <client>`. Mutating calls accept an `Idempotency-Key` header: a retry with the same key and payload replays the stored response, a different payload is a conflict. Every error is `{\"error\": {\"code\", \"message\", \"fix\"}}` \u2014 the same object the CLI prints.",
     "title": "Local-EZAI Platform Control Plane (ezaid)",
-    "version": "1.1.0",
-    "x-contract-status": "1.1.0 \u2014 additive over the surface frozen at 1.0.0 (P2 phase close, ADR-028 Accepted): PR-19 added the project memory operations; a surface change bumps the version: additive \u2192 minor, breaking \u2192 major"
+    "version": "1.2.0",
+    "x-contract-status": "1.2.0 \u2014 additive over the surface frozen at 1.0.0 (P2 phase close, ADR-028 Accepted): PR-19 added the project memory operations, PR-23 the first-run report; a surface change bumps the version: additive \u2192 minor, breaking \u2192 major"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -2005,6 +2029,120 @@
         "summary": "Ranked recommendations for a group with fit verdicts (CLI: local-ezai model catalog --group)",
         "tags": [
           "catalog"
+        ]
+      }
+    },
+    "/v1/first-run": {
+      "get": {
+        "operationId": "first_run_report",
+        "parameters": [
+          {
+            "description": "forwarded identity of the human the caller acts for",
+            "in": "header",
+            "name": "X-EZAI-User",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "forwarded identity of the human the caller acts for",
+              "title": "X-Ezai-User"
+            }
+          },
+          {
+            "description": "name of the calling surface (cli, admin-center, \u2026)",
+            "in": "header",
+            "name": "X-EZAI-Client",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "name of the calling surface (cli, admin-center, \u2026)",
+              "title": "X-Ezai-Client"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FirstRunView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "missing or invalid service token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "no such model / request / role / project"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "refused by a lifecycle or governance rule (message names the fix)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "invalid request or unservable proposal"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not attached to a platform"
+          }
+        },
+        "security": [
+          {
+            "serviceToken": []
+          }
+        ],
+        "summary": "The first-run report written by `local-ezai setup` (the Platform-ready card)",
+        "tags": [
+          "platform"
         ]
       }
     },

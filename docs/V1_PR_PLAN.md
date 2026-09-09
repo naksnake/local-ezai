@@ -350,9 +350,23 @@ an optional env_file with automatic rollback, the persona attempted;
 assert their profile; `make up*` fetch only the embedding model;
 `local-ezai init` proposes the recommended set from the catalog and writes
 catalog ids to `.env` before running the pipeline.
-**PR-23 · Offline bundle + FRE acceptance suite** — M: bundle
-create/consume, scripted F1–F11 acceptance tests, onboarding Browser-QA'd.
-**ADR-031 → Accepted.**
+**PR-23 · Offline bundle + FRE acceptance suite** — M — ✅ **implemented**
+([prs/PR-23-offline-bundle-acceptance.md](prs/PR-23-offline-bundle-acceptance.md);
+20 tests (25 collected) — the eleven criteria scripted, the bundle's edges,
+the console card, the sixth journey in real Chromium — suite 709 green,
+goldens and the chat-stack baseline intact; **ADR-031 → Accepted, P5 closed**)
+Scope: bundle create/consume, scripted F1–F11 acceptance tests, onboarding
+Browser-QA'd.
+As built: `local-ezai bundle create <dir>` (every compose image, the
+registry's GGUF artifacts, the hub cache, a manifest with seeds and
+checksums) and `install.sh --offline <dir>` (images loaded, weights placed,
+seeds and `EZAI_OFFLINE=1` written; the pipeline verifies images instead of
+pulling, the fetchers refuse the network); `make bundle` /
+`make setup-offline`; `agentd/tests/acceptance/` (`make swe-accept`) with
+one offline test per criterion; contract **1.2.0** adds the read-only
+`first_run_report`, the Overview shows the Platform-ready card, journey
+`j0-first-run-card` joins the Browser-QA suite. The suite surfaced, and this
+PR fixed, the bootstrap's `auto` dedupe (one model for every group).
 
 ### Phase P6 — Parity, agnosticism proof, release
 

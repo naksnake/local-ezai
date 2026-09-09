@@ -92,9 +92,12 @@ from agentd.runtime_descriptor import CAPABILITY_CLASSES, RuntimeDescriptor, loa
 log = get_logger("platform-cli")
 
 PLATFORM_COMMANDS = ("model", "governance", "project", "status", "up", "down", "bootstrap",
-                     "setup", "init")
+                     "setup", "init", "bundle")
 #: Verbs that act on THIS host (compose files, .env) — never sent to a daemon.
-HOST_ONLY_COMMANDS = ("bootstrap", "up", "down", "setup", "init")
+HOST_ONLY_COMMANDS = ("bootstrap", "up", "down", "setup", "init", "bundle")
+#: The first-run report `local-ezai setup` writes (PR-22) — served by the
+#: contract's 1.2.0 `first_run_report` for the Admin Center's card (PR-23).
+FIRST_RUN_REPORT = Path("first-run") / "report.json"
 #: A capability class ASSERTED by the operator (install.sh --profile/--class
 #: writes it to .env; make exports .env) — the installer and the CLI then
 #: agree on the class instead of each detecting (PR-21). Unset → detect.
@@ -778,6 +781,19 @@ def platform_snapshot(ctx: PlatformContext) -> dict[str, Any]:
             "models": models, "pending_approvals": len(pending)}
 
 
+def first_run_report(ctx: PlatformContext) -> dict[str, Any]:
+    """``GET /v1/first-run`` (contract 1.2.0, PR-23): the report the setup
+    pipeline wrote, or ``recorded: false`` before any first run."""
+    path = ctx.config_dir / FIRST_RUN_REPORT
+    if not path.is_file():
+        return {"recorded": False, "path": str(path), "report": {}}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return {"recorded": False, "path": str(path), "report": {"error": str(exc)}}
+    return {"recorded": True, "path": str(path), "report": data if isinstance(data, dict) else {}}
+
+
 def status_snapshot(ctx: PlatformContext) -> dict[str, Any]:
     """``local-ezai status`` in direct mode: the snapshot + this host's view
     of the stack health (the connected twin asks the daemon)."""
@@ -888,17 +904,23 @@ def cmd_down(ctx: PlatformContext, args: argparse.Namespace) -> int:
 
 
 def run_bootstrap(ctx: PlatformContext, env_path: Path, *, dry_run: bool = False,
-                  skip_benchmark: bool = False, force: bool = False, reload: bool = False):
+                  skip_benchmark: bool = False, force: bool = False, reload: bool = False,
+                  offline: bool = False, fetcher_factory: lifecycle.FetcherFactory | None = None):
     """The bootstrap with this host's seams (side-load validator, engine HTTP,
     docker runner) — shared by ``local-ezai bootstrap`` and the setup
-    pipeline (PR-22). Raises ``PlatformError`` (no .env) or
-    ``bootstrap.BootstrapError`` (the seeds' problems, every fix listed)."""
+    pipeline (PR-22). ``offline`` (PR-23) swaps in fetchers that refuse the
+    network. Raises ``PlatformError`` (no .env) or ``bootstrap.BootstrapError``
+    (the seeds' problems, every fix listed)."""
     from agentd import bootstrap as bs
 
     if not env_path.is_file():
         raise PlatformError(f"no {env_path} — run ./install.sh (or copy .env.example to .env "
                             f"and set {bs.RUNTIME_KEY} + {' / '.join(bs.SEED_GROUPS)})")
-    seeds = bs.read_seeds(bs.parse_env(env_path.read_text(encoding="utf-8")))
+    env = bs.parse_env(env_path.read_text(encoding="utf-8"))
+    seeds = bs.read_seeds(env)
+    offline = offline or bool((env.get(lifecycle.OFFLINE_KEY) or "").strip())
+    factory = fetcher_factory or (lifecycle.offline_fetcher if offline
+                                  else lifecycle.default_fetcher)
     reloader, health = reload_seams(reload)
 
     def benchmark_fn(registry, name):
@@ -911,8 +933,9 @@ def run_bootstrap(ctx: PlatformContext, env_path: Path, *, dry_run: bool = False
 
     return bs.bootstrap(seeds, ctx.platform, ctx.queue, ctx.catalog, actor=ctx.actor,
                         validator=build_validator(ctx), env_path=env_path,
-                        benchmark_fn=benchmark_fn, skip_benchmark=skip_benchmark,
-                        reloader=reloader, health=health, dry_run=dry_run, force=force)
+                        fetcher_factory=factory, benchmark_fn=benchmark_fn,
+                        skip_benchmark=skip_benchmark, reloader=reloader, health=health,
+                        dry_run=dry_run, force=force)
 
 
 def cmd_bootstrap(ctx: PlatformContext, args: argparse.Namespace) -> int:
@@ -948,6 +971,7 @@ def cmd_setup(ctx: PlatformContext, args: argparse.Namespace) -> int:
 
     options = SetupOptions(root=ctx.root, profile=args.profile, skip_images=args.skip_images,
                            skip_smoke=args.skip_smoke, skip_banner=args.skip_banner,
+                           offline=args.offline,
                            env_path=Path(args.env).expanduser() if args.env else None)
     quiet = getattr(args, "as_json", False)
     report = SetupPipeline(ctx, options, say=(lambda text: None) if quiet else print).run()
@@ -978,6 +1002,47 @@ def cmd_init(ctx: PlatformContext, args: argparse.Namespace) -> int:
     else:
         print("\n".join([""] + outcome.card()))
     return outcome.exit_code
+
+
+# ── bundle (PR-23): the air-gapped first run ─────────────────────────────────
+
+
+def cmd_bundle_create(ctx: PlatformContext, args: argparse.Namespace) -> int:
+    from agentd.bundle import BundleError, create_bundle
+    from agentd.installer import suggest_profile
+
+    profile = args.profile or suggest_profile(ctx.platform.klass, ctx.platform.accel)
+    try:
+        manifest = create_bundle(ctx, Path(args.target), profile=profile)
+    except BundleError as exc:
+        _emit(args, {"ok": False, "error": str(exc)}, [str(exc)])
+        return 1
+    lines = [f"bundle written to {Path(args.target).expanduser().resolve()}",
+             f"  generation {manifest.generation} on {manifest.runtime} (class "
+             f"{manifest.capability_class}, accelerator {manifest.accelerator}, profile {profile})",
+             f"  {len(manifest.images)} image(s) · {len(manifest.gguf)} GGUF file(s) · "
+             f"{len(manifest.hf_cache)} hub repositories",
+             "  seeds: " + " · ".join(f"{k}={v}" for k, v in manifest.seeds.items()),
+             "  on the air-gapped host: ./install.sh --offline <this directory> && "
+             "make setup-offline BUNDLE=<this directory>"]
+    _emit(args, {"ok": True, **manifest.__dict__, "profile": profile}, lines)
+    return 0
+
+
+def cmd_bundle_consume(ctx: PlatformContext, args: argparse.Namespace) -> int:
+    from agentd.bundle import BundleError, consume_bundle
+
+    env_path = Path(args.env).expanduser() if args.env else ctx.root / ".env"
+    try:
+        report = consume_bundle(Path(args.bundle), ctx.root, env_path=env_path,
+                                descriptors=ctx.descriptors)
+    except BundleError as exc:
+        _emit(args, {"ok": False, "error": str(exc)}, [str(exc)])
+        return 1
+    _emit(args, {"ok": True, **report.__dict__},
+          [report.summary(), *(f"  {c}" for c in report.env_changes),
+           "  next: local-ezai setup --offline  (or make setup-offline)"])
+    return 0
 
 
 # ── argparse wiring + dispatch ───────────────────────────────────────────────
@@ -1093,11 +1158,27 @@ def add_platform_parsers(sub: argparse._SubParsersAction, common: argparse.Argum
                    help="Skip the smoke checks (chat · RAG · plan · model probes)")
     p.add_argument("--skip-banner", action="store_true", dest="skip_banner",
                    help="Do not show the Platform-ready card in the WebUI")
+    p.add_argument("--offline", action="store_true",
+                   help="No egress: images must be present (a consumed bundle), no pull/build; "
+                        f"implied by {lifecycle.OFFLINE_KEY}=1 in .env")
     p = leaf(sub, "init", "Fallback wizard when .env has no model seeds: hardware check → "
                           "recommended model set → seeds → setup")
     p.add_argument("-y", "--yes", action="store_true", dest="assume_yes",
                    help="Accept the recommended set without asking")
     p.add_argument("--profile", default=None)
+    p.add_argument("--env", default=None)
+
+    bundle = sub.add_parser("bundle", help="Offline bundle for an air-gapped host: create · "
+                                           "consume", parents=[common])
+    bv = bundle.add_subparsers(dest="verb", required=True)
+    p = leaf(bv, "create", "Save this bootstrapped platform's images + weights + seeds into a "
+                           "directory (connected host)")
+    p.add_argument("target")
+    p.add_argument("--profile", default=None, help="compose profile whose images to save "
+                                                   "(default: this host's)")
+    p = leaf(bv, "consume", "Load a bundle on this host and point .env at it "
+                            "(install.sh --offline does this)")
+    p.add_argument("bundle")
     p.add_argument("--env", default=None)
 
 
@@ -1114,6 +1195,7 @@ HANDLERS: dict[tuple[str, str | None], Callable[[PlatformContext, argparse.Names
     ("project", "remove"): cmd_project_remove,
     ("status", None): cmd_status, ("up", None): cmd_up, ("down", None): cmd_down,
     ("bootstrap", None): cmd_bootstrap, ("setup", None): cmd_setup, ("init", None): cmd_init,
+    ("bundle", "create"): cmd_bundle_create, ("bundle", "consume"): cmd_bundle_consume,
 }
 
 

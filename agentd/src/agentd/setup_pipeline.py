@@ -54,7 +54,7 @@ from agentd.config import AgentdConfig
 from agentd.control.health import DEFAULT_TARGETS, ServiceTarget, probe_services
 from agentd.fetch import SourceError, parse_source
 from agentd.installer import EnvText, choose_runtime, suggest_profile
-from agentd.lifecycle import LifecycleError
+from agentd.lifecycle import OFFLINE_KEY, LifecycleError
 from agentd.logging_setup import get_logger
 from agentd.platform_cli import PlatformContext, PlatformError, compose_files
 from agentd.registry_v2 import load_registry, reference_registry, registry_path
@@ -175,6 +175,9 @@ class SetupOptions:
     skip_images: bool = False
     skip_smoke: bool = False
     skip_banner: bool = False
+    #: No egress (PR-23): images must be present locally, fetchers refuse the
+    #: network; also implied by ``EZAI_OFFLINE=1`` in .env (a consumed bundle).
+    offline: bool = False
     env_path: Path | None = None
 
 
@@ -192,6 +195,7 @@ class SetupReport:
     smoke: list[SmokeCheck] = field(default_factory=list)
     urls: dict[str, str] = field(default_factory=dict)
     ready: bool = False
+    offline: bool = False
     banner: str = ""
     persona: str = ""
     report_path: str = ""
@@ -237,6 +241,7 @@ class SetupPipeline:
     def __init__(self, ctx: PlatformContext, options: SetupOptions, *,
                  runner: Runner | None = None, http: Http | None = None,
                  plan_fn: PlanFn | None = None, evaluate_fn: EvaluateFn | None = None,
+                 fetcher_factory: Callable[..., Any] | None = None,
                  sleep: Callable[[float], None] = time.sleep,
                  clock: Callable[[], float] = time.monotonic,
                  environ: Mapping[str, str] | None = None, now: str | None = None,
@@ -247,6 +252,8 @@ class SetupPipeline:
         self.runner = runner or runner_for(self.root)
         self.http = http or HttpxHttp()
         self.plan_fn, self.evaluate_fn = plan_fn, evaluate_fn
+        #: Test seam for the bootstrap's downloads (None → the real or offline fetchers).
+        self.fetcher_factory = fetcher_factory
         self.sleep, self.clock, self.say = sleep, clock, say
         self.now = now or time.strftime(_STAMP)
         env_text = self.env_path.read_text(encoding="utf-8") if self.env_path.is_file() else ""
@@ -254,9 +261,11 @@ class SetupPipeline:
         self.env: dict[str, str] = {**parse_env(env_text),
                                     **(os.environ if environ is None else environ)}
         self.profile = options.profile or suggest_profile(ctx.platform.klass, ctx.platform.accel)
+        self.offline = options.offline or bool((self.env.get(OFFLINE_KEY) or "").strip())
         self.report = SetupReport(root=str(self.root), profile=self.profile,
                                   capability_class=ctx.platform.klass,
-                                  accelerator=ctx.platform.accel, created_at=self.now)
+                                  accelerator=ctx.platform.accel, created_at=self.now,
+                                  offline=self.offline)
         self.files: list[Path] = []
 
     # ── helpers ──────────────────────────────────────────────────────────────
@@ -341,12 +350,28 @@ class SetupPipeline:
                                "with `local-ezai model …` or the Admin Center")
         if not self.env_path.is_file():
             raise PlatformError(f"no {self.env_path} — run ./install.sh first")
-        result = platform_cli.run_bootstrap(self.ctx, self.env_path)
-        return "ok", result.message
+        result = platform_cli.run_bootstrap(self.ctx, self.env_path, offline=self.offline,
+                                            fetcher_factory=self.fetcher_factory)
+        return "ok", result.message + (" (offline: nothing downloaded)" if self.offline else "")
 
     def step_images(self) -> tuple[str, str]:
         if self.options.skip_images:
             return "skipped", "--skip-images"
+        if self.offline:  # a consumed bundle: the images must already be here
+            from agentd.bundle import BundleError, compose_images
+
+            try:
+                images = compose_images(self.files, self.runner)
+            except BundleError as exc:
+                raise PlatformError(str(exc)) from exc
+            missing = [image for image in images
+                       if self.runner(["docker", "image", "inspect", image]).returncode != 0]
+            if missing:
+                raise PlatformError(f"offline mode ({OFFLINE_KEY}=1) but these images are not on "
+                                    f"this host: {', '.join(missing)} — consume the bundle "
+                                    f"(./install.sh --offline <dir>) or remove {OFFLINE_KEY} "
+                                    "from .env to pull")
+            return "skipped", f"offline: {len(images)} images present locally — no pull, no build"
         pulled = self.compose("pull", *PULLED_SERVICES)
         if pulled.returncode != 0:
             raise PlatformError(f"docker compose pull failed: {_tail(pulled)}")
@@ -622,7 +647,8 @@ class SetupPipeline:
 
     def run(self) -> SetupReport:
         self.say(f"local-ezai setup — profile {self.profile} · class {self.ctx.platform.klass}"
-                 f" · accelerator {self.ctx.platform.accel}")
+                 f" · accelerator {self.ctx.platform.accel}"
+                 + (" · offline (no egress)" if self.offline else ""))
         failed = False
         for name, fn, required in (("bootstrap", self.step_bootstrap, True),
                                    ("images", self.step_images, True),

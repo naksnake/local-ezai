@@ -175,16 +175,54 @@ def test_the_five_zero_cli_journeys_run_on_the_platforms_browser_qa(tmp_path):
     report = BrowserQAHarness(config, tmp_path / "artifacts").run(workspace)
     assert report.error is None, f"{report.error}\n{report.app_log_tail}"
     assert [w.name for w in report.workflows] == [
-        "j1-swap-the-reasoning-model", "j2-runtime-switch-pre-check",
+        "j0-first-run-card", "j1-swap-the-reasoning-model", "j2-runtime-switch-pre-check",
         "j3-register-project-and-run-a-sprint", "j4-trigger-evolution-and-review",
         "j5-roll-back-from-the-overview-banner"]
     for workflow in report.workflows:
         assert workflow.passed, (workflow.name, workflow.failed_step, workflow.console_errors,
                                  workflow.page_errors, report.app_log_tail[-3000:])
-    assert report.passed and report.summary == "all 5 workflow(s) passed"
+    assert report.passed and report.summary == "all 6 workflow(s) passed"
     shots = [s for w in report.workflows for s in w.screenshots]
-    assert len(shots) == 7 and all(Path(s).is_file() and Path(s).stat().st_size > 0 for s in shots)
-    assert [len(w.screenshots) for w in report.workflows] == [3, 1, 1, 1, 1]
+    assert len(shots) == 8 and all(Path(s).is_file() and Path(s).stat().st_size > 0 for s in shots)
+    assert [len(w.screenshots) for w in report.workflows] == [1, 3, 1, 1, 1, 1]
+
+
+# ── the onboarding card (PR-23): contract 1.2.0 → the Overview ───────────────
+
+
+def test_overview_shows_the_platform_ready_card_once_a_first_run_is_recorded(center):
+    import json
+
+    from agentd.control import CONTRACT_VERSION
+    from agentd.setup_pipeline import SetupReport, SmokeCheck
+
+    assert CONTRACT_VERSION == "1.2.0"
+    absent = center.control.get(f"{V1}/first-run", headers=AUTH)
+    assert absent.status_code == 200 and absent.json()["recorded"] is False
+    assert absent.json()["path"].endswith("config/first-run/report.json")
+    assert center.web.get("/api/ezai/overview", auth=VIEWER).json()["first_run"] is None
+    report = SetupReport(root=str(center.root), profile="n97", capability_class="cpu-low",
+                         accelerator="none", runtime="llamacpp", generation=1,
+                         models={"reasoning": "alpha", "coding": "alpha", "chat": "alpha"},
+                         ready=True, created_at="2026-09-09T12:00:00",
+                         smoke=[SmokeCheck("chat", True, "ok", required=True),
+                                SmokeCheck("RAG", False, "no")],
+                         urls={"webui": "http://host:3000", "admin": "http://host:8888/overview",
+                               "orchestrator": "http://host:3000/?models=local-ezai-orchestrator"})
+    out = center.root / "config" / "first-run"
+    out.mkdir(parents=True)
+    (out / "report.json").write_text(json.dumps(report.as_dict()), encoding="utf-8")
+    recorded = center.control.get(f"{V1}/first-run", headers=AUTH).json()
+    assert recorded["recorded"] and recorded["report"]["ready"] and recorded["report"]["ok"]
+    card = center.web.get("/api/ezai/overview", auth=VIEWER).json()["first_run"]
+    assert card["models"]["chat"] == "alpha" and card["urls"]["orchestrator"].endswith(
+        "models=local-ezai-orchestrator")
+    assert [c["ok"] for c in card["smoke"]] == [True, False]
+    # a read-only operation: the chat client may see it too (no policy change)
+    from agentd.control import CLIENT_HEADER
+
+    assert center.control.get(f"{V1}/first-run", headers={**AUTH, CLIENT_HEADER: "swe-server"}
+                              ).status_code == 200
 
 
 # ── wiring ───────────────────────────────────────────────────────────────────
@@ -199,7 +237,7 @@ def test_wiring_compose_env_example_and_the_chat_stack_baseline():
     example = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
     assert "MONITOR_SSO_OPENWEBUI_URL" in example and "MONITOR_SSO_TRUSTED_SECRET" in example
     spec = yaml.safe_load(JOURNEYS.read_text(encoding="utf-8"))
-    assert len(spec["browser_qa"]["workflows"]) == 5
+    assert len(spec["browser_qa"]["workflows"]) == 6
     assert (REPO_ROOT / "agentd" / "tests" / "fixtures" / "admin_center_app.py").is_file()
     # the SSO keys are additive to the chat stack (the PR-15 baseline is unchanged)
     import importlib.util

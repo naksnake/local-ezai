@@ -368,6 +368,22 @@ through `local-ezai model …` + the governance queue. Modules:
   `setup-system`, `setup-*` re-pointed, `up*` → `download-embed.sh`, `embed`
   → `embed-documents.sh`; baseline treats the openwebui `env_file` as
   additive.
+- **Offline bundle + acceptance suite + the console card** (PR-23, P5 close
+  → ADR-031 Accepted): `agentd/bundle.py` — `create_bundle` (compose
+  `config --images` → `docker save`, the registry's GGUF artifacts, the hub
+  cache `models--*`, `bundle.json` with `{weights}`-placeholder seeds and
+  checksums) / `consume_bundle` (`docker load`, weights into the
+  descriptors' mount dirs via `gguf_weights_dir` + the hub cache, seeds +
+  `EZAI_OFFLINE=1` through `EnvText`); `lifecycle.offline_fetcher` refuses
+  the network (`OFFLINE_KEY`), `run_bootstrap(offline=…)` and the
+  pipeline's images step honor it; `install.sh --offline`, `local-ezai
+  bundle create|consume`, `make bundle` / `setup-offline`.
+  `tests/acceptance/` (`make swe-accept`): F1–F11 over the PR-22 harness
+  (`BundleDocker`, `PretendFetcherFactory`). Contract **1.2.0**: `GET
+  /v1/first-run` (`first_run_report`; `platform_cli.first_run_report` reads
+  `config/first-run/report.json`); the Overview's `first_run` → the
+  `#first-run` card; journey `j0-first-run-card`; the launcher writes a
+  report. Bootstrap fix: `auto` seeds dedupe per group (`_recommended_for`).
 - **Installer, steps 1–3 of the first run** (`install.sh` →
   `agentd/src/agentd/installer.py`, PR-21, ADR-031 Proposed): preflight
   (python3 ≥ 3.10, the agentd venv via `make swe-install`, Docker present or

@@ -21,8 +21,10 @@ from __future__ import annotations
 #: and regenerates ``docs/api/ezaid-openapi.json``; the frozen inventory test
 #: fails otherwise. **1.1.0 (PR-19, additive):** the project memory
 #: operations (``project_memory``, ``project_memory_add``) for the Admin
-#: Center's Memory page — every 1.0.0 operation unchanged.
-CONTRACT_VERSION = "1.1.0"
+#: Center's Memory page. **1.2.0 (PR-23, additive):** ``first_run_report``
+#: (``GET /v1/first-run``) for the Platform-ready card — every earlier
+#: operation unchanged.
+CONTRACT_VERSION = "1.2.0"
 API_PREFIX = "/v1"
 SERVICE_NAME = "ezaid"
 

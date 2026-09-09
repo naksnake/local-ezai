@@ -1,4 +1,4 @@
-.PHONY: help setup setup-system install build pull up up-cpu pull-cpu download-cpu update-cpu setup-cpu wait-ready \
+.PHONY: help setup setup-system setup-offline bundle install build pull up up-cpu pull-cpu download-cpu update-cpu setup-cpu wait-ready \
         bootstrap require-rendered download-embed \
         up-n97 pull-n97 download-n97 update-n97 setup-n97 up-n97-igpu bench \
         setup-gpu download-gpu \
@@ -46,7 +46,11 @@ EZAID_SPEC       = docs/api/ezaid-openapi.json
 # for the model seeds when .env is new) then `local-ezai setup` (bootstrap,
 # images, up, wait-ready, smoke, report). The CLI lives in the venv install.sh
 # creates, so it is resolved when the recipe runs, not when make parses.
-EZAI_SETUP = CLI=$$( [ -x .venv-agentd/bin/local-ezai ] && echo .venv-agentd/bin/local-ezai || echo local-ezai ); $$CLI setup
+EZAI_CLI_RUN = CLI=$$( [ -x .venv-agentd/bin/local-ezai ] && echo .venv-agentd/bin/local-ezai || echo local-ezai ); $$CLI
+EZAI_SETUP = $(EZAI_CLI_RUN) setup
+# Offline bundle (PR-23): make bundle BUNDLE=<dir> on a connected host; on the
+# air-gapped host make setup-offline BUNDLE=<dir> (no egress).
+BUNDLE ?= ./local-ezai-bundle
 
 help: ## Show all available commands
 	@echo ""
@@ -64,6 +68,13 @@ setup: ## First run, all steps: ./install.sh (edit .env once when asked) → loc
 
 setup-system: ## System packages for a fresh Ubuntu host: Docker, NVIDIA toolkit, Python venv, Node (was `make setup`)
 	@bash scripts/setup.sh
+
+bundle: ## Offline bundle of THIS bootstrapped platform (images + weights + seeds) → make bundle BUNDLE=/media/usb/local-ezai-bundle
+	@$(EZAI_CLI_RUN) bundle create $(BUNDLE) $(BUNDLE_ARGS)
+
+setup-offline: ## First run on an air-gapped host from a bundle, no egress: ./install.sh --offline $(BUNDLE) → local-ezai setup --offline
+	@bash install.sh --offline $(BUNDLE) $(INSTALL_ARGS)
+	@$(EZAI_SETUP) --offline $(SETUP_ARGS)
 
 # V1 first run, steps 1–3 (ADR-031, PR-21): detect hardware → generate or REPAIR
 # .env (secrets minted, model seeds validated before any download) → one review
@@ -270,7 +281,7 @@ clean: ## Remove all containers, images, and volumes (WARNING: deletes data)
 # ═══════════════════════════════════════════════════════════════════════════
 # Autonomous SWE runtime (agentd) — additive targets, see agentd/README.md
 # ═══════════════════════════════════════════════════════════════════════════
-.PHONY: swe-install swe-browsers swe-test swe-lint swe-drill swe-run swe-plan \
+.PHONY: swe-install swe-browsers swe-test swe-lint swe-drill swe-accept swe-run swe-plan \
         control-up control-down control-logs control-spec control-serve
 
 swe-install: ## Install the agentd runtime into ./.venv-agentd (editable, dev + browser + control extras)
@@ -313,6 +324,9 @@ swe-lint: ## Lint the agentd runtime with ruff
 
 swe-drill: ## Chat-ops boundary drill: governance unreachable from chat, prompt-injection red-team, chat/RAG byte-identical (offline)
 	cd agentd && ../.venv-agentd/bin/python -m pytest tests/security -v
+
+swe-accept: ## First-run acceptance suite F1–F11 (docs/FIRST_RUN_EXPERIENCE.md §6, FINAL_FIRST_RUN_EXPERIENCE §6), offline
+	cd agentd && ../.venv-agentd/bin/python -m pytest tests/acceptance -v
 
 swe-run: ## Autonomous run: make swe-run TASK="fix the bug" REPO=/path/to/repo
 	.venv-agentd/bin/ezai run "$(TASK)" --repo "$(REPO)"

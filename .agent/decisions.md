@@ -1260,7 +1260,7 @@ proxy shipped with the stack for the trusted-header path, WebUI-side deep
 links into the console.
 
 ## ADR-031 — Installer & onboarding: the five-step first run (P5)
-**Date:** 2026-09-09 · **Status:** Proposed (entered with PR-21; flips to
+**Date:** 2026-09-09 · **Status:** Accepted (entered Proposed with PR-21;
 Accepted with the P5 close, PR-23)
 **Context:** TARGET_PRODUCT_V1 §2 promises one edit of `.env`, once, and
 never a config file again; FINAL_FIRST_RUN_EXPERIENCE §3 decomposes `make
@@ -1372,3 +1372,55 @@ instead of make) — the PR-21 decision "installer and CLI agree" completed.
 --offline`), the scripted F1–F11 acceptance suite, onboarding under Browser
 QA. A first-run card in the Admin Center waits for a contract operation that
 carries the report (parity or absence).
+**PR-23 slice (2026-09-09) — the offline bundle, the acceptance suite, the
+card in the console; P5 close → Accepted:** (1) **The air-gapped first run
+is the same wizard with the fetches replaced by a directory.** `local-ezai
+bundle create <dir>` on a connected, bootstrapped host saves what a first
+run fetches — every compose image (`docker save`), the registry's GGUF
+artifacts and the hub cache the engine and the embedding server mount —
+with a manifest of the seeds (GGUF seeds carry a `{weights}` placeholder),
+the images and the checksums. `install.sh --offline <dir>` consumes it after
+`.env` is written: images loaded, weights placed where the runtime
+descriptors mount them (checksums verified, present files skipped), the
+seeds written to `.env` pointing at the local files, `EZAI_OFFLINE=1`
+stamped, no review stop (the bundle's seeds are the operator's decision).
+In offline mode the pipeline verifies the images are present instead of
+pulling or building, and the bootstrap's fetchers refuse the network with
+the fix named — present, verified weights are reused, anything else fails
+loudly (F6: same steps, no egress). The bundle is a directory; transport is
+`tar`. (2) **F1–F11 are scripted** (`agentd/tests/acceptance/`, `make
+swe-accept`): one offline test per criterion over the PR-22 harness — F1 a
+fresh accelerator host to smoke green, F2 exactly one hand-edited file
+once, F3 the low-power class through the same wizard with a smaller set,
+F4 an abort at every step resumable and never half-configured (no
+generation, or exactly one, rendered and stamped), F5 the re-run repairs and
+wipes nothing, F6 the bundle with no egress, F7 zero prompts on a fully
+specified `.env`, F8 fixes before any download, F9 `auto` per group with
+the verdict shown, F10 the generation-1 diff equal to the seeds, F11 a
+legacy `.env` migrated without user action. F1's thirty minutes is a host
+measurement (the P6 soak runbook); the suite times the platform's own work
+with the downloads excluded. (3) **The suite found a defect and this slice
+fixes it:** the PR-7 bootstrap deduplicated seeds by their reference text,
+so three `auto` seeds became one model for every group; `auto` is now the
+recommender's answer per group, and a recommendation two groups share is
+installed once. (4) **Onboarding under Browser QA, in the console.** The
+contract grows additively to **1.2.0** with `GET /v1/first-run`
+(`first_run_report`, read-only) serving the report `local-ezai setup`
+wrote; the Admin Center Overview shows the "Platform ready" card (groups →
+models, the smoke tally, Start chatting · Try the Orchestrator · Models &
+routing) while a report exists — an older daemon shows no card — and the
+journey suite's sixth workflow drives it in a real Chromium: the item PR-22
+deferred.
+**As built, PR-21..23 — the decision as it stands:** the five-step contract
+of FINAL_FIRST_RUN_EXPERIENCE holds end to end. `install.sh` detects or
+asserts the class, generates or repairs `.env` with minted secrets, stops
+once for the human's edit, and validates the seeds with every fix before
+any download; `local-ezai setup` bootstraps, fetches images, starts,
+waits, smoke-tests and reports, shows the card and installs the persona —
+both behind `make setup`, with `init` as the fallback when seeds are
+missing and the offline bundle for air-gapped hosts; every step is
+idempotent; the eleven acceptance criteria are scripted. Host Python and
+Docker remain the two prerequisites; the system-package script is `make
+setup-system`. Deferred beyond P5: a one-file bundle format, bundling the
+Python environment, the OpenWebUI side under Browser QA (not in CI), F1's
+wall clock (P6 soak).

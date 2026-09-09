@@ -120,6 +120,14 @@ local-ezai CLI ─────────────────────�
 > and run in CI on the platform's own Browser QA harness in a real Chromium
 > (see §5 there for the stated boundaries of journeys 1, 2 and 4).
 
+> **As built (PR-23):** the **Platform-ready card** on the Overview — what
+> `local-ezai setup` recorded (`config/first-run/report.json`, served by the
+> contract's additive 1.2.0 `GET /v1/first-run`): groups → models, runtime
+> and class, the smoke tally, and three ways onward (Start chatting → the
+> WebUI, Try the Orchestrator → the deep link, Models & routing). Shown while
+> a report exists; an older daemon without the operation shows no card.
+> Journey `j0-first-run-card` drives it in Browser QA.
+
 ## 3. The Governance queue (the page that matters most)
 
 One queue, three item types, one contract: **agents propose, humans

@@ -193,9 +193,9 @@ def start(center, body: dict) -> dict:
 
 
 def test_contract_1_1_0_serves_a_projects_memory(center):
-    assert CONTRACT_VERSION == "1.1.0"
+    assert CONTRACT_VERSION == "1.2.0"  # 1.1.0 memory ops, 1.2.0 (PR-23) the first-run report
     spec = center.control.get("/openapi.json").json()
-    assert spec["info"]["version"] == "1.1.0"
+    assert spec["info"]["version"] == "1.2.0"
     ops = {op["operationId"]: (method, path) for path, methods in spec["paths"].items()
            for method, op in methods.items()}
     assert ops["project_memory"] == ("get", f"{V1}/projects/{{name}}/memory")

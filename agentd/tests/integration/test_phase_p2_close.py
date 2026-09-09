@@ -88,7 +88,10 @@ FROZEN_1_0_0_OPERATIONS = {
 }
 #: Additive 1.1.0 operations (PR-19): a registered project's memory.
 CONTRACT_1_1_0_ADDITIONS = {"project_memory", "project_memory_add"}
-CONTRACT_OPERATIONS = FROZEN_1_0_0_OPERATIONS | CONTRACT_1_1_0_ADDITIONS
+#: Additive 1.2.0 operation (PR-23): the first-run report behind the Platform-ready card.
+CONTRACT_1_2_0_ADDITIONS = {"first_run_report"}
+CONTRACT_OPERATIONS = (FROZEN_1_0_0_OPERATIONS | CONTRACT_1_1_0_ADDITIONS
+                       | CONTRACT_1_2_0_ADDITIONS)
 
 
 def make_repo(path: Path) -> Path:
@@ -278,11 +281,11 @@ def test_two_gated_runs_start_status_report_cancel(platform):
 
 
 def test_contract_is_published_and_versioned():
-    assert CONTRACT_VERSION == "1.1.0"
+    assert CONTRACT_VERSION == "1.2.0"
     committed = json.loads((REPO_ROOT / SPEC_ARTIFACT).read_text(encoding="utf-8"))
-    assert committed["info"]["version"] == "1.1.0"
+    assert committed["info"]["version"] == "1.2.0"
     status = committed["info"]["x-contract-status"]
-    assert status.startswith("1.1.0") and "frozen at 1.0.0" in status and "additive" in status
+    assert status.startswith("1.2.0") and "frozen at 1.0.0" in status and "additive" in status
     live = create_app(ControlConfig(token="spec")).openapi()
     live_ids = {op["operationId"] for methods in live["paths"].values() for op in methods.values()}
     assert live_ids == CONTRACT_OPERATIONS, (
@@ -291,7 +294,7 @@ def test_contract_is_published_and_versioned():
         "update the inventory in the same PR")
     assert contract_surface(committed) == contract_surface(live)
     assert len(FROZEN_1_0_0_OPERATIONS) == 29  # the P2 close surface, untouched
-    assert len(CONTRACT_OPERATIONS) == 31
+    assert len(CONTRACT_OPERATIONS) == 32
     # every 1.0.0 operation is still served with its 1.0.0 path and method
     for op_id in FROZEN_1_0_0_OPERATIONS:
         assert any(op["operationId"] == op_id for methods in live["paths"].values()

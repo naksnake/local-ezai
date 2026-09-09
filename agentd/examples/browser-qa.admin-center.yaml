@@ -30,6 +30,18 @@ browser_qa:
   step_timeout: 30
 
   workflows:
+    # 0. Onboarding (PR-23): the "Platform ready" card the first run recorded —
+    #    groups → models, the smoke tally, and the three ways onward.
+    - name: j0-first-run-card
+      steps:
+        - goto: "/overview"
+        - expect_text: {selector: "#first-run", contains: "Platform ready"}
+        - expect_text: {selector: "#first-run", contains: "reasoning"}
+        - expect_text: {selector: "#first-run", contains: "smoke"}
+        - expect_visible: "#first-run a[href*='models=local-ezai-orchestrator']"
+        - expect_visible: "#first-run a[href='/models']"
+        - screenshot: "first-run-card"
+
     # 1. Swap the reasoning model: add model → benchmark → activate → approve →
     #    the Routing page shows the new primary.
     - name: j1-swap-the-reasoning-model

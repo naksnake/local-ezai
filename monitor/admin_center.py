@@ -171,6 +171,13 @@ async def overview(plane: ControlPlane, user: str) -> dict[str, Any]:
     pending = (await plane.get("/governance", user, status="pending")).get("requests", [])
     runs = await plane.get("/runs", user, limit=8)
     history = (await plane.get("/generations", user, limit=2)).get("generations") or []
+    first_run = None  # PR-23: the Platform-ready card (contract 1.2.0; older daemons: no card)
+    try:
+        recorded = await plane.get("/first-run", user)
+        if recorded.get("recorded"):
+            first_run = recorded.get("report") or {}
+    except ControlPlaneError:
+        first_run = None
     last_change = None
     if history:  # the banner journey 5 rolls back from: the latest generation and its predecessor
         latest = history[-1]
@@ -188,6 +195,7 @@ async def overview(plane: ControlPlane, user: str) -> dict[str, Any]:
         "limits": {"max_concurrent": runs.get("max_concurrent"),
                    "max_queued": runs.get("max_queued")},
         "last_change": last_change,
+        "first_run": first_run,
     }
 
 
@@ -831,6 +839,7 @@ ADMIN_HTML = """<!doctype html>
   .muted { color: var(--muted); }
   .banner { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px; }
   .banner.warn { border-left: 3px solid var(--yellow); }
+  .banner.ok { border-left: 3px solid var(--green); }
   .banner.err { border-left: 3px solid var(--red); }
   .banner .muted { margin-top: 6px; font-size: 12px; }
   .toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
@@ -965,11 +974,21 @@ async function renderOverview() {
   const runs = d.runs || [];
   const rows = runs.length ? runs.map(runRow).join('')
     : `<tr><td colspan="7" class="muted">no runs yet — start one with <code>local-ezai run</code>, the Orchestrator persona in chat, or the SWE tools</td></tr>`;
+  const fr = d.first_run;  // PR-23: the Platform-ready card (what `local-ezai setup` recorded, via GET /v1/first-run)
+  const frUrls = (fr && fr.urls) || {};
+  const frSmoke = (fr && fr.smoke) || [];
+  const frCard = fr ? `<div class="banner ok" id="first-run"><strong>${fr.ready ? '✔ Platform ready' : 'First run recorded'}</strong> ` +
+    `<span class="muted">· ${when(fr.created_at)} · ${esc(fr.runtime || '?')} on ${esc(fr.capability_class || '?')}${fr.generation ? ' · generation ' + fr.generation : ''}${fr.offline ? ' · offline bundle' : ''}</span>` +
+    `<div class="muted" style="margin-top:6px">${Object.entries(fr.models || {}).map(([g, m]) => `${esc(g)} ← <strong>${esc(m)}</strong>`).join(' · ') || 'no models yet'}` +
+    ` · smoke ${frSmoke.filter(c => c.ok).length}/${frSmoke.length}${frSmoke.length ? ' (' + frSmoke.map(c => esc(c.name) + (c.ok ? ' ✓' : ' ✗')).join(' · ') + ')' : ''}</div>` +
+    `<div style="margin-top:8px"><a class="btn sm primary" href="${esc(frUrls.webui || '#')}">Start chatting</a> ` +
+    `<a class="btn sm" href="${esc(frUrls.orchestrator || '#')}">Try the Orchestrator</a> <a class="btn sm" href="/models">Models &amp; routing</a> ` +
+    `<span class="muted">· report: <code>config/first-run/report.md</code> · nothing else to configure — models, approvals and runs live here and in the CLI</span></div></div>` : '';
   const lc = d.last_change;  // journey 5: roll back a bad change in three clicks (button, reason, confirm), from here
   const last = lc ? `<div class="banner" id="last-change"><strong>Last change:</strong> generation ${lc.generation} — ${esc(lc.note || '(no note)')} <span class="muted">· ${when(lc.saved_at)}</span>` +
     (lc.diff.length ? `<div class="muted">${lc.diff.map(esc).join('<br>')}</div>` : '') +
     (isAdmin(d) && lc.previous != null ? `<div style="margin-top:8px"><button class="btn sm danger" data-act="rollback-last" data-gen="${lc.previous}">Roll back to generation ${lc.previous}</button> <span class="muted">restores an approved state at once — audited, no approval queue</span></div>` : '') + `</div>` : '';
-  $('app').innerHTML =
+  $('app').innerHTML = (frCard ? `<section>${frCard}</section>` : '') +
     card('Stack health <span class="muted">· as the control plane sees it</span>', `<div class="grid">${services || '<div class="muted">no services probed</div>'}</div>`) +
     `<section><h2 class="sec">Roles → models</h2><div class="grid">${roles || '<div class="muted">no roles explained</div>'}</div></section>` +
     `<section>${gov}</section>` + (last ? `<section>${last}</section>` : '') +

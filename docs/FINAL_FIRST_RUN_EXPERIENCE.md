@@ -187,3 +187,13 @@ config.
 | F9 | `REASONING_MODEL=auto` (etc.) produces a class-appropriate choice with the fit verdict shown |
 | F10 | Generation 1 diff shows exactly the `.env` seeds (auditability of the bootstrap) |
 | F11 | Legacy `.env` (CPU_*/N97_* families) migrates to generation 1 without user action |
+
+> **As-built (PR-23):** each row is a test in `agentd/tests/acceptance/`
+> (`make swe-accept`): F7 a fully specified `.env` opens no editor and asks
+> nothing; F8 the fixes print and no fetcher, Docker or router call happens;
+> F9 `auto` seeds resolve per group to the recommender's eligible entries
+> with their verdicts, and generation 1 carries exactly those — this test
+> found the PR-7 dedupe defect (three `auto` seeds became one model for every
+> group), fixed in PR-23; F10 the bootstrap request's evidence and diff equal
+> the seeds; F11 a legacy `.env` migrates with the served name kept and no
+> user action.
