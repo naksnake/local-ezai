@@ -389,7 +389,13 @@ All 8 checks should pass.
    approval queue at `/governance` (evidence next to every decision;
    admins approve or reject there), sprints and evolution cycles at
    `/sprints` and `/evolution` (admins start them from the page), each
-   project's memory at `/memory`, and the allowlist at `/projects`.
+   project's memory at `/memory`, and the allowlist at `/projects`. Signed
+   in to the WebUI on the same host? The console recognises that session
+   (a WebUI admin is a console admin); the monitor login stays the fallback,
+   and a reverse proxy can hand over an identity header instead
+   (`MONITOR_SSO_*` in `.env.example`). The five zero-CLI walkthroughs of
+   the console are its own Browser QA workflows
+   (`agentd/examples/browser-qa.admin-center.yaml`).
 
 ### 7. Connect MCP agent tools
 

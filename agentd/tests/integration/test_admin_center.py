@@ -49,13 +49,18 @@ VIEWER = ("viewer", "view-pw")
 CONTROL_URL = "http://ezaid.test:8010"
 
 
-def load_monitor(monkeypatch, *, token: str = TOKEN):
+def load_monitor(monkeypatch, *, token: str = TOKEN, extra_env: dict[str, str] | None = None):
     """The monitor service as shipped, configured through its environment."""
     monkeypatch.setenv("MONITOR_AUTH", "true")
     monkeypatch.setenv("MONITOR_ADMIN_PASSWORD", ADMIN[1])
     monkeypatch.setenv("MONITOR_VIEWER_PASSWORD", VIEWER[1])
     monkeypatch.setenv("EZAI_CONTROL_URL", CONTROL_URL)
     monkeypatch.setenv("EZAI_CONTROL_TOKEN", token)
+    for key in ("MONITOR_SSO_TRUSTED_HEADER", "MONITOR_SSO_TRUSTED_SECRET", "MONITOR_SSO_ADMINS",
+                "MONITOR_SSO_OPENWEBUI_URL"):
+        monkeypatch.delenv(key, raising=False)  # SSO is opt-in (PR-20)
+    for key, value in (extra_env or {}).items():
+        monkeypatch.setenv(key, value)
     monkeypatch.syspath_prepend(str(MONITOR_DIR))
     sys.modules.pop("monitor_under_test", None)
     spec = importlib.util.spec_from_file_location("monitor_under_test", MONITOR_DIR / "monitor.py")

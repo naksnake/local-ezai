@@ -1058,7 +1058,7 @@ the baseline on purpose. Deferred, unchanged: the 1.1 tool additions
 runs the same package (workflow remains manual-only).
 
 ## ADR-030 — Admin Center: the monitor evolves into the platform console (P4)
-**Date:** 2026-09-09 · **Status:** Proposed (entered with PR-16; flips to
+**Date:** 2026-09-09 · **Status:** Accepted (entered Proposed with PR-16;
 Accepted with the P4 close, PR-20)
 **Context:** WEBUI_ADMIN_CENTER names the monitor (:8888 — RBAC admin/viewer,
 health view, knowledge-base bar) as the management console: an evolution of a
@@ -1201,3 +1201,60 @@ Governance queue only once the pipeline submits change requests. (4)
 **Projects** is the allowlist with each project's work (run count, active,
 last run) and links to its runs and memory; registering needs the path on
 the control plane's filesystem, and the page says so.
+**PR-20 slice (2026-09-09) — identity handoff, the journeys as Browser-QA
+workflows; P4 close → Accepted:** (1) **Identity comes from the chat surface
+when it can; the login stays the fallback.** The monitor's viewer / admin
+dependencies resolve, in order: an explicit Basic login; a trusted identity
+header set by a reverse proxy in front of the monitor
+(`MONITOR_SSO_TRUSTED_HEADER`, honoured only together with the shared secret
+in `X-EZAI-Proxy-Secret` — a header alone is never trusted; the addresses in
+`MONITOR_SSO_ADMINS` are admins, everyone else a viewer); the OpenWebUI
+session cookie (`token`, validated server-side against
+`MONITOR_SSO_OPENWEBUI_URL/api/v1/auths/` — OpenWebUI's admin is the
+console's admin, a user a viewer, a pending account is not signed in —
+cached 60 s); otherwise the Basic challenge. All of it is opt-in by
+environment: without the keys the PR-16 monitor is unchanged, and so are
+`MONITOR_AUTH=false` and the dashboard. The identity travels to the daemon
+as `X-EZAI-User: <email>`, so the audit trail names the person
+(`nita@example.com via admin-center`), not the role — the PR-16 slice's
+deferred line, closed without touching the daemon. (2) **No native
+dialogs:** every confirmation and reason (activate / upgrade / retire /
+uninstall / rollback, approve / reject, cancel, remove) is an inline form on
+the page. The Browser QA harness has no dialog step by design (ADR-016), so
+a native `prompt()` would have made the journeys untestable by the
+product's own capability; the forms also give the reason a field a
+screenshot can show. (3) **The Overview banner** names the last registry
+change (generation, note, when, diff lines, the generation a rollback
+restores) with *Roll back* → reason → confirm — journey 5 in three clicks
+over the PR-17 rollback route. (4) **The walkthroughs are the tests:** the
+five zero-CLI journeys of WEBUI_PRODUCT_STRATEGY §5 are one declarative
+Browser-QA workflow file (`agentd/examples/browser-qa.admin-center.yaml`),
+run by the platform's own harness (`BrowserQAHarness`, real headless
+Chromium, console errors fail the step) against a launcher
+(`agentd/tests/fixtures/admin_center_app.py`) that serves the monitor as
+shipped over an in-process daemon on a bootstrapped scratch platform with
+the lifecycle seams the offline suites fake; the run is an ordinary CI
+test. (5) **P4 exit criteria, honestly:** criterion 1 (one queue, decided on
+either surface) is proven both ways — the CLI proposes and the console
+approves, the console proposes and the CLI approves; criterion 3 runs the
+five journeys with three stated boundaries: journey 1 ends at the Routing
+page (the chat-side subtitle check needs OpenWebUI), journey 2 covers the
+pre-check and the format-gap explanation (approving a real runtime switch
+needs a host where a variant of the other runtime fits), journey 4 covers
+triggering a cycle and reading its proposal (rejecting it in Governance and
+the memory write-back wait for the evolution pipeline to submit change
+requests — the PR-18 note stands). Criterion 2 (the chat side) is
+ADR-029's, closed with PR-14/15.
+**As built, PR-16..20 — the decision as it stands:** the monitor is the
+Admin Center: one service, one image; a server-side control-plane client
+(token never in the browser); pages as path routes over one template;
+server-side aggregation per page; a daemon that is down as a page state;
+parity or absence (console starts for sprint and evolve only, no runtime
+verb, no role editing); admin mutations through the daemon behind the
+same-origin header with the daemon's refusals verbatim; evidence next to
+every decision; the audit trail naming the person. Contract **1.1.0** (the
+additive memory operations) is the only control-plane change the console
+needed. Deferred beyond P4: evolution and release-candidate items in the
+queue (pipeline work), a runtime verb (a 1.x contract slice), a reverse
+proxy shipped with the stack for the trusted-header path, WebUI-side deep
+links into the console.

@@ -102,6 +102,24 @@ local-ezai CLI ─────────────────────�
 > plans start from the CLI or chat. Remaining: SSO handoff and the
 > Browser-QA journey suite (PR-20 → ADR-030 Accepted).
 
+> **As built (PR-20, ADR-030 Accepted — P4 closed):** **Identity handoff.**
+> The console resolves who you are in this order: the monitor login (Basic,
+> always available); a trusted identity header from a reverse proxy in front
+> of the monitor (`MONITOR_SSO_TRUSTED_HEADER`, honoured only with the shared
+> secret in `X-EZAI-Proxy-Secret`; the addresses in `MONITOR_SSO_ADMINS` are
+> admins, everyone else a viewer); the OpenWebUI session cookie, validated
+> server-side at `MONITOR_SSO_OPENWEBUI_URL/api/v1/auths/` and cached 60 s
+> (OpenWebUI admin → admin, user → viewer, pending → not signed in). All
+> opt-in by environment; the audit trail names the person
+> (`you@example.com via admin-center`); the daemon is untouched. **No native
+> dialogs:** every confirmation and reason is an inline form on the page.
+> **Overview banner:** the last registry change (generation, note, diff, the
+> generation a rollback restores) with *Roll back* → reason → confirm.
+> **The journeys are the tests:** the five walkthroughs of
+> WEBUI_PRODUCT_STRATEGY §5 ship as `agentd/examples/browser-qa.admin-center.yaml`
+> and run in CI on the platform's own Browser QA harness in a real Chromium
+> (see §5 there for the stated boundaries of journeys 1, 2 and 4).
+
 ## 3. The Governance queue (the page that matters most)
 
 One queue, three item types, one contract: **agents propose, humans
@@ -145,6 +163,23 @@ evidence snapshot) to the control plane's governance log.
   V1.
 - The Admin Center authenticates to `ezaid` with its service token;
   user identity is forwarded per request for the audit trail.
+
+> **As built (PR-20):** two opt-in handoffs, both resolved in the monitor
+> and both falling back to Basic. (a) **Trusted header** from a reverse
+> proxy or SSO gateway in front of the monitor: `MONITOR_SSO_TRUSTED_HEADER`
+> names the header carrying the user (e.g. `X-Forwarded-Email`); it is
+> honoured only when the proxy also presents `MONITOR_SSO_TRUSTED_SECRET` in
+> `X-EZAI-Proxy-Secret`; `MONITOR_SSO_ADMINS` (comma-separated) are admins,
+> everyone else a viewer. (b) **OpenWebUI session:** cookies ignore ports, so
+> the `token` cookie the WebUI sets on the same host reaches the monitor and
+> is validated server-side at `MONITOR_SSO_OPENWEBUI_URL/api/v1/auths/`
+> (cached 60 s): OpenWebUI admin ⇒ admin, user ⇒ viewer, pending ⇒ not
+> signed in — the deep links chat prints open already signed in. Order of
+> resolution: Basic login → trusted header → cookie → Basic challenge; the
+> machine bearer and `MONITOR_AUTH=false` are unchanged. The person, not the
+> role, is forwarded as `X-EZAI-User` (`you@example.com via admin-center`
+> in the audit trail). Not in V1: a proxy shipped with the stack, or any
+> identity store of the platform's own.
 
 ## 5. UX principles
 

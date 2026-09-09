@@ -230,10 +230,11 @@ def test_browser_smoke_approve_and_reject_from_the_approval_view(center):
             admin = browser.new_context(
                 http_credentials={"username": ADMIN[0], "password": ADMIN[1]}).new_page()
             watch(admin)
-            admin.on("dialog", lambda dialog: dialog.accept("looks right"))
             admin.goto(f"{base_url}/governance/{first['id']}")
             admin.wait_for_selector("button[data-decide=approve]")
-            admin.click("button[data-decide=approve]")
+            admin.click("button[data-decide=approve]")  # inline confirmation, no native dialog
+            admin.fill("form.inline input[name=reason]", "looks right")
+            admin.click("form.inline button[data-confirm]")
             admin.wait_for_selector(".card-header .badge.applied")
             text = admin.inner_text("body")
             assert "looks right" in text and f"now generation {base + 1}" in text
@@ -243,8 +244,10 @@ def test_browser_smoke_approve_and_reject_from_the_approval_view(center):
             admin.goto(f"{base_url}/governance/{second['id']}")
             admin.wait_for_selector("button[data-decide=reject]")
             admin.click("button[data-decide=reject]")
+            admin.fill("form.inline input[name=reason]", "not on this host")
+            admin.click("form.inline button[data-confirm]")
             admin.wait_for_selector(".card-header .badge.rejected")
-            assert "looks right" in admin.inner_text("body")  # the recorded reason
+            assert "not on this host" in admin.inner_text("body")  # the recorded reason
             assert center.ctx.queue.get(second["id"]).status == "rejected"
             assert registry(center).generation == base + 1  # a rejection changes nothing
 

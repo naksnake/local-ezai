@@ -72,6 +72,6 @@ def test_drift_is_detected(tmp_path):
     compose = json.loads(json.dumps(baseline_tool.snapshot()))  # deep copy
     assert compose["services"]["mcpo"]["environment"].keys() <= {"MCP_API_KEY", "RAG_COLLECTION"}
     # the monitor's control-plane wiring (Admin Center, PR-16) is additive too
-    assert not any(k.startswith("EZAI_CONTROL_")
+    assert not any(k.startswith(("EZAI_CONTROL_", "MONITOR_SSO_"))
                    for k in compose["services"]["monitor"]["environment"])
     assert "extra_hosts" not in compose["services"]["monitor"]

@@ -265,6 +265,14 @@ services:
       # presents on the server side — the browser never sees it.
       - EZAI_CONTROL_URL=${EZAI_CONTROL_URL_MONITOR:-http://ezaid:8010}
       - EZAI_CONTROL_TOKEN=${EZAI_CONTROL_TOKEN:-ezai-control-key}
+      # SSO handoff (V1 P4): an OpenWebUI admin arriving from a deep link is
+      # already signed in (session cookie validated against OpenWebUI); a
+      # reverse proxy may pass a trusted user header with a shared secret.
+      # HTTP Basic (admin / viewer above) stays the fallback.
+      - MONITOR_SSO_OPENWEBUI_URL=${MONITOR_SSO_OPENWEBUI_URL:-http://openwebui:8080}
+      - MONITOR_SSO_TRUSTED_HEADER=${MONITOR_SSO_TRUSTED_HEADER:-}
+      - MONITOR_SSO_TRUSTED_SECRET=${MONITOR_SSO_TRUSTED_SECRET:-}
+      - MONITOR_SSO_ADMINS=${MONITOR_SSO_ADMINS:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:

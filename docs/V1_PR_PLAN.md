@@ -292,9 +292,25 @@ curated rule / style / decision). The Memory page needed data 1.0.0 never
 served: `GET|POST /v1/projects/{name}/memory` added by the contract's own
 rule (minor bump, artifact regenerated, inventory pins 29 + 2). Console
 starts amend the parity matrix for sprint and evolve only.
-**PR-20 · SSO handoff + Browser-QA suite** — M: trusted-header handoff
-(Basic fallback), the five zero-CLI journeys of WEBUI_PRODUCT_STRATEGY §5
-as Browser-QA workflows in CI. **ADR-030 → Accepted.**
+**PR-20 · SSO handoff + Browser-QA suite** — M — ✅ **implemented**
+([prs/PR-20-admin-center-sso-journeys.md](prs/PR-20-admin-center-sso-journeys.md);
+6 tests incl. the five journeys driven by the platform's own Browser QA
+harness in a real Chromium, suite 646 green, goldens intact; **ADR-030 →
+Accepted, P4 closed**)
+Scope: trusted-header handoff (Basic fallback), the five zero-CLI journeys
+of WEBUI_PRODUCT_STRATEGY §5 as Browser-QA workflows in CI.
+As built: identity handoff in the monitor — the Basic login, else a
+proxy-set trusted header with a shared secret (`MONITOR_SSO_TRUSTED_HEADER`
+/ `_SECRET` / `_ADMINS`), else the OpenWebUI session cookie validated
+against `MONITOR_SSO_OPENWEBUI_URL`; opt-in, Basic stays the fallback, the
+audit trail names the person. Inline confirmations replace native dialogs;
+the Overview banner rolls back the last change in three clicks; sprint views
+carry "how to merge". The five journeys are
+`agentd/examples/browser-qa.admin-center.yaml`, run by `BrowserQAHarness`
+against a launcher serving the monitor over an in-process daemon; journeys
+1, 2 and 4 stop at stated boundaries (the chat-side check needs OpenWebUI; a
+real runtime switch needs a fitting variant; evolution proposals are not yet
+queue items). P4 exit criterion 1 proven on both surfaces.
 
 ### Phase P5 — First-Run Experience (ADR-031)
 

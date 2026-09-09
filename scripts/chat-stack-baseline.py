@@ -38,9 +38,10 @@ CHAT_MCP_SERVERS = ("filesystem", "memory", "fetch", "qdrant-rag")
 CHAT_SERVICES = ("openwebui", "litellm", "embed-server", "qdrant", "searxng", "mcpo", "monitor")
 #: mcpo environment keys that existed before PR-13 (the SWE keys are additive).
 MCPO_CHAT_ENV = ("MCP_API_KEY", "RAG_COLLECTION")
-#: Control-plane wiring of the monitor's Admin Center pages (PR-16) — additive
-#: to the dashboard the chat experience relies on (health view, KB upload).
-CONTROL_ENV_PREFIX = "EZAI_CONTROL_"
+#: Control-plane wiring of the monitor's Admin Center pages (PR-16) and its
+#: SSO handoff (PR-20) — additive to the dashboard the chat experience relies
+#: on (health view, KB upload).
+MONITOR_ADDITIVE_PREFIXES = ("EZAI_CONTROL_", "MONITOR_SSO_")
 #: OpenWebUI tool-server connections that existed before PR-14.
 CHAT_TOOL_CONNECTIONS = ("qdrant-rag", "fetch", "memory", "filesystem")
 
@@ -76,7 +77,7 @@ def snapshot(root: Path = REPO_ROOT) -> dict[str, Any]:
             env = {k: v for k, v in env.items() if k in MCPO_CHAT_ENV}
             service.pop("extra_hosts", None)  # PR-13 additive reachability for a host daemon
         if name == "monitor":
-            env = {k: v for k, v in env.items() if not k.startswith(CONTROL_ENV_PREFIX)}
+            env = {k: v for k, v in env.items() if not k.startswith(MONITOR_ADDITIVE_PREFIXES)}
             service.pop("extra_hosts", None)  # PR-16 additive reachability for a host daemon
         service["environment"] = env
         services[name] = service

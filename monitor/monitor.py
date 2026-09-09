@@ -25,7 +25,7 @@ from typing import AsyncGenerator, Optional
 
 import admin_center
 import httpx
-from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
@@ -56,38 +56,130 @@ MONITOR_AUTH = os.getenv("MONITOR_AUTH", "true").lower() != "false"
 ADMIN_PASSWORD  = os.getenv("MONITOR_ADMIN_PASSWORD",  "admin")
 VIEWER_PASSWORD = os.getenv("MONITOR_VIEWER_PASSWORD", "viewer")
 
+# ── SSO handoff (V1 P4, PR-20, ADR-030) ──────────────────────────────────────
+# Two OPTIONAL ways to arrive already signed in; HTTP Basic stays the fallback
+# and MONITOR_AUTH=false still opens everything.
+#  1. Trusted header from a reverse proxy / SSO gateway in front of the stack:
+#     MONITOR_SSO_TRUSTED_HEADER names the header that carries the user (e.g.
+#     X-Forwarded-Email); the proxy proves itself with MONITOR_SSO_TRUSTED_SECRET
+#     in X-EZAI-Proxy-Secret — a header without the secret is never trusted.
+#     Users listed in MONITOR_SSO_ADMINS (comma-separated) are admins, the
+#     rest viewers.
+#  2. OpenWebUI session: cookies ignore ports, so the `token` cookie OpenWebUI
+#     sets on this host reaches the monitor; it is validated against
+#     MONITOR_SSO_OPENWEBUI_URL/api/v1/auths/ (empty = off). An OpenWebUI admin
+#     is an Admin Center admin, any other active user a viewer — the deep links
+#     the Orchestrator prints therefore open already signed in.
+# The human behind the login (`Identity.user`) is forwarded to the control
+# plane as X-EZAI-User, so the audit trail names people, not roles.
+SSO_TRUSTED_HEADER = os.getenv("MONITOR_SSO_TRUSTED_HEADER", "").strip()
+SSO_TRUSTED_SECRET = os.getenv("MONITOR_SSO_TRUSTED_SECRET", "")
+SSO_ADMINS = {a.strip().lower() for a in os.getenv("MONITOR_SSO_ADMINS", "").split(",")
+              if a.strip()}
+SSO_OPENWEBUI_URL = os.getenv("MONITOR_SSO_OPENWEBUI_URL", "").rstrip("/")
+SSO_PROXY_SECRET_HEADER = "X-EZAI-Proxy-Secret"
+SSO_CACHE_TTL_S = 60.0
+#: Test seam: an httpx transport for the OpenWebUI lookup (None = real network).
+SSO_TRANSPORT: Optional[httpx.AsyncBaseTransport] = None
+_sso_cache: dict[str, tuple[float, Optional["Identity"]]] = {}
+
+
+class Identity(str):
+    """A resolved login. The string itself is the ROLE ('admin' / 'viewer'),
+    so every existing `role == "admin"` check keeps working; `user` is the
+    human behind it (forwarded to the control plane for the audit trail) and
+    `via` how they arrived: basic · bearer · trusted-header · openwebui · open."""
+
+    user: str
+    via: str
+
+    def __new__(cls, role: str, user: str = "", via: str = "basic") -> "Identity":
+        obj = super().__new__(cls, role)
+        obj.user = user or role
+        obj.via = via
+        return obj
+
+
 _basic = HTTPBasic(auto_error=False)
 
 
 def _resolve_role(credentials: Optional[HTTPBasicCredentials],
-                  authorization: Optional[str]) -> Optional[str]:
+                  authorization: Optional[str]) -> Optional[Identity]:
+    """The pre-existing paths: auth off, the machine bearer, HTTP Basic."""
     if not MONITOR_AUTH:
-        return "admin"
+        return Identity("admin", "admin", "open")
     if authorization and secrets.compare_digest(authorization, f"Bearer {MCP_KEY}"):
-        return "admin"
+        return Identity("admin", "service", "bearer")
     if credentials:
         if (credentials.username == "admin"
                 and secrets.compare_digest(credentials.password, ADMIN_PASSWORD)):
-            return "admin"
+            return Identity("admin", "admin", "basic")
         if (credentials.username == "viewer"
                 and secrets.compare_digest(credentials.password, VIEWER_PASSWORD)):
-            return "viewer"
+            return Identity("viewer", "viewer", "basic")
     return None
 
 
+def _trusted_header_identity(request: Request) -> Optional[Identity]:
+    if not (SSO_TRUSTED_HEADER and SSO_TRUSTED_SECRET):
+        return None
+    user = (request.headers.get(SSO_TRUSTED_HEADER) or "").strip()
+    secret = request.headers.get(SSO_PROXY_SECRET_HEADER) or ""
+    if not user or not secrets.compare_digest(secret, SSO_TRUSTED_SECRET):
+        return None
+    role = "admin" if user.lower() in SSO_ADMINS else "viewer"
+    return Identity(role, user, "trusted-header")
+
+
+async def _openwebui_identity(token: Optional[str]) -> Optional[Identity]:
+    """Validate OpenWebUI's session token against OpenWebUI itself (cached
+    briefly). Any failure means "not signed in here" — never an error."""
+    if not (SSO_OPENWEBUI_URL and token):
+        return None
+    now = time.time()
+    cached = _sso_cache.get(token)
+    if cached and cached[0] > now:
+        return cached[1]
+    identity: Optional[Identity] = None
+    try:
+        async with httpx.AsyncClient(timeout=3.0, transport=SSO_TRANSPORT) as client:
+            response = await client.get(f"{SSO_OPENWEBUI_URL}/api/v1/auths/",
+                                        headers={"Authorization": f"Bearer {token}"})
+        if response.status_code == 200:
+            data = response.json()
+            role = data.get("role")
+            user = data.get("email") or data.get("name") or data.get("id") or ""
+            if user and role == "admin":
+                identity = Identity("admin", user, "openwebui")
+            elif user and role == "user":
+                identity = Identity("viewer", user, "openwebui")
+    except (httpx.HTTPError, ValueError):
+        identity = None
+    _sso_cache[token] = (now + SSO_CACHE_TTL_S, identity)
+    if len(_sso_cache) > 512:  # bounded: drop the expired entries
+        for key in [k for k, (expiry, _) in _sso_cache.items() if expiry <= now]:
+            _sso_cache.pop(key, None)
+    return identity
+
+
 async def require_viewer(
+    request: Request,
     credentials: Optional[HTTPBasicCredentials] = Depends(_basic),
     authorization: Optional[str] = Header(None),
-) -> str:
-    role = _resolve_role(credentials, authorization)
-    if role is None:
+) -> Identity:
+    identity = _resolve_role(credentials, authorization)
+    if identity is None:
+        identity = _trusted_header_identity(request)
+    if identity is None:
+        identity = await _openwebui_identity(request.cookies.get("token"))
+    if identity is None:
         raise HTTPException(
             status_code=401, detail="Authentication required",
             headers={"WWW-Authenticate": 'Basic realm="AI Service Monitor"'})
-    return role
+    return identity
 
 
-async def require_admin(role: str = Depends(require_viewer)) -> str:
+async def require_admin(role: Identity = Depends(require_viewer)) -> Identity:
     if role != "admin":
         raise HTTPException(status_code=403,
                             detail="admin role required (viewer is read-only)")

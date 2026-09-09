@@ -281,7 +281,7 @@ through `local-ezai model …` + the governance queue. Modules:
   untouched), and the chat-stack byte-identical baseline
   (`scripts/chat-stack-baseline.py` → `tests/fixtures/chat_stack_baseline.json`).
 - **Admin Center on the monitor** (`monitor/admin_center.py`, PR-16, ADR-030
-  Proposed): the monitor (:8888) stays one service; a sibling module installs
+  — Accepted with PR-20): the monitor (:8888) stays one service; a sibling module installs
   `/overview`, `/runs`, `/runs/{id}` and their `/api/ezai/*` data on the
   existing app behind the existing RBAC (viewer reads, admin cancels). The
   monitor calls `ezaid` server-side with `EZAI_CONTROL_TOKEN`, forwards the
@@ -328,6 +328,23 @@ through `local-ezai model …` + the governance queue. Modules:
   (`project_memory`, `project_memory_add`) over `agentd.memory.MemoryStore`
   in the registered project's `.agent/`; the 29 frozen 1.0.0 operations
   unchanged; chat may read memory, never write it (PR-15 client policy).
+- **Identity handoff + the journey suite** (PR-20, P4 close → ADR-030
+  Accepted): `monitor.py` resolves an `Identity` (role + person) from, in
+  order, the Basic login → a trusted proxy header
+  (`MONITOR_SSO_TRUSTED_HEADER`, only with `X-EZAI-Proxy-Secret` =
+  `MONITOR_SSO_TRUSTED_SECRET`; `MONITOR_SSO_ADMINS` are admins) → the
+  OpenWebUI `token` cookie validated at `MONITOR_SSO_OPENWEBUI_URL`
+  `/api/v1/auths/` (admin → admin, user → viewer, pending → not signed in;
+  60 s cache) → the Basic challenge. Opt-in; dashboard, bearer and
+  `MONITOR_AUTH=false` unchanged; the Admin Center forwards the person as
+  `X-EZAI-User`. Inline confirmations replace native dialogs (the Browser
+  QA harness has no dialog step); the Overview banner rolls back the last
+  generation (`/generations?limit=2` → the PR-17 rollback route).
+  `agentd/examples/browser-qa.admin-center.yaml` (five workflows, seven
+  screenshots) + `agentd/tests/fixtures/admin_center_app.py` (the monitor
+  over an in-process daemon on a scratch platform, seams faked) run under
+  `BrowserQAHarness` as a CI test. Compose: four `MONITOR_SSO_*` keys on the
+  monitor, additive to the chat-stack baseline.
 
 ## Target additions (control/execution/knowledge planes)
 

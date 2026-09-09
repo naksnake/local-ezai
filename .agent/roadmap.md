@@ -84,7 +84,7 @@ negative tests through the real MCP protocol and the API; the
 prompt-injection drill with a hostile scripted model — push, workspace
 escapes and unlisted shell denied, local commit never pushed, registry and
 queue untouched; the chat-stack byte-identical baseline; `make swe-drill`)
-implemented. 🟡 **P4 in progress (ADR-030 Proposed)** — PR-16 (Admin
+implemented. ✅ **P4 closed (ADR-030 Accepted)** — PR-16 (Admin
 Center opens on the monitor: `monitor/admin_center.py` as a server-side
 control-plane client — token never in the browser, monitor login forwarded
 as the audited human — with the Overview page (health, generation, roles →
@@ -107,10 +107,16 @@ waves, task results and the dependency graph as mermaid source; evolution
 cycles with proposal, benchmarks and bundle; a per-project memory browser
 with curated adds — backed by the additive **contract 1.1.0** memory
 operations; console starts for sprints and evolution cycles, journeys 3–4)
-implemented. All nineteen await human merge on `claude/next-ready-pr-bnq7r3`.
-P4 / P5 run in parallel; next ready by plan order: **PR-20** (SSO handoff +
-the Browser-QA journey suite → ADR-030 Accepted, P4 closed), with PR-21
-(`install.sh`, P5) also unblocked.
+and PR-20 (identity handoff: the Basic login, else a proxy-set trusted
+header with a shared secret, else the OpenWebUI session cookie validated
+against the WebUI — opt-in, the audit trail names the person; inline
+confirmations instead of native dialogs; the Overview banner rolls back the
+last change in three clicks; the five zero-CLI journeys as one Browser-QA
+workflow file run by the platform's own harness in real Chromium against a
+launcher that serves the monitor over an in-process daemon; P4 exit
+criterion 1 proven on both surfaces) implemented. All twenty await human
+merge on `claude/next-ready-pr-bnq7r3`. Next ready by plan order: **PR-21**
+(`install.sh` — opens P5, ADR-031).
 
 **Product review (ADR-026, 2026-09-01):** agnosticism audit passed with
 remediations — roles/groups become the only stable names (role aliases

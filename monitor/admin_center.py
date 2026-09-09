@@ -50,7 +50,7 @@ from typing import Annotated, Any
 
 import httpx
 from fastapi import Body, Depends, FastAPI, Header, Query
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 CLIENT_NAME = "admin-center"
 API = "/v1"
@@ -107,8 +107,10 @@ class ControlPlane:
         self.transport = transport
 
     def headers(self, user: str, mutating: bool) -> dict[str, str]:
+        # A login may carry the human behind the role (monitor.Identity.user,
+        # PR-20 SSO handoff): that is who the audit trail names.
         headers = {"Authorization": f"Bearer {self.token}", "X-EZAI-Client": CLIENT_NAME,
-                   "X-EZAI-User": user}
+                   "X-EZAI-User": str(getattr(user, "user", user))}
         if mutating:
             headers["Idempotency-Key"] = str(uuid.uuid4())
         return headers
@@ -168,6 +170,13 @@ async def overview(plane: ControlPlane, user: str) -> dict[str, Any]:
                       "ok": bool(result.get("ok")), "reason": list(result.get("reason") or [])})
     pending = (await plane.get("/governance", user, status="pending")).get("requests", [])
     runs = await plane.get("/runs", user, limit=8)
+    history = (await plane.get("/generations", user, limit=2)).get("generations") or []
+    last_change = None
+    if history:  # the banner journey 5 rolls back from: the latest generation and its predecessor
+        latest = history[-1]
+        last_change = {"generation": latest.get("generation"), "note": latest.get("note") or "",
+                       "saved_at": latest.get("saved_at"), "diff": latest.get("diff") or [],
+                       "previous": history[-2].get("generation") if len(history) > 1 else None}
     return {
         "connected": True, "control_url": plane.url, "ok": bool(health.get("ok")),
         "control": health.get("control") or {}, "platform": health.get("platform") or {},
@@ -178,6 +187,7 @@ async def overview(plane: ControlPlane, user: str) -> dict[str, Any]:
         "runs": runs.get("runs") or [], "active_runs": runs.get("active", 0),
         "limits": {"max_concurrent": runs.get("max_concurrent"),
                    "max_queued": runs.get("max_queued")},
+        "last_change": last_change,
     }
 
 
@@ -525,10 +535,14 @@ def install(app: FastAPI, plane: ControlPlane, *, viewer: Callable[..., Any],
     role, which is forwarded as the human identity)."""
     app.state.control_plane = plane
 
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def favicon() -> Response:
+        return Response(status_code=204)  # browsers ask on every page; no console noise
+
     @app.get("/api/ezai/overview")
     async def ezai_overview(role: str = Depends(viewer)):
         try:
-            return await overview(plane, role)
+            return {**await overview(plane, role), "role": str(role)}
         except ControlPlaneError as exc:
             return exc.response()
 
@@ -836,6 +850,7 @@ ADMIN_HTML = """<!doctype html>
   .notice.ok { color: var(--green); }
   .notice.err { color: var(--red); }
   .badge.fit { text-transform: none; letter-spacing: 0; }
+  form.inline { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   pre.journal { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
                 background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
                 padding: 12px; overflow: auto; max-height: 420px; white-space: pre; }
@@ -950,12 +965,20 @@ async function renderOverview() {
   const runs = d.runs || [];
   const rows = runs.length ? runs.map(runRow).join('')
     : `<tr><td colspan="7" class="muted">no runs yet — start one with <code>local-ezai run</code>, the Orchestrator persona in chat, or the SWE tools</td></tr>`;
+  const lc = d.last_change;  // journey 5: roll back a bad change in three clicks (button, reason, confirm), from here
+  const last = lc ? `<div class="banner" id="last-change"><strong>Last change:</strong> generation ${lc.generation} — ${esc(lc.note || '(no note)')} <span class="muted">· ${when(lc.saved_at)}</span>` +
+    (lc.diff.length ? `<div class="muted">${lc.diff.map(esc).join('<br>')}</div>` : '') +
+    (isAdmin(d) && lc.previous != null ? `<div style="margin-top:8px"><button class="btn sm danger" data-act="rollback-last" data-gen="${lc.previous}">Roll back to generation ${lc.previous}</button> <span class="muted">restores an approved state at once — audited, no approval queue</span></div>` : '') + `</div>` : '';
   $('app').innerHTML =
     card('Stack health <span class="muted">· as the control plane sees it</span>', `<div class="grid">${services || '<div class="muted">no services probed</div>'}</div>`) +
     `<section><h2 class="sec">Roles → models</h2><div class="grid">${roles || '<div class="muted">no roles explained</div>'}</div></section>` +
-    `<section>${gov}</section>` +
+    `<section>${gov}</section>` + (last ? `<section>${last}</section>` : '') +
     card(`Recent runs <span class="muted">· ${d.active_runs} active · limits ${d.limits.max_concurrent} concurrent + ${d.limits.max_queued} queued · <a href="/runs">all runs</a></span>`,
          `<table><thead>${RUN_HEAD}</thead><tbody>${rows}</tbody></table>`);
+  const rb = document.querySelector('button[data-act=rollback-last]');
+  if (rb) rb.onclick = () => inline(rb, [{ name: 'reason', placeholder: 'reason (optional)', size: 30 }], v =>
+    run(`rollback to generation ${rb.dataset.gen}`, () => act('/api/ezai/generations/rollback', 'POST', { to_generation: Number(rb.dataset.gen), reason: v.reason }),
+        r => r.message, r => r.ok, renderOverview), `Roll back to ${rb.dataset.gen}`);
   footer(`rendered from generation ${p.generation ?? '—'} (rendered artifacts: ${p.rendered_generation ?? '—'}) · registry <code>${esc(p.config_dir || '')}</code>` +
     ` · control plane <code>${esc(d.control_url)}</code> v${esc(c.version || '?')} (contract ${esc(c.contract || '?')}) · CLI: <code>local-ezai status</code>`);
 }
@@ -1020,7 +1043,8 @@ function reportSections(kind, rep, run) {
   if (kind === 'plan') return card('Plan <span class="muted">· A0 dry-run — nothing executed</span>', planTable(rep));
   if (kind === 'sprint') {
     out.push(card('Sprint', `<div><strong>Goal:</strong> ${esc(rep.plan && rep.plan.goal || '')}</div>` +
-      `<div class="muted">branch <code>${esc(rep.branch)}</code> · waves ${rep.waves ?? 0}${rep.report_doc ? ` · report <code>${esc(rep.report_doc)}</code>` : ''}</div>` + tasksTable(rep.tasks)));
+      `<div class="muted">branch <code>${esc(rep.branch)}</code> · waves ${rep.waves ?? 0}${rep.report_doc ? ` · report <code>${esc(rep.report_doc)}</code>` : ''}</div>` + tasksTable(rep.tasks) +
+      `<div class="muted" style="margin-top:6px">How to merge (stays human on purpose): <code>git -C ${esc(run.project)} merge ${esc(rep.branch)}</code></div>`));
   } else if (kind === 'evolve') {
     const pr = rep.pull_request || {}, prop = rep.proposal;
     out.push(card('Evolution proposal', prop ? `<div><strong>${esc(prop.title)}</strong></div>` +
@@ -1083,16 +1107,14 @@ async function renderRun(id) {
     `<pre class="journal">${esc(lines.join('\\n')) || 'no events yet'}</pre>`);
   $('app').innerHTML = head + sections + journal;
   const btn = $('cancel-btn');
-  if (btn) btn.onclick = async () => {
-    if (!confirm('Cancel this run? A running job stops at its next model call.')) return;
-    btn.disabled = true;
+  if (btn) btn.onclick = () => inline(btn, [], async () => {
     try {
       await api('/api/ezai/runs/' + encodeURIComponent(id) + '/cancel',
                 { method: 'POST', headers: { 'X-Requested-With': 'admin-center' } });
-      $('cancel-status').textContent = 'cancellation requested';
+      $('cancel-status').textContent = 'cancellation requested — a running job stops at its next model call';
     }
-    catch (e) { $('cancel-status').textContent = '✗ ' + e.message + (e.fix ? ' — ' + e.fix : ''); btn.disabled = false; }
-  };
+    catch (e) { $('cancel-status').textContent = '✗ ' + e.message + (e.fix ? ' — ' + e.fix : ''); }
+  }, 'Cancel this run');
   footer(`run <code>${esc(r.run_id)}</code> · CLI: <code>local-ezai explain-run ${esc(r.run_id)}</code> · chat: <code>swe_report("${esc(r.run_id)}")</code>`);
   clearTimeout(timer);
   if (active) timer = setTimeout(() => renderRun(id), 3000);
@@ -1117,6 +1139,24 @@ const historyTable = (history, extra) => `<table><thead><tr><th>gen</th><th>save
     `<td>${esc((h.active || []).join(', '))}</td><td class="muted">${(h.diff || []).map(esc).join('<br>') || '—'}</td>${extra ? '<td>' + extra(h) + '</td>' : ''}</tr>`).join('') + `</tbody></table>`;
 
 function report(text, ok) { const el = $('notice'); el.textContent = text; el.className = 'notice ' + (ok ? 'ok' : 'err'); }
+// Inline confirmation instead of native dialogs: the platform's declarative
+// Browser QA fills `form.inline` and clicks `[data-confirm]`; humans get the
+// same two clicks. fields: [{name, type: text|select|checkbox, placeholder, options, size, required}]
+function inline(anchor, fields, onConfirm, label) {
+  const form = document.createElement('form'); form.className = 'inline';
+  form.innerHTML = fields.map(f => f.type === 'select'
+      ? `<select name="${f.name}">${f.options.map(o => `<option value="${esc(o)}">${esc(o)}</option>`).join('')}</select>`
+      : f.type === 'checkbox' ? `<label><input type="checkbox" name="${f.name}"> ${esc(f.placeholder || f.name)}</label>`
+      : `<input name="${f.name}" placeholder="${esc(f.placeholder || '')}" size="${f.size || 24}"${f.required ? ' required' : ''}>`).join(' ') +
+    ` <button class="btn sm primary" type="submit" data-confirm>${esc(label || 'Confirm')}</button> <button class="btn sm" type="button" data-cancel>Cancel</button>`;
+  anchor.replaceWith(form);
+  form.querySelector('[data-cancel]').onclick = () => form.replaceWith(anchor);
+  form.onsubmit = e => { e.preventDefault(); const data = new FormData(form); const values = {};
+    fields.forEach(f => { values[f.name] = f.type === 'checkbox' ? !!data.get(f.name) : String(data.get(f.name) || ''); });
+    form.replaceWith(anchor); onConfirm(values); };
+  const first = form.querySelector('input:not([type=checkbox]),select');
+  if (first) first.focus();
+}
 async function act(path, method, body) {
   return api(path, { method, headers: { 'X-Requested-With': 'admin-center', 'Content-Type': 'application/json' },
                      body: body === undefined ? undefined : JSON.stringify(body) });
@@ -1131,23 +1171,22 @@ const proposalText = r => { const q = r.request || {};
   const affected = Object.keys(q.affected_roles || {});
   return `${q.id} queued for approval (${affected.length ? 'affects ' + affected.join(', ') : 'runtime switch'}) — review it at /governance/${q.id}`; };
 
-async function modelAction(ds, d) {
-  const n = ds.name, groups = d.groups.map(g => g.group), path = `/api/ezai/models/${encodeURIComponent(n || '')}`;
+function modelAction(btn, d) {
+  const ds = btn.dataset, n = ds.name, groups = d.groups.map(g => g.group), path = `/api/ezai/models/${encodeURIComponent(n || '')}`;
   switch (ds.act) {
     case 'benchmark': return run(`benchmark ${n}`, () => act(path + '/benchmark', 'POST'), r => `${r.message} — state ${r.state}`);
-    case 'activate': { const g = prompt(`Activate ${n} as primary of which group? (${groups.join(', ')})`, groups[0] || '');
-      if (!g) return; return run(`activate ${n} in ${g}`, () => act(path + '/activate', 'POST', { group: g }), proposalText); }
-    case 'upgrade': { const to = prompt(`Upgrade ${n} to which benchmarked model? (swaps it in every group and pin; ${n} is retired)`);
-      if (!to) return; return run(`upgrade ${n} → ${to}`, () => act('/api/ezai/models/upgrade', 'POST', { old: n, new: to }), proposalText); }
-    case 'retire': if (!confirm(`Retire ${n}? It leaves resolution; the weights stay for rollback.`)) return;
-      return run(`retire ${n}`, () => act(path + '/retire', 'POST'), r => r.message);
-    case 'uninstall': { if (!confirm(`Uninstall ${n} and delete its weights?`)) return;
-      const force = confirm('Force, even if a stored generation could still roll back to it? (Cancel = no force)');
-      return run(`uninstall ${n}`, () => act(path + (force ? '?force=true' : ''), 'DELETE'), r => r.message); }
+    case 'activate': return inline(btn, [{ name: 'group', type: 'select', options: groups }],
+      v => run(`activate ${n} in ${v.group}`, () => act(path + '/activate', 'POST', { group: v.group }), proposalText), 'Activate as primary');
+    case 'upgrade': return inline(btn, [{ name: 'to', placeholder: 'benchmarked model to upgrade to', required: true, size: 28 }],
+      v => run(`upgrade ${n} → ${v.to}`, () => act('/api/ezai/models/upgrade', 'POST', { old: n, new: v.to }), proposalText), `Upgrade ${n}`);
+    case 'retire': return inline(btn, [], () => run(`retire ${n}`, () => act(path + '/retire', 'POST'), r => r.message), `Retire ${n} (weights stay for rollback)`);
+    case 'uninstall': return inline(btn, [{ name: 'force', type: 'checkbox', placeholder: 'force, even a rollback target' }],
+      v => run(`uninstall ${n}`, () => act(path + (v.force ? '?force=true' : ''), 'DELETE'), r => r.message), `Uninstall ${n} and delete its weights`);
     case 'install': return run(`install ${ds.ref} (${ds.runtime})`, () => act('/api/ezai/models', 'POST', { ref: ds.ref, runtime: ds.runtime }),
       r => `${r.message}${r.ok ? ' — next: benchmark ' + r.name : r.error ? ' — ' + r.error : ''}`, r => r.ok);
-    case 'rollback': { const reason = prompt(`Roll back to generation ${ds.gen}? Rollback applies at once (no approval queue) and is audited. Reason:`);
-      if (reason === null) return; return run(`rollback to generation ${ds.gen}`, () => act('/api/ezai/generations/rollback', 'POST', { to_generation: Number(ds.gen), reason }), r => r.message, r => r.ok); }
+    case 'rollback': return inline(btn, [{ name: 'reason', placeholder: 'reason (optional)', size: 28 }],
+      v => run(`rollback to generation ${ds.gen}`, () => act('/api/ezai/generations/rollback', 'POST', { to_generation: Number(ds.gen), reason: v.reason }), r => r.message, r => r.ok),
+      `Roll back to ${ds.gen} — applies at once, audited`);
   }
 }
 
@@ -1194,7 +1233,7 @@ async function renderModels() {
   if (form) form.onsubmit = async e => { e.preventDefault(); const f = new FormData(form); const body = { ref: f.get('ref') };
     for (const k of ['name', 'group', 'runtime']) if (f.get(k)) body[k] = f.get(k);
     await run(`install ${body.ref}`, () => act('/api/ezai/models', 'POST', body), r => `${r.message}${r.ok ? ' — next: benchmark ' + r.name : r.error ? ' — ' + r.error : ''}`, r => r.ok); };
-  document.querySelectorAll('button[data-act]').forEach(b => b.onclick = () => modelAction(b.dataset, d));
+  document.querySelectorAll('button[data-act]').forEach(b => b.onclick = () => modelAction(b, d));
   footer(`rendered from generation ${d.generation ?? '—'} · runtime ${esc(runtime)} · CLI twins: <code>local-ezai model install|benchmark|activate|upgrade|rollback|retire|uninstall</code>`);
 }
 
@@ -1273,17 +1312,17 @@ async function renderGovernance() {
   footer(`generation ${d.generation ?? '—'} · CLI: <code>local-ezai governance list|show|approve|reject</code>`);
 }
 
-async function decide(kind, r) {
-  const reason = prompt(kind === 'approve' ? `Approve ${r.id} and apply it now? Reason (optional):` : `Reject ${r.id}? A reason is required — it is recorded (and, for evolution proposals, remembered):`, '');
-  if (reason === null) return;
-  if (kind === 'reject' && !reason.trim()) { report('✗ a rejection needs a reason', false); return; }
-  report(`${kind} ${r.id}…`, true);
-  try {
-    const out = await act(`/api/ezai/governance/${encodeURIComponent(r.id)}/${kind}`, 'POST', { reason });
-    const q = out.request || {};
-    report(out.applied ? `${q.id} approved — ${out.applied.message}` : `${q.id} ${q.status}`, out.applied ? out.applied.ok : true);
-    setTimeout(() => renderRequest(r.id), 800);
-  } catch (e) { report(`✗ ${kind} ${r.id}: ${e.message}${e.fix ? ' — fix: ' + e.fix : ''}`, false); }
+function decide(btn, kind, r) {
+  inline(btn, [{ name: 'reason', placeholder: kind === 'reject' ? 'reason (required — recorded)' : 'reason (optional)', required: kind === 'reject', size: 36 }], async v => {
+    if (kind === 'reject' && !v.reason.trim()) { report('✗ a rejection needs a reason', false); return; }
+    report(`${kind} ${r.id}…`, true);
+    try {
+      const out = await act(`/api/ezai/governance/${encodeURIComponent(r.id)}/${kind}`, 'POST', { reason: v.reason });
+      const q = out.request || {};
+      report(out.applied ? `${q.id} approved — ${out.applied.message}` : `${q.id} ${q.status}`, out.applied ? out.applied.ok : true);
+      setTimeout(() => renderRequest(r.id), 800);
+    } catch (e) { report(`✗ ${kind} ${r.id}: ${e.message}${e.fix ? ' — fix: ' + e.fix : ''}`, false); }
+  }, kind === 'approve' ? 'Approve & apply' : 'Reject');
 }
 
 async function renderRequest(id) {
@@ -1323,7 +1362,7 @@ async function renderRequest(id) {
       : pending ? '<div class="muted" style="margin-top:8px">the admin role decides — viewer is read-only</div>' : '');
   $('app').innerHTML = `<section class="card"><div class="card-header"><span class="name">${esc(r.kind)} <code>${esc(r.id)}</code> — ${esc(r.title)}</span>${badge(r.status)}</div></section>` +
     what + evidence + proposer + reversibility + card('Decision', decision);
-  document.querySelectorAll('button[data-decide]').forEach(b => b.onclick = () => decide(b.dataset.decide, r));
+  document.querySelectorAll('button[data-decide]').forEach(b => b.onclick = () => decide(b, b.dataset.decide, r));
   footer(`request <code>${esc(r.id)}</code> · base generation ${r.base_generation} · <a href="/governance">queue</a> · CLI: <code>local-ezai governance show ${esc(r.id)}</code> · <code>local-ezai governance approve|reject ${esc(r.id)}</code>`);
 }
 
@@ -1355,9 +1394,9 @@ async function renderProjects() {
   const form = $('project-form');
   if (form) form.onsubmit = async e => { e.preventDefault(); const f = new FormData(form); const body = { path: f.get('path') }; if (f.get('name')) body.name = f.get('name');
     await run(`register ${body.path}`, () => act('/api/ezai/projects', 'POST', body), r => r.message, null, renderProjects); };
-  document.querySelectorAll('button[data-remove]').forEach(b => b.onclick = async () => { const n = b.dataset.remove;
-    if (!confirm(`Remove ${n} from the allowlist? Nothing is deleted on disk.`)) return;
-    await run(`remove ${n}`, () => act('/api/ezai/projects?target=' + encodeURIComponent(n), 'DELETE'), r => r.message, null, renderProjects); });
+  document.querySelectorAll('button[data-remove]').forEach(b => b.onclick = () => { const n = b.dataset.remove;
+    inline(b, [], () => run(`remove ${n}`, () => act('/api/ezai/projects?target=' + encodeURIComponent(n), 'DELETE'), r => r.message, null, renderProjects),
+           `Remove ${n} from the allowlist (nothing is deleted on disk)`); });
   footer(`CLI twins: <code>local-ezai project add|list|remove</code> · chat: <code>swe_projects</code>`);
 }
 
@@ -1374,7 +1413,8 @@ async function renderSprints() {
     `<div class="muted">${esc(short(r.request, 160))}</div>` + (rep
       ? `<div style="margin-top:8px"><strong>Goal:</strong> ${esc(rep.plan && rep.plan.goal || '')} <span class="muted">· ${rep.waves ?? 0} wave${rep.waves === 1 ? '' : 's'} · branch <code>${esc(rep.branch)}</code>${rep.report_doc ? ` · report <code>${esc(rep.report_doc)}</code>` : ''}</span></div>` +
         `<table style="margin-top:8px"><thead>${TASK_HEAD}</thead><tbody>${taskRows(rep.tasks) || '<tr><td colspan="7" class="muted">no task</td></tr>'}</tbody></table>` +
-        (mermaid ? `<div style="margin-top:8px"><strong>Dependency graph</strong> <span class="muted">· mermaid source, as the runtime writes it into the sprint report</span></div><pre class="journal">${esc(mermaid)}</pre>` : '')
+        (mermaid ? `<div style="margin-top:8px"><strong>Dependency graph</strong> <span class="muted">· mermaid source, as the runtime writes it into the sprint report</span></div><pre class="journal">${esc(mermaid)}</pre>` : '') +
+        `<div class="muted" style="margin-top:8px">How to merge (stays human on purpose): <code>git -C ${esc(r.project)} merge ${esc(rep.branch)}</code></div>`
       : noReport(r)))).join('');
   $('app').innerHTML = start + (cards || card('Sprints', '<div class="muted">no sprint yet — start one above, with <code>local-ezai sprint</code>, or <code>swe_sprint</code> in chat</div>'));
   const form = $('sprint-form');

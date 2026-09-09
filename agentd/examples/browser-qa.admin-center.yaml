@@ -1,0 +1,126 @@
+# The Admin Center's five zero-CLI journeys (docs/WEBUI_PRODUCT_STRATEGY.md §5)
+# as Browser QA workflows — "the walkthroughs ARE the tests" (V1 P4, PR-20,
+# ADR-030). The platform's own Browser QA harness (ADR-016) drives them in a
+# real headless Chromium; `agentd/tests/integration/test_admin_center_journeys.py`
+# runs this file in CI.
+#
+# Placeholders the runner substitutes: {python} — the interpreter with agentd
+# installed; {port} — a free port (the harness); {state} — a scratch directory
+# the launcher fills with a bootstrapped platform, a sample git repository
+# ({state}/sample-project) and a model file ({state}/new-model.gguf). The
+# launcher (agentd/tests/fixtures/admin_center_app.py) serves the monitor with
+# an in-process control plane, faked fetch / side-load / validator seams and
+# fake sprint / evolution pipelines, login disabled (an admin walkthrough).
+#
+# Honest coverage: journey 1 stops before the chat-side check (needs
+# OpenWebUI); journey 2 covers the pre-check and the format-gap explanation
+# (approving a real runtime switch needs a host where a variant of the other
+# runtime fits); journey 4 covers triggering a cycle and reading its proposal
+# (rejecting it from the Governance page waits for the evolution pipeline to
+# submit change requests).
+
+browser_qa:
+  enabled: true
+  app:
+    start: "{python} agentd/tests/fixtures/admin_center_app.py --port {port} --state {state}"
+    url: "http://127.0.0.1:{port}"
+    ready_path: "/overview"
+    startup_timeout: 90
+  headless: true
+  step_timeout: 30
+
+  workflows:
+    # 1. Swap the reasoning model: add model → benchmark → activate → approve →
+    #    the Routing page shows the new primary.
+    - name: j1-swap-the-reasoning-model
+      steps:
+        - goto: "/models"
+        - expect_text: {selector: "#subtitle", contains: "generation 1"}
+        - fill: {selector: "#install-form input[name=ref]", value: "gguf:{state}/new-model.gguf"}
+        - fill: {selector: "#install-form input[name=name]", value: "nova"}
+        - click: "#install-form button[type=submit]"
+        - expect_text: {selector: "#notice", contains: "next: benchmark nova"}
+        - wait_for: "button[data-act=benchmark][data-name=nova]"
+        - click: "button[data-act=benchmark][data-name=nova]"
+        - expect_text: {selector: "#notice", contains: "15.5 tok/s"}
+        - wait_for: "button[data-act=activate][data-name=nova]"
+        - click: "button[data-act=activate][data-name=nova]"
+        - select: {selector: "form.inline select[name=group]", value: "reasoning"}
+        - click: "form.inline button[data-confirm]"
+        - expect_text: {selector: "#notice", contains: "queued for approval"}
+        - screenshot: "models-after-request"
+        - goto: "/governance"
+        - expect_text: {selector: "#app", contains: "activate nova"}
+        - click: "table a[href^='/governance/cr-']"
+        - expect_text: {selector: "#app", contains: "What changes"}
+        - expect_text: {selector: "#app", contains: "planner"}
+        - expect_text: {selector: "#app", contains: "15.5 tok/s"}
+        - click: "button[data-decide=approve]"
+        - fill: {selector: "form.inline input[name=reason]", value: "benchmarked on this host"}
+        - click: "form.inline button[data-confirm]"
+        - expect_visible: ".card-header .badge.applied"
+        - screenshot: "governance-applied"
+        - goto: "/routing"
+        - expect_text: {selector: "#role-planner", contains: "nova"}
+        - screenshot: "routing-after-swap"
+
+    # 2. Switch runtime: the pre-check names the blockers and the fix.
+    - name: j2-runtime-switch-pre-check
+      steps:
+        - goto: "/runtime"
+        - expect_text: {selector: "#subtitle", contains: "engine slot: llamacpp"}
+        - expect_text: {selector: "#app", contains: "Switch to vllm"}
+        - expect_text: {selector: "#app", contains: "no vllm variant in the catalog"}
+        - expect_text: {selector: "#app", contains: "How a switch happens"}
+        - screenshot: "runtime-pre-check"
+        - goto: "/models"
+        - expect_text: {selector: "#app", contains: "not served by llamacpp"}
+
+    # 3. Register a project and run a sprint from a pasted spec; read the
+    #    report; follow "how to merge".
+    - name: j3-register-project-and-run-a-sprint
+      steps:
+        - goto: "/projects"
+        - fill: {selector: "#project-form input[name=path]", value: "{state}/sample-project"}
+        - fill: {selector: "#project-form input[name=name]", value: "sample"}
+        - click: "#project-form button[type=submit]"
+        - expect_text: {selector: "#notice", contains: "registered project sample"}
+        - expect_text: {selector: "#app", contains: "sample"}
+        - goto: "/sprints"
+        - select: {selector: "#sprint-form select[name=project]", value: "sample"}
+        - fill: {selector: "#sprint-form textarea[name=spec]", value: "# Sprint: hardening\n\n- add the schema\n- expose the api\n- document it\n"}
+        - click: "#sprint-form button[type=submit]"
+        - expect_text: {selector: "#notice", contains: "started sprint"}
+        - expect_text: {selector: "#app", contains: "ship the sprint"}
+        - expect_text: {selector: "#app", contains: "graph LR"}
+        - expect_text: {selector: "#app", contains: "How to merge"}
+        - screenshot: "sprint-report"
+
+    # 4. Trigger evolution and review its proposal.
+    - name: j4-trigger-evolution-and-review
+      steps:
+        - goto: "/evolution"
+        - select: {selector: "#evolve-form select[name=project]", value: "sample"}
+        - fill: {selector: "#evolve-form input[name=focus]", value: "reviewer latency"}
+        - click: "#evolve-form button[type=submit]"
+        - expect_text: {selector: "#notice", contains: "started evolve"}
+        - expect_text: {selector: "#app", contains: "Cache the validator"}
+        - expect_text: {selector: "#app", contains: "awaiting human review"}
+        - expect_text: {selector: "#app", contains: "PR_PROPOSAL.md"}
+        - screenshot: "evolution-proposal"
+        - goto: "/governance"
+        - expect_text: {selector: "#app", contains: "Evolution proposals and release candidates join"}
+
+    # 5. Roll back a bad activation from the Overview banner in ≤ 3 clicks.
+    - name: j5-roll-back-from-the-overview-banner
+      steps:
+        - goto: "/overview"
+        - expect_text: {selector: "#last-change", contains: "activate nova"}
+        - click: "button[data-act=rollback-last]"
+        - fill: {selector: "form.inline input[name=reason]", value: "bad activation"}
+        - click: "form.inline button[data-confirm]"
+        - expect_text: {selector: "#notice", contains: "rolled back to the content of generation"}
+        - expect_text: {selector: "#last-change", contains: "rollback to generation"}
+        - screenshot: "overview-after-rollback"
+        - goto: "/routing"
+        - expect_no_text: {selector: "#role-planner", contains: "nova"}

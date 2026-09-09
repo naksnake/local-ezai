@@ -126,6 +126,29 @@ browses a project's rules, styles, decisions and fix lessons, with search,
 and lets an admin remember a curated entry (`local-ezai memory --add`). The
 memory pages use the control plane's 1.1.0 operations
 (`GET|POST /v1/projects/<name>/memory`); everything else is unchanged 1.0.0.
+**Sign-in handoff and the walkthroughs (PR-20):** the console accepts three
+identities, in this order — the monitor login (`admin` / `viewer`, HTTP
+Basic, always available); a trusted identity header set by a reverse proxy
+you run in front of the monitor (`MONITOR_SSO_TRUSTED_HEADER`, for example
+`X-Forwarded-Email`, honoured only when the proxy also sends
+`X-EZAI-Proxy-Secret` equal to `MONITOR_SSO_TRUSTED_SECRET`; the addresses
+in `MONITOR_SSO_ADMINS` are admins, everyone else a viewer); and the
+OpenWebUI session (the `token` cookie the WebUI sets, validated against
+`MONITOR_SSO_OPENWEBUI_URL`, default `http://openwebui:8080` inside compose
+— an OpenWebUI admin is a console admin, a user a viewer, a pending account
+is not signed in; re-checked once a minute). The cookie path works when the
+WebUI and the monitor are opened under the same host name (ports do not
+matter to cookies); otherwise the Basic prompt appears. Either way the
+audit trail names the person (`you@example.com via admin-center`). Nothing
+changes unless the `MONITOR_SSO_*` keys are set (see `.env.example`). Every
+confirmation on the console is an inline form (no browser dialogs), and
+the Overview banner rolls back the last registry change in three clicks.
+The five zero-CLI walkthroughs of WEBUI_PRODUCT_STRATEGY §5 are the
+platform's own Browser QA workflows
+(`agentd/examples/browser-qa.admin-center.yaml`), part of `make swe-test`
+in a real Chromium; to click through the same scratch console by hand:
+`python3 agentd/tests/fixtures/admin_center_app.py --port 8899 --state /tmp/ezai-journeys`
+and open `http://127.0.0.1:8899/overview`.
 
 ## 2. The Autonomous SWE runtime
 
