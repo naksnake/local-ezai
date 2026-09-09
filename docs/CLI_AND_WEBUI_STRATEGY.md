@@ -129,6 +129,20 @@ Legend: ✅ full · 🔍 read-only · ❌ deliberately absent.
 > approve|reject` does, with the evidence the CLI's `governance show` prints
 > laid out next to the buttons. One queue, one audit trail, two surfaces.
 
+> **As built (PR-19) — matrix amendment and the 1.1.0 contract:** the first
+> row's Admin Center cell becomes "▶ start **sprint / evolve** (admin) ·
+> 🔍 view · cancel": WEBUI_PRODUCT_STRATEGY §3.5/§3.6 and its release-gated
+> zero-CLI journeys 3–4 require starting sprints and evolution cycles from
+> the console, and both CLI verbs exist (`local-ezai sprint|evolve`), so
+> parity holds; runs, fixes and plans still start from the CLI or chat (no
+> wireframe, no journey). "Memory browse / add rule — ✅" and "Project
+> registration — ✅" are live on `/memory` and `/projects`. The Memory page
+> needed data 1.0.0 never served, so the contract grew **additively to
+> 1.1.0** (`GET|POST /v1/projects/{name}/memory`) exactly as §6 prescribes:
+> minor bump, artifact regenerated, inventory updated in the same PR; the
+> CLI's `memory` verb remains direct-mode repository work (no connected
+> twin needed — the store is the same `.agent/memory.db`).
+
 ## 4. Deliberate asymmetries (and why)
 
 1. **Chat can start work but never govern** — approval/activation/rollback

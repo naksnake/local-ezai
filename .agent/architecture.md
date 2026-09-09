@@ -317,6 +317,17 @@ through `local-ezai model …` + the governance queue. Modules:
   refusals verbatim: reason required, decisions made once). The proposed
   registry dump stays on the daemon. Only activation/upgrade requests
   enter the queue today — the page says so.
+- **Projects · Sprints · Evolution · Memory pages** (PR-19): `/projects`
+  (the allowlist with per-project work; register / remove via `POST|DELETE
+  /v1/projects`), `/sprints` and `/evolution` (views over `GET
+  /v1/runs?kind=…` + reports; the dependency graph as mermaid source from
+  the plan; console starts of **sprint and evolve only** via `POST
+  /v1/runs` — the parity matrix's amendment for journeys 3–4), `/memory`
+  (browse by kind / search, remember a curated rule / style / decision).
+  **Contract 1.1.0 (additive):** `GET|POST /v1/projects/{name}/memory`
+  (`project_memory`, `project_memory_add`) over `agentd.memory.MemoryStore`
+  in the registered project's `.agent/`; the 29 frozen 1.0.0 operations
+  unchanged; chat may read memory, never write it (PR-15 client policy).
 
 ## Target additions (control/execution/knowledge planes)
 

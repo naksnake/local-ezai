@@ -385,9 +385,11 @@ All 8 checks should pass.
    login `admin` / `viewer`): platform health, roles → models, the
    governance queue, every run with its report at `/runs`, the model
    lifecycle at `/models` (install · benchmark · activate · rollback), the
-   routing explanation at `/routing`, the engine slot at `/runtime`, and
-   the approval queue at `/governance` (evidence next to every decision;
-   admins approve or reject there).
+   routing explanation at `/routing`, the engine slot at `/runtime`, the
+   approval queue at `/governance` (evidence next to every decision;
+   admins approve or reject there), sprints and evolution cycles at
+   `/sprints` and `/evolution` (admins start them from the page), each
+   project's memory at `/memory`, and the allowlist at `/projects`.
 
 ### 7. Connect MCP agent tools
 

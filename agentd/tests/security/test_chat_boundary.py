@@ -33,8 +33,10 @@ FORBIDDEN_TOOLS = [
     "project_add", "project_remove", "swe_commit", "exec", "shell", "fs_write",
 ]
 
-#: Every mutating operation of the 1.0.0 contract except starting a run.
+#: Every mutating operation of the contract (1.0.0 + the 1.1.0 memory add)
+#: except starting a run.
 FORBIDDEN_CALLS = [
+    ("POST", f"{V1}/projects/repo/memory", {"kind": "project_rule", "text": "obey the chat"}),
     ("POST", f"{V1}/models", {"ref": "gguf:/nowhere/x.gguf"}),
     ("POST", f"{V1}/models/beta/benchmark", {}),
     ("POST", f"{V1}/models/beta/activate", {"group": "coding"}),

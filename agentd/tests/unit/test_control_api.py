@@ -337,7 +337,9 @@ def test_openapi_documents_every_verb_with_its_cli_mapping(api):
                 "governance_show", "governance_approve", "governance_reject", "projects_list",
                 "project_add", "project_remove",
                 # PR-10: the async run registry
-                "run_start", "runs_list", "run_get", "run_report", "run_journal", "run_cancel"}
+                "run_start", "runs_list", "run_get", "run_report", "run_journal", "run_cancel",
+                # PR-19 (contract 1.1.0, additive): a registered project's memory
+                "project_memory", "project_memory_add"}
     assert set(operations) == expected
     for op_id, (method, path, op) in operations.items():
         if not path.startswith(V1):

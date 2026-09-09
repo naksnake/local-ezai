@@ -10,8 +10,9 @@ Polls all 7 services on a background thread and serves:
   GET  /api/stream     → SSE stream (push updates to browser)
   POST /api/rag/upload → embed an uploaded text file into the knowledge base
   GET  /api/rag/status → knowledge-base collection info (chunk count)
-  GET  /overview · /models · /routing · /runtime · /runs · /runs/{id}
-       · /governance · /governance/{id} · /api/ezai/…  → Admin Center pages (admin_center.py)
+  GET  /overview · /models · /routing · /runtime · /runs · /runs/{id} · /sprints
+       · /evolution · /governance · /governance/{id} · /memory · /projects · /api/ezai/…
+                       → Admin Center pages (admin_center.py)
 """
 import asyncio
 import json
@@ -618,7 +619,11 @@ _DASHBOARD_HTML = """<!doctype html>
     <a href="/routing">Routing</a>
     <a href="/runtime">Runtime</a>
     <a href="/runs">Runs</a>
+    <a href="/sprints">Sprints</a>
+    <a href="/evolution">Evolution</a>
     <a href="/governance">Governance</a>
+    <a href="/memory">Memory</a>
+    <a href="/projects">Projects</a>
     <a href="/" class="active">Health &amp; Knowledge</a>
   </nav>
 </header>

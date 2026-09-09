@@ -81,6 +81,27 @@ local-ezai CLI ─────────────────────�
 > verdicts); switching is an activation flagged as a runtime switch — no
 > switch button, the contract has no runtime verb.
 
+> **As built (PR-19):** **Projects** (`/projects`) lists the allowlist with
+> each project's work (runs, active, last run) and links to its runs and
+> memory; admins register (path, optional name) and remove — the daemon's
+> refusals verbatim. **Sprints** (`/sprints`) shows every sprint run with
+> goal, waves, branch, report document, task results and the **dependency
+> graph as mermaid source** generated from the plan (the rendered report
+> document lives in the repository; the offline page loads no rendering
+> library); admins start a sprint from a pasted specification. **Evolution**
+> (`/evolution`) shows every cycle with proposal, improvements, benchmark
+> before → after, tasks, PR or bundle and "awaiting human review"; admins
+> run a cycle with an optional focus; proposals join the Governance queue
+> once the pipeline submits change requests (the page says so). **Memory**
+> (`/memory`) browses a project's rules, styles, decisions, fix lessons
+> (signature, category, files) and implementation history with counts,
+> kind filter and search; admins remember a curated rule / style / decision
+> (`local-ezai memory --add`). The Memory page rides on the **additive
+> contract 1.1.0** operations `GET|POST /v1/projects/{name}/memory`. Console
+> starts exist for sprint and evolve only (journeys 3–4); runs, fixes and
+> plans start from the CLI or chat. Remaining: SSO handoff and the
+> Browser-QA journey suite (PR-20 → ADR-030 Accepted).
+
 ## 3. The Governance queue (the page that matters most)
 
 One queue, three item types, one contract: **agents propose, humans

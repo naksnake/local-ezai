@@ -482,6 +482,67 @@ def remove_project(ctx: PlatformContext, target: str) -> dict[str, Any]:
     return {"project": None, "removed": target, "message": f"removed project {target}"}
 
 
+# ── project memory (PR-19, contract 1.1.0) ──────────────────────────────────
+
+
+def _memory_store(ctx: PlatformContext, project: dict[str, str]):
+    from agentd.memory import MemoryStore
+
+    return MemoryStore(Path(project["path"]) / ctx.config.memory.dir)
+
+
+def project_memory(ctx: PlatformContext, ref: str, *, kind: str | None = None,
+                   search: str | None = None, limit: int = 50) -> dict[str, Any]:
+    """Browse a registered project's memory — the store ``local-ezai memory``
+    prints (ADR-017: SQLite in the origin repository's ``.agent/``); the
+    Admin Center's Memory page reads it through the control plane."""
+    from agentd.memory import ALL_KINDS
+
+    project = resolve_project(ctx, ref)
+    if kind is not None and kind not in ALL_KINDS:
+        raise LifecycleError(f"unknown memory kind '{kind}' — one of: {', '.join(ALL_KINDS)}")
+    store = _memory_store(ctx, project)
+    try:
+        kinds = [kind] if kind else None
+        if not store.exists:
+            records = []
+        elif search:
+            records = store.search(search, kinds=kinds, limit=limit)
+        else:
+            records = store.recent(kinds=kinds, limit=limit)
+        return {"project": project["name"], "path": str(store.db_path), "exists": store.exists,
+                "total": store.count(), "counts": {k: store.count(k) for k in ALL_KINDS},
+                "records": [r.to_dict() for r in records]}
+    finally:
+        store.close()
+
+
+def add_project_memory(ctx: PlatformContext, ref: str, *, kind: str, text: str) -> dict[str, Any]:
+    """``local-ezai memory --add`` for a registered project: a curated rule,
+    style or architecture decision, remembered and exported to
+    ``lessons_learned.json``. Fixes and implementation history are recorded
+    by runs, never by hand."""
+    from agentd.memory import CURATED_KINDS
+
+    project = resolve_project(ctx, ref)
+    if kind not in CURATED_KINDS:
+        raise LifecycleError(f"curated memory is one of {', '.join(CURATED_KINDS)} — fixes and "
+                             "implementation history are recorded by runs")
+    if not text.strip():
+        raise LifecycleError("a memory entry needs text")
+    store = _memory_store(ctx, project)
+    try:
+        record_id = store.record(kind=kind, title=text.strip()[:60], content=text.strip(),
+                                 run_id="manual", data={"by": ctx.actor})
+        store.export_lessons()
+    finally:
+        store.close()
+    ctx.queue.record("memory.added", ctx.actor, project=project["name"], kind=kind,
+                     memory_id=record_id)
+    return {"id": record_id, "kind": kind, "project": project["name"],
+            "message": f"remembered #{record_id} [{kind}] for {project['name']}"}
+
+
 # ── CLI verbs: format what the operations return ─────────────────────────────
 
 

@@ -1170,3 +1170,34 @@ described as joining when their pipelines submit requests, with evolution
 runs pointed to on the Runs page meanwhile — no synthetic rows. Behavior
 note: two unmerged tests (PR-16, PR-17) that asserted the monitor had no
 approve route flip to the guard the route now enforces.
+**PR-19 slice (2026-09-09) — Sprints / Evolution / Memory / Projects:** (1)
+**The contract grows additively, by its own rule:** the Memory page needs
+data 1.0.0 never served, so the control plane gains `GET|POST
+/v1/projects/{name}/memory` (`project_memory`, `project_memory_add` — browse
+by kind or search; add a curated rule / style / decision, exported to
+`lessons_learned.json`, audited `memory.added`) and the contract becomes
+**1.1.0**: every 1.0.0 operation, path and method unchanged, the artifact
+regenerated, the inventory test pins both the 29 frozen operations and the
+two additions, the chat-boundary list gains the new mutation (the PR-15
+client policy already refuses it to chat — chat may read memory, never
+write it). Fixes and implementation history stay run-recorded: the API
+accepts the three curated kinds only. The CLI's `memory` verb stays
+direct-mode repository work (no connected twin). (2) **The console starts
+sprints and evolution cycles** — WEBUI_PRODUCT_STRATEGY §3.5/§3.6 and the
+release-gated zero-CLI journeys 3 and 4 require it, and the CLI verbs
+exist (`local-ezai sprint|evolve`); this **amends the parity matrix's
+"view, cancel"** for those two kinds only (recorded in CLI_AND_WEBUI §3 as
+built). Plain runs, fixes and plans keep starting from the CLI or chat; the
+monitor refuses other kinds before the daemon is asked. Same guards as
+every mutation: admin role, same-origin header, daemon refusals verbatim.
+(3) **Sprints and Evolution are views over the run registry** (`GET
+/v1/runs?kind=…` + reports): waves and task results, and the dependency
+graph as mermaid *source* generated from the plan — the runtime's rendered
+report document lives in the repository, which the contract does not serve,
+and the offline product loads no rendering library. Evolution cycles show
+proposal, improvements, benchmark before → after, the PR or bundle and the
+standing "awaiting human review"; the page says proposals reach the
+Governance queue only once the pipeline submits change requests. (4)
+**Projects** is the allowlist with each project's work (run count, active,
+last run) and links to its runs and memory; registering needs the path on
+the control plane's filesystem, and the page says so.

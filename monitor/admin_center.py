@@ -14,8 +14,8 @@ the token and forwards the monitor login as the human identity (audit actor
 the pages show, `local-ezai` shows too (parity, not dependence); every
 mutation is the CLI's verb, admin only, same-origin guarded.
 
-  GET  /overview · /models · /routing · /runtime · /runs · /runs/{run_id}
-       · /governance · /governance/{request_id}                                    pages
+  GET  /overview · /models · /routing · /runtime · /runs · /runs/{run_id} · /sprints
+       · /evolution · /governance · /governance/{request_id} · /memory · /projects   pages
   GET  /api/ezai/overview               health · platform · roles · queue · recent runs
   GET  /api/ezai/runs                   run list (kind / status / project / limit)
   GET  /api/ezai/runs/{run_id}          record + report (once written) + journal tail
@@ -32,6 +32,13 @@ mutation is the CLI's verb, admin only, same-origin guarded.
   GET  /api/ezai/governance[?status=]   the queue + history with counts
   GET  /api/ezai/governance/{id}        one request: diff · affected roles · evidence · decision
   POST /api/ezai/governance/{id}/approve | reject                                admin
+  GET  /api/ezai/projects               the allowlist with each project's work
+  POST /api/ezai/projects · DELETE /api/ezai/projects?target=                    admin
+  GET  /api/ezai/sprints                sprint runs + reports + dependency graph source
+  GET  /api/ezai/evolution              evolution cycles + reports + queued proposals
+  POST /api/ezai/runs                   start a sprint or an evolution cycle           admin
+  GET  /api/ezai/memory                 a registered project's memory (kind / search)
+  POST /api/ezai/memory                 remember a curated rule / style / decision      admin
 """
 # ruff: noqa: E501  — the embedded page template carries long markup lines
 from __future__ import annotations
@@ -395,6 +402,103 @@ async def governance_detail(plane: ControlPlane, user: str, request_id: str) -> 
             "reversible_to": request.get("base_generation")}
 
 
+# ── projects · sprints · evolution · memory (PR-19) ─────────────────────────
+
+#: Kinds the console starts (WEBUI_PRODUCT_STRATEGY §3.5 / §3.6, zero-CLI
+#: journeys 3 and 4); plain runs, fixes and plans start from the CLI or chat.
+CONSOLE_STARTS = ("sprint", "evolve")
+#: Memory kinds a human may add by hand (agentd.memory.CURATED_KINDS) and all
+#: kinds the store records (agentd.memory.ALL_KINDS).
+CURATED_MEMORY_KINDS = ("project_rule", "coding_style", "architecture_decision")
+MEMORY_KINDS = ("project_rule", "coding_style", "architecture_decision", "failed_fix",
+                "successful_fix", "implementation")
+
+
+async def reports_for(plane: ControlPlane, user: str,
+                      runs: list[dict[str, Any]]) -> dict[str, Any]:
+    """The reports of the finished runs, in one round; a run that ended
+    without one is simply absent (its journal tells the story)."""
+    terminal = [r for r in runs if r.get("status") in TERMINAL]
+    results = await asyncio.gather(*(plane.get(f"/runs/{r['run_id']}/report", user)
+                                     for r in terminal), return_exceptions=True)
+    out: dict[str, Any] = {}
+    for run, result in zip(terminal, results, strict=True):
+        if isinstance(result, ControlPlaneError):
+            continue
+        if isinstance(result, BaseException):
+            raise result
+        out[run["run_id"]] = result.get("report")
+    return out
+
+
+def mermaid_of(plan: dict[str, Any]) -> str:
+    """The sprint's dependency graph as mermaid source — the same graph the
+    runtime writes into the sprint report document inside the repository."""
+    lines = ["graph LR"]
+    for task in plan.get("tasks") or []:
+        task_id = str(task.get("id") or "")
+        title = str(task.get("title") or "")[:40].replace('"', "'")
+        lines.append(f'  {task_id}["{task_id}: {title}"]')
+        lines.extend(f"  {dep} --> {task_id}" for dep in task.get("depends_on") or [])
+    return "\n".join(lines)
+
+
+async def projects_page(plane: ControlPlane, user: str) -> dict[str, Any]:
+    projects = (await plane.get("/projects", user)).get("projects") or []
+    runs = (await plane.get("/runs", user, limit=500)).get("runs") or []  # newest first
+    work: dict[str, dict[str, Any]] = {}
+    for run in runs:
+        entry = work.setdefault(run.get("project_name"), {"runs": 0, "active": 0, "last": None})
+        entry["runs"] += 1
+        if run.get("status") not in TERMINAL:
+            entry["active"] += 1
+        if entry["last"] is None:
+            entry["last"] = {k: run.get(k) for k in ("run_id", "kind", "status", "submitted_at")}
+    return {"projects": [{**p, **work.get(p.get("name"), {"runs": 0, "active": 0, "last": None})}
+                         for p in projects]}
+
+
+async def sprints_page(plane: ControlPlane, user: str, limit: int = 20) -> dict[str, Any]:
+    listing = await plane.get("/runs", user, kind="sprint", limit=limit)
+    runs = listing.get("runs") or []
+    reports = await reports_for(plane, user, runs)
+    projects = (await plane.get("/projects", user)).get("projects") or []
+    items = []
+    for run in runs:
+        report = reports.get(run["run_id"])
+        plan = (report or {}).get("plan") or {}
+        items.append({"run": run, "report": report,
+                      "mermaid": mermaid_of(plan) if plan.get("tasks") else ""})
+    return {"sprints": items, "active": listing.get("active", 0),
+            "projects": [p["name"] for p in projects]}
+
+
+async def evolution_page(plane: ControlPlane, user: str, limit: int = 20) -> dict[str, Any]:
+    listing = await plane.get("/runs", user, kind="evolve", limit=limit)
+    runs = listing.get("runs") or []
+    reports = await reports_for(plane, user, runs)
+    projects = (await plane.get("/projects", user)).get("projects") or []
+    pending = (await plane.get("/governance", user, status="pending")).get("requests") or []
+    proposals = [request_summary(r) for r in pending
+                 if r.get("proposed_by") == "evolution" or r.get("kind") == "evolution_pr"]
+    return {"cycles": [{"run": run, "report": reports.get(run["run_id"])} for run in runs],
+            "active": listing.get("active", 0), "projects": [p["name"] for p in projects],
+            "queue": proposals}
+
+
+async def memory_page(plane: ControlPlane, user: str, *, project: str | None = None,
+                      kind: str | None = None, search: str | None = None,
+                      limit: int = 100) -> dict[str, Any]:
+    projects = [p["name"] for p in (await plane.get("/projects", user)).get("projects") or []]
+    project = project or (projects[0] if projects else None)
+    memory = None
+    if project:
+        memory = await plane.get(f"/projects/{project}/memory", user, kind=kind, search=search,
+                                 limit=limit)
+    return {"projects": projects, "project": project, "kind": kind, "search": search,
+            "memory": memory, "kinds": list(MEMORY_KINDS), "curated": list(CURATED_MEMORY_KINDS)}
+
+
 #: A JSON object body, optional (module scope: annotations are postponed and
 #: FastAPI resolves them against the module's globals).
 Payload = Annotated[dict[str, Any] | None, Body()]
@@ -562,9 +666,84 @@ def install(app: FastAPI, plane: ControlPlane, *, viewer: Callable[..., Any],
         return await mutate(x_requested_with, lambda: plane.post(
             f"/governance/{request_id}/reject", role, reason=data.get("reason") or ""))
 
+    # ── projects · sprints · evolution · memory (PR-19) ──────────────────
+
+    @app.get("/api/ezai/projects")
+    async def ezai_projects(role: str = Depends(viewer)):
+        try:
+            return {**await projects_page(plane, role), "role": role}
+        except ControlPlaneError as exc:
+            return exc.response()
+
+    @app.post("/api/ezai/projects")
+    async def ezai_project_add(body: Payload = None, role: str = Depends(admin),
+                               x_requested_with: str | None = Header(None)):
+        data = body or {}
+        payload = {k: data.get(k) for k in ("path", "name") if data.get(k) is not None}
+        return await mutate(x_requested_with, lambda: plane.call(
+            "POST", "/projects", user=role, json=payload))
+
+    @app.delete("/api/ezai/projects")
+    async def ezai_project_remove(target: str, role: str = Depends(admin),
+                                  x_requested_with: str | None = Header(None)):
+        return await mutate(x_requested_with, lambda: plane.call(
+            "DELETE", "/projects", user=role, params={"target": target}))
+
+    @app.get("/api/ezai/sprints")
+    async def ezai_sprints(limit: int = Query(20, ge=1, le=100), role: str = Depends(viewer)):
+        try:
+            return {**await sprints_page(plane, role, limit), "role": role}
+        except ControlPlaneError as exc:
+            return exc.response()
+
+    @app.get("/api/ezai/evolution")
+    async def ezai_evolution(limit: int = Query(20, ge=1, le=100), role: str = Depends(viewer)):
+        try:
+            return {**await evolution_page(plane, role, limit), "role": role}
+        except ControlPlaneError as exc:
+            return exc.response()
+
+    @app.post("/api/ezai/runs")
+    async def ezai_start(body: Payload = None, role: str = Depends(admin),
+                         x_requested_with: str | None = Header(None)):
+        data = body or {}
+        kind = data.get("kind")
+
+        async def start():
+            if kind not in CONSOLE_STARTS:
+                raise ControlPlaneError(
+                    400, "invalid_request",
+                    f"the console starts {' and '.join(CONSOLE_STARTS)} jobs; a '{kind}' job "
+                    "starts from the CLI or chat",
+                    "local-ezai run|fix|plan on the host, or the Orchestrator persona in chat")
+            fields = {k: data.get(k) for k in ("project", "spec", "focus", "simple",
+                                                "keep_going", "max_parallel")}
+            return await plane.post("/runs", role, kind=kind, **fields)
+
+        return await mutate(x_requested_with, start)
+
+    @app.get("/api/ezai/memory")
+    async def ezai_memory(project: str | None = None, kind: str | None = None,
+                          search: str | None = None, limit: int = Query(100, ge=1, le=500),
+                          role: str = Depends(viewer)):
+        try:
+            return {**await memory_page(plane, role, project=project, kind=kind, search=search,
+                                        limit=limit), "role": role}
+        except ControlPlaneError as exc:
+            return exc.response()
+
+    @app.post("/api/ezai/memory")
+    async def ezai_memory_add(body: Payload = None, role: str = Depends(admin),
+                              x_requested_with: str | None = Header(None)):
+        data = body or {}
+        project = data.get("project") or ""
+        return await mutate(x_requested_with, lambda: plane.post(
+            f"/projects/{project}/memory", role, kind=data.get("kind"), text=data.get("text")))
+
     # ── pages: one template, the path picks the view ─────────────────────
 
-    for path in ("/overview", "/models", "/routing", "/runtime", "/runs", "/governance"):
+    for path in ("/overview", "/models", "/routing", "/runtime", "/runs", "/governance",
+                 "/projects", "/sprints", "/evolution", "/memory"):
         @app.get(path, response_class=HTMLResponse, name=f"page_{path.strip('/')}")
         async def admin_page(role: str = Depends(viewer)) -> str:
             return ADMIN_HTML
@@ -679,7 +858,11 @@ ADMIN_HTML = """<!doctype html>
     <a href="/routing" data-nav="routing">Routing</a>
     <a href="/runtime" data-nav="runtime">Runtime</a>
     <a href="/runs" data-nav="runs">Runs</a>
+    <a href="/sprints" data-nav="sprints">Sprints</a>
+    <a href="/evolution" data-nav="evolution">Evolution</a>
     <a href="/governance" data-nav="governance">Governance</a>
+    <a href="/memory" data-nav="memory">Memory</a>
+    <a href="/projects" data-nav="projects">Projects</a>
     <a href="/" data-nav="health">Health &amp; Knowledge</a>
   </nav>
 </header>
@@ -705,7 +888,7 @@ const route = (() => {
   const g = p.match(/^\\/governance\\/([^/]+)$/);
   if (g) return { view: 'request', id: decodeURIComponent(g[1]) };
   if (p === '/runs') return { view: 'runs' };
-  if (['/models', '/routing', '/runtime', '/governance'].includes(p)) return { view: p.slice(1) };
+  if (['/models', '/routing', '/runtime', '/governance', '/projects', '/sprints', '/evolution', '/memory'].includes(p)) return { view: p.slice(1) };
   return { view: 'overview' };
 })();
 const NAV_OF = { run: 'runs', request: 'governance' };
@@ -789,16 +972,18 @@ async function renderRuns() {
   document.title = 'Runs · Local-EZAI Admin Center';
   $('subtitle').textContent = 'Agents & Runs';
   const params = new URLSearchParams(location.search);
-  const kind = params.get('kind') || '', status = params.get('status') || '';
+  const kind = params.get('kind') || '', status = params.get('status') || '', project = params.get('project') || '';
   const q = new URLSearchParams();
   if (kind) q.set('kind', kind);
   if (status) q.set('status', status);
+  if (project) q.set('project', project);
   let d;
   try { d = await api('/api/ezai/runs' + (q.toString() ? '?' + q : '')); } catch (e) { fail(e); return; }
   const sel = (name, value, options) => `<select data-filter="${name}">${options.map(o =>
     `<option value="${o}"${o === value ? ' selected' : ''}>${o || 'all ' + name + 's'}</option>`).join('')}</select>`;
   $('app').innerHTML = `<section class="card"><div class="toolbar">` +
     sel('kind', kind, ['', 'run', 'fix', 'sprint', 'evolve', 'plan']) + sel('status', status, ['', 'queued', 'running', 'completed', 'failed', 'cancelled']) +
+    (project ? `<span class="chip">project: ${esc(project)} <a href="/runs">×</a></span>` : '') +
     `<span class="muted">${d.active} active · limits ${d.max_concurrent} concurrent + ${d.max_queued} queued</span></div>` +
     `<table><thead>${RUN_HEAD}</thead><tbody>${d.runs.length ? d.runs.map(runRow).join('') : '<tr><td colspan="7" class="muted">no runs match</td></tr>'}</tbody></table></section>`;
   document.querySelectorAll('select[data-filter]').forEach(s => s.onchange = () => {
@@ -936,9 +1121,9 @@ async function act(path, method, body) {
   return api(path, { method, headers: { 'X-Requested-With': 'admin-center', 'Content-Type': 'application/json' },
                      body: body === undefined ? undefined : JSON.stringify(body) });
 }
-async function run(label, call, render, okOf) {
+async function run(label, call, render, okOf, after) {
   report(`${label}…`, true);
-  try { const r = await call(); report(render(r), okOf ? okOf(r) : true); setTimeout(renderModels, 800); }
+  try { const r = await call(); report(render(r), okOf ? okOf(r) : true); setTimeout(after || renderModels, 800); }
   catch (e) { report(`✗ ${label}: ${e.message}${e.fix ? ' — fix: ' + e.fix : ''}`, false); }
 }
 const proposalText = r => { const q = r.request || {};
@@ -1142,6 +1327,132 @@ async function renderRequest(id) {
   footer(`request <code>${esc(r.id)}</code> · base generation ${r.base_generation} · <a href="/governance">queue</a> · CLI: <code>local-ezai governance show ${esc(r.id)}</code> · <code>local-ezai governance approve|reject ${esc(r.id)}</code>`);
 }
 
+// ── Projects · Sprints · Evolution · Memory (PR-19) ──────────────
+const runLink = r => r ? `<a href="/runs/${encodeURIComponent(r.run_id)}"><code>${esc(r.run_id)}</code></a> ${badge(r.status)} <span class="muted">${esc(r.kind)} · ${when(r.submitted_at)}</span>` : '<span class="muted">none yet</span>';
+const projectSelect = (projects, selected) => `<select name="project">${projects.map(p => `<option${p === selected ? ' selected' : ''}>${esc(p)}</option>`).join('')}</select>`;
+const startedText = r => `started ${r.kind} ${r.run_id} on ${r.project_name} (${r.status}) — follow it at /runs/${r.run_id}`;
+const TASK_HEAD = `<tr><th>wave</th><th>task</th><th>what</th><th>depends on</th><th>status</th><th>commit</th><th>error</th></tr>`;
+const taskRows = tasks => (tasks || []).map(t => `<tr><td>${t.wave ?? ''}</td><td><code>${esc(t.task_id || t.index)}</code></td><td>${esc(short(t.task, 90))}</td>` +
+  `<td class="muted">${esc((t.depends_on || []).join(', ') || '—')}</td><td>${badge(t.status)}</td><td><code>${esc((t.commit_sha || '').slice(0, 10))}</code></td><td class="muted">${esc(short(t.error, 80))}</td></tr>`).join('');
+const noReport = r => `<div class="muted" style="margin-top:8px">${TERMINAL.includes(r.status) ? 'no report — the <a href="/runs/' + encodeURIComponent(r.run_id) + '">journal</a> shows how far it got' : 'running — the report follows'}</div>`;
+const runHead = r => `<a href="/runs/${encodeURIComponent(r.run_id)}"><code>${esc(r.run_id)}</code></a> ${badge(r.status)} <span class="muted">· ${esc(r.project_name)} · ${when(r.submitted_at)} · by ${esc(r.actor)}</span>`;
+
+async function renderProjects() {
+  document.title = 'Projects · Local-EZAI Admin Center';
+  let d; try { d = await api('/api/ezai/projects'); } catch (e) { fail(e); return; }
+  const admin = isAdmin(d);
+  $('subtitle').textContent = `Projects · ${d.projects.length} registered · the allowlist for chat-ops and console work`;
+  const rows = d.projects.map(p => `<tr><td><strong>${esc(p.name)}</strong></td><td><code>${esc(p.path)}</code></td><td class="muted">${esc(p.added_by)} · ${when(p.added_at)}</td>` +
+    `<td>${p.runs} run${p.runs === 1 ? '' : 's'}${p.active ? ` · ${p.active} active` : ''}<div class="muted">${runLink(p.last)}</div></td>` +
+    `<td><a href="/runs?project=${encodeURIComponent(p.name)}">runs</a> · <a href="/memory?project=${encodeURIComponent(p.name)}">memory</a></td>` +
+    `<td>${admin ? `<button class="btn sm danger" data-remove="${esc(p.name)}">remove</button>` : ''}</td></tr>`).join('');
+  const add = admin ? card(`Register a repository <span class="muted">· a git repository on the control plane's filesystem · <code>local-ezai project add &lt;path&gt;</code></span>`,
+    `<form id="project-form" class="toolbar"><input name="path" placeholder="/path/to/repository" required size="40"><input name="name" placeholder="name (optional)" size="16"><button class="btn" type="submit">Register</button></form>` +
+    `<div class="muted">Registered projects are the only repositories chat, the console and the API may work on. The control plane needs the path on its own filesystem (a host daemon, or the same mount inside the container).</div>`) : '';
+  $('app').innerHTML = add + card(`Registered projects <span class="muted">· ${d.projects.length}</span>`,
+    d.projects.length ? `<table><thead><tr><th>project</th><th>path</th><th>registered</th><th>work</th><th>pages</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
+                      : '<div class="muted">no project registered — register one above or with <code>local-ezai project add &lt;path&gt;</code></div>');
+  const form = $('project-form');
+  if (form) form.onsubmit = async e => { e.preventDefault(); const f = new FormData(form); const body = { path: f.get('path') }; if (f.get('name')) body.name = f.get('name');
+    await run(`register ${body.path}`, () => act('/api/ezai/projects', 'POST', body), r => r.message, null, renderProjects); };
+  document.querySelectorAll('button[data-remove]').forEach(b => b.onclick = async () => { const n = b.dataset.remove;
+    if (!confirm(`Remove ${n} from the allowlist? Nothing is deleted on disk.`)) return;
+    await run(`remove ${n}`, () => act('/api/ezai/projects?target=' + encodeURIComponent(n), 'DELETE'), r => r.message, null, renderProjects); });
+  footer(`CLI twins: <code>local-ezai project add|list|remove</code> · chat: <code>swe_projects</code>`);
+}
+
+async function renderSprints() {
+  document.title = 'Sprints · Local-EZAI Admin Center';
+  let d; try { d = await api('/api/ezai/sprints'); } catch (e) { fail(e); return; }
+  const admin = isAdmin(d);
+  $('subtitle').textContent = `Sprints · ${d.sprints.length} shown · ${d.active} active`;
+  const start = admin ? card('New sprint <span class="muted">· paste or write a markdown specification · <code>local-ezai sprint &lt;spec.md&gt;</code></span>',
+    `<form id="sprint-form"><div class="toolbar">target project ${projectSelect(d.projects, d.projects[0])} <label><input type="checkbox" name="simple"> one task per line, sequential</label> <label><input type="checkbox" name="keep_going"> continue after a failed task</label></div>` +
+    `<textarea name="spec" rows="8" placeholder="# Sprint goal&#10;&#10;- requirement …" required style="width:100%;margin-top:8px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px"></textarea>` +
+    `<div class="toolbar" style="margin-top:8px"><button class="btn" type="submit"${d.projects.length ? '' : ' disabled'}>Start sprint</button><span class="muted">requirement analysis → dependency waves → parallel task pipelines → merged commits on a sprint branch; never pushed</span></div></form>`) : '';
+  const cards = d.sprints.map(({ run: r, report: rep, mermaid }) => card(runHead(r),
+    `<div class="muted">${esc(short(r.request, 160))}</div>` + (rep
+      ? `<div style="margin-top:8px"><strong>Goal:</strong> ${esc(rep.plan && rep.plan.goal || '')} <span class="muted">· ${rep.waves ?? 0} wave${rep.waves === 1 ? '' : 's'} · branch <code>${esc(rep.branch)}</code>${rep.report_doc ? ` · report <code>${esc(rep.report_doc)}</code>` : ''}</span></div>` +
+        `<table style="margin-top:8px"><thead>${TASK_HEAD}</thead><tbody>${taskRows(rep.tasks) || '<tr><td colspan="7" class="muted">no task</td></tr>'}</tbody></table>` +
+        (mermaid ? `<div style="margin-top:8px"><strong>Dependency graph</strong> <span class="muted">· mermaid source, as the runtime writes it into the sprint report</span></div><pre class="journal">${esc(mermaid)}</pre>` : '')
+      : noReport(r)))).join('');
+  $('app').innerHTML = start + (cards || card('Sprints', '<div class="muted">no sprint yet — start one above, with <code>local-ezai sprint</code>, or <code>swe_sprint</code> in chat</div>'));
+  const form = $('sprint-form');
+  if (form) form.onsubmit = async e => { e.preventDefault(); const f = new FormData(form);
+    const body = { kind: 'sprint', project: f.get('project'), spec: f.get('spec'), simple: !!f.get('simple'), keep_going: !!f.get('keep_going') };
+    await run(`start sprint on ${body.project}`, () => act('/api/ezai/runs', 'POST', body), startedText, null, renderSprints); };
+  footer(`CLI: <code>local-ezai sprint &lt;spec.md&gt;</code> · chat: <code>swe_sprint</code> · sprint reports live in the repository under <code>docs/sprints/</code>`);
+  clearTimeout(timer);
+  if (d.sprints.some(s => !TERMINAL.includes(s.run.status))) timer = setTimeout(renderSprints, 4000);
+}
+
+async function renderEvolution() {
+  document.title = 'Evolution · Local-EZAI Admin Center';
+  let d; try { d = await api('/api/ezai/evolution'); } catch (e) { fail(e); return; }
+  const admin = isAdmin(d);
+  $('subtitle').textContent = `Evolution · ${d.cycles.length} cycle${d.cycles.length === 1 ? '' : 's'} · ${d.active} active`;
+  const start = admin ? card('Run evolution cycle <span class="muted">· analyze history, failures and bottlenecks → propose → implement → validate → benchmark → pull request or proposal bundle · <code>local-ezai evolve</code></span>',
+    `<form id="evolve-form" class="toolbar">target project ${projectSelect(d.projects, d.projects[0])} <input name="focus" placeholder="focus (optional)" size="40"><button class="btn" type="submit"${d.projects.length ? '' : ' disabled'}>Run cycle</button></form>` +
+    `<div class="muted">Every cycle ends awaiting human review — self-evolution proposes, never operates.</div>`) : '';
+  const queue = d.queue.length
+    ? `<div class="banner warn"><strong>⚠ ${d.queue.length} evolution proposal${d.queue.length > 1 ? 's' : ''} await approval</strong> — ${d.queue.map(q => `<a href="/governance/${encodeURIComponent(q.id)}"><code>${esc(q.id)}</code></a> ${esc(q.title)}`).join(' · ')}</div>`
+    : `<div class="banner"><strong>Governance</strong> <span class="muted">— evolution proposals enter the <a href="/governance">queue</a> once the pipeline submits change requests; today a cycle's terminal artifact is its pull request or proposal bundle, reviewed and merged (or <code>git branch -D</code>) by a human on the forge.</span></div>`;
+  const cards = d.cycles.map(({ run: r, report: rep }) => { const p = rep && rep.proposal, pr = (rep && rep.pull_request) || {}, b = rep && rep.benchmark_before, a = rep && rep.benchmark_after;
+    return card(runHead(r) + (r.request ? ` <span class="muted">· focus: ${esc(short(r.request, 80))}</span>` : ''), rep
+      ? `<div><strong>Proposal:</strong> ${esc(p ? p.title : '(none)')}</div>` +
+        (p ? `<ul class="checks">${(p.failure_patterns || []).map(x => `<li class="muted">pattern: ${esc(x)}</li>`).join('')}${(p.bottlenecks || []).map(x => `<li class="muted">bottleneck: ${esc(x)}</li>`).join('')}</ul>` +
+             `<ol class="heal">${(p.improvements || []).map(i => `<li><strong>${esc(i.title)}</strong>${i.rationale ? ' <span class="muted">— ' + esc(short(i.rationale, 160)) + '</span>' : ''}</li>`).join('')}</ol>` : '') +
+        (b && a ? `<div style="margin-top:6px">benchmark: ${badge(b.passed ? 'passed' : 'failed')} ${b.checks} checks in ${b.duration_seconds}s → ${badge(a.passed ? 'passed' : 'failed')} ${a.checks} checks in ${a.duration_seconds}s</div>` : '') +
+        (rep.tasks && rep.tasks.length ? `<table style="margin-top:8px"><thead>${TASK_HEAD}</thead><tbody>${taskRows(rep.tasks)}</tbody></table>` : '') +
+        `<div style="margin-top:8px">${pr.url ? `pull request: <a href="${esc(pr.url)}">${esc(pr.url)}</a>` : pr.bundle_path ? `proposal bundle: <code>${esc(pr.bundle_path)}</code>` : 'no pull request or bundle recorded'}${pr.note ? ` <span class="muted">— ${esc(pr.note)}</span>` : ''}${rep.release_notes_updated ? ' <span class="muted">· release notes updated</span>' : ''}</div>` +
+        `<div class="muted">branch <code>${esc(rep.branch)}</code> — <strong>awaiting human review</strong>; nothing merges itself</div>` +
+        (rep.error ? `<div class="banner err" style="margin-top:6px"><strong>error</strong> — ${esc(rep.error)}</div>` : '')
+      : noReport(r)); }).join('');
+  $('app').innerHTML = start + queue + (cards || card('Cycles', '<div class="muted">no evolution cycle yet — run one above, with <code>local-ezai evolve</code>, or <code>swe_evolve</code> in chat</div>'));
+  const form = $('evolve-form');
+  if (form) form.onsubmit = async e => { e.preventDefault(); const f = new FormData(form); const body = { kind: 'evolve', project: f.get('project') }; if (f.get('focus')) body.focus = f.get('focus');
+    await run(`start evolution on ${body.project}`, () => act('/api/ezai/runs', 'POST', body), startedText, null, renderEvolution); };
+  footer(`CLI: <code>local-ezai evolve</code> · chat: <code>swe_evolve</code> · the pull request is the terminal artifact (GOVERNANCE §5)`);
+  clearTimeout(timer);
+  if (d.cycles.some(c => !TERMINAL.includes(c.run.status))) timer = setTimeout(renderEvolution, 4000);
+}
+
+const KIND_LABEL = { project_rule: 'Project rules', coding_style: 'Coding styles', architecture_decision: 'Architecture decisions',
+  failed_fix: 'Failed fixes', successful_fix: 'Successful fixes', implementation: 'Implementation history' };
+async function renderMemory() {
+  document.title = 'Memory · Local-EZAI Admin Center';
+  const params = new URLSearchParams(location.search), q = new URLSearchParams();
+  for (const k of ['project', 'kind', 'search']) if (params.get(k)) q.set(k, params.get(k));
+  let d; try { d = await api('/api/ezai/memory' + (q.toString() ? '?' + q : '')); } catch (e) { fail(e); return; }
+  const admin = isAdmin(d), m = d.memory;
+  $('subtitle').textContent = m ? `Memory · ${m.project} · ${m.total} entr${m.total === 1 ? 'y' : 'ies'}` : 'Memory · no project registered';
+  const filters = `<form id="memory-filter" class="toolbar">project ${projectSelect(d.projects, d.project)} ` +
+    `<select name="kind"><option value="">all kinds</option>${d.kinds.map(k => `<option value="${k}"${k === d.kind ? ' selected' : ''}>${KIND_LABEL[k] || k}${m ? ` (${m.counts[k] || 0})` : ''}</option>`).join('')}</select> ` +
+    `<input name="search" placeholder="search title and content" value="${esc(d.search || '')}" size="28"><button class="btn sm" type="submit">show</button></form>`;
+  const groups = {};
+  (m ? m.records : []).forEach(r => (groups[r.kind] = groups[r.kind] || []).push(r));
+  const sections = d.kinds.filter(k => groups[k]).map(k => card(`${KIND_LABEL[k] || k} <span class="muted">· ${groups[k].length}</span>`,
+    `<table><thead><tr><th>#</th><th>entry</th><th>context</th><th>recorded</th></tr></thead><tbody>${groups[k].map(r =>
+      `<tr><td class="muted">${r.id}</td><td><strong>${esc(r.title)}</strong>${r.content && r.content !== r.title ? `<div class="muted">${esc(short(r.content, 400))}</div>` : ''}</td>` +
+      `<td class="muted">${r.error_signature ? `<code>${esc(short(r.error_signature, 60))}</code> ` : ''}${r.category ? esc(r.category) + ' ' : ''}${(r.files || []).length ? '<br>' + esc(r.files.slice(0, 5).join(', ')) : ''}</td>` +
+      `<td class="muted">${when(r.created_at)}${r.run_id ? `<br>run ${esc(r.run_id)}` : ''}</td></tr>`).join('')}</tbody></table>`)).join('');
+  const add = admin && m ? card('Remember something <span class="muted">· a curated rule, style or decision for this project · <code>local-ezai memory --add</code></span>',
+    `<form id="memory-form" class="toolbar"><select name="kind">${d.curated.map(k => `<option value="${k}">${KIND_LABEL[k]}</option>`).join('')}</select>` +
+    `<input name="text" placeholder="e.g. tests live next to the module they cover" required size="60"><button class="btn" type="submit">Remember</button></form>` +
+    `<div class="muted">Fixes and implementation history are recorded by runs, never by hand; the planner and the debugger read this store on every run.</div>`) : '';
+  $('app').innerHTML = card('Browse', filters + (m
+      ? `<div class="muted" style="margin-top:8px">${m.exists ? `store <code>${esc(m.path)}</code> · ${m.total} total` : `no memory yet for ${esc(m.project)} — the first run creates <code>${esc(m.path)}</code>`}</div>`
+      : '<div class="muted">register a project first (<a href="/projects">Projects</a>)</div>')) +
+    add + (sections || (m ? card('Entries', `<div class="muted">${m.exists ? 'nothing matches' : 'no memory yet for this project'}</div>`) : ''));
+  const filter = $('memory-filter');
+  if (filter) filter.onsubmit = e => { e.preventDefault(); const f = new FormData(filter); const p = new URLSearchParams();
+    for (const k of ['project', 'kind', 'search']) if (f.get(k)) p.set(k, f.get(k)); location.search = p.toString(); };
+  const form = $('memory-form');
+  if (form) form.onsubmit = async e => { e.preventDefault(); const f = new FormData(form);
+    await run(`remember for ${d.project}`, () => act('/api/ezai/memory', 'POST', { project: d.project, kind: f.get('kind'), text: f.get('text') }), r => r.message, null, renderMemory); };
+  footer(`${m ? `<code>${esc(m.path)}</code> · ` : ''}CLI: <code>local-ezai memory [--search …] [--add … --kind …]</code> · ADR-017`);
+}
+
 if (route.view === 'run') renderRun(route.id);
 else if (route.view === 'runs') renderRuns();
 else if (route.view === 'models') renderModels();
@@ -1149,6 +1460,10 @@ else if (route.view === 'routing') renderRouting();
 else if (route.view === 'runtime') renderRuntime();
 else if (route.view === 'governance') renderGovernance();
 else if (route.view === 'request') renderRequest(route.id);
+else if (route.view === 'projects') renderProjects();
+else if (route.view === 'sprints') renderSprints();
+else if (route.view === 'evolution') renderEvolution();
+else if (route.view === 'memory') renderMemory();
 else renderOverview();
 </script>
 </body>

@@ -19,8 +19,10 @@ from __future__ import annotations
 #: surface (operations, parameters, response codes, security, schema names)
 #: bumps this version — additive changes the minor, breaking ones the major —
 #: and regenerates ``docs/api/ezaid-openapi.json``; the frozen inventory test
-#: fails otherwise.
-CONTRACT_VERSION = "1.0.0"
+#: fails otherwise. **1.1.0 (PR-19, additive):** the project memory
+#: operations (``project_memory``, ``project_memory_add``) for the Admin
+#: Center's Memory page — every 1.0.0 operation unchanged.
+CONTRACT_VERSION = "1.1.0"
 API_PREFIX = "/v1"
 SERVICE_NAME = "ezaid"
 

@@ -116,7 +116,16 @@ shows the engine slot and a pre-check for switching to another runtime
 changes, the evidence measured on this host, who proposed it and what a
 rollback would restore, then *Reject* (a reason is required and recorded)
 or *Approve & apply* as an admin; the same audit trail as
-`local-ezai governance approve|reject`.
+`local-ezai governance approve|reject`. **Projects · Sprints · Evolution ·
+Memory (PR-19):** `/projects` manages the allowlist (register a git
+repository by a path the control plane can see; remove); `/sprints` shows
+every sprint with its waves, task results and dependency graph and lets an
+admin start one from a pasted specification; `/evolution` shows every cycle
+with proposal, benchmarks and bundle and lets an admin run one; `/memory`
+browses a project's rules, styles, decisions and fix lessons, with search,
+and lets an admin remember a curated entry (`local-ezai memory --add`). The
+memory pages use the control plane's 1.1.0 operations
+(`GET|POST /v1/projects/<name>/memory`); everything else is unchanged 1.0.0.
 
 ## 2. The Autonomous SWE runtime
 

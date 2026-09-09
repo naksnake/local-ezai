@@ -101,9 +101,15 @@ pending queue + history with decisions; the approval view at
 `/governance/<id>` — diff and affected roles, host benchmarks, fit,
 capability report, runtime flag, proposer, reversibility, Reject with
 required reason / Approve & apply through the daemon as the monitor login;
-Overview/Models link to it) implemented. All eighteen await human merge on
-`claude/next-ready-pr-bnq7r3`. P4 / P5 run in parallel; next ready by plan
-order: **PR-19** (Sprints / Evolution / Memory / Projects pages), with PR-21
+Overview/Models link to it) and PR-19 (Projects, Sprints, Evolution and
+Memory pages: the allowlist with each project's work; sprint runs with
+waves, task results and the dependency graph as mermaid source; evolution
+cycles with proposal, benchmarks and bundle; a per-project memory browser
+with curated adds — backed by the additive **contract 1.1.0** memory
+operations; console starts for sprints and evolution cycles, journeys 3–4)
+implemented. All nineteen await human merge on `claude/next-ready-pr-bnq7r3`.
+P4 / P5 run in parallel; next ready by plan order: **PR-20** (SSO handoff +
+the Browser-QA journey suite → ADR-030 Accepted, P4 closed), with PR-21
 (`install.sh`, P5) also unblocked.
 
 **Product review (ADR-026, 2026-09-01):** agnosticism audit passed with

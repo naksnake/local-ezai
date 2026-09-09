@@ -278,7 +278,20 @@ capability report, runtime switch flag, class), proposed by, reversibility
 reason, Approve & apply) — through the daemon as the monitor login, admin
 only, same-origin guarded, refusals verbatim; Overview/Models link to it;
 honest note that only activation/upgrade requests enter the queue today.
-**PR-19 · Sprints/Evolution/Memory/Projects pages** — M.
+**PR-19 · Sprints/Evolution/Memory/Projects pages** — M — ✅ **implemented**
+([prs/PR-19-admin-center-sprints-evolution-memory-projects.md](prs/PR-19-admin-center-sprints-evolution-memory-projects.md);
+13 tests incl. a real-Chromium smoke, suite 640 green, goldens intact;
+ADR-030 PR-19 slice; **contract 1.1.0**, additive)
+As built: Projects (allowlist with each project's work; register / remove
+through the daemon), Sprints (runs + reports: waves, task results, the
+dependency graph as mermaid source; console start from a pasted spec —
+journey 3), Evolution (cycles + reports: proposal, benchmark before → after,
+PR / bundle, "awaiting human review"; console start with focus — journey
+4), Memory (per-project browser with kinds, search, counts; remember a
+curated rule / style / decision). The Memory page needed data 1.0.0 never
+served: `GET|POST /v1/projects/{name}/memory` added by the contract's own
+rule (minor bump, artifact regenerated, inventory pins 29 + 2). Console
+starts amend the parity matrix for sprint and evolve only.
 **PR-20 · SSO handoff + Browser-QA suite** — M: trusted-header handoff
 (Basic fallback), the five zero-CLI journeys of WEBUI_PRODUCT_STRATEGY §5
 as Browser-QA workflows in CI. **ADR-030 → Accepted.**

@@ -8,7 +8,8 @@ V1_IMPLEMENTATION_PLAN §P2 as tests.
    works through it, the process is SIGKILLed — repo work via the CLI is
    unaffected, management verbs fall back to direct (or fail fast when
    connected was requested);
-4. the OpenAPI contract is published and frozen at 1.0.0.
+4. the OpenAPI contract is published and versioned: frozen at 1.0.0 by the
+   P2 close, extended additively to 1.1.0 by PR-19 (project memory).
 
 (Criterion 1, parity, is the PR-11 smoke in test_cli_connected.py.)"""
 
@@ -68,9 +69,11 @@ AUTH = {"Authorization": f"Bearer {TOKEN}", USER_HEADER: "nita", CLIENT_HEADER: 
 V1 = API_PREFIX
 TERMINAL = ("completed", "failed", "cancelled")
 
-#: The 1.0.0 surface. A change here is a contract change: bump
+#: The contract surface. A change here is a contract change: bump
 #: CONTRACT_VERSION (additive → minor, breaking → major), regenerate the
 #: artifact (make control-spec) and update this inventory in the same PR.
+#: 1.0.0 = the 29 operations frozen by the P2 close; 1.1.0 (PR-19) added the
+#: two project memory operations, additively.
 FROZEN_1_0_0_OPERATIONS = {
     # skeleton (PR-8)
     "liveness", "aggregated_health", "whoami", "audit_tail",
@@ -83,6 +86,9 @@ FROZEN_1_0_0_OPERATIONS = {
     # runs (PR-10)
     "run_start", "runs_list", "run_get", "run_report", "run_journal", "run_cancel",
 }
+#: Additive 1.1.0 operations (PR-19): a registered project's memory.
+CONTRACT_1_1_0_ADDITIONS = {"project_memory", "project_memory_add"}
+CONTRACT_OPERATIONS = FROZEN_1_0_0_OPERATIONS | CONTRACT_1_1_0_ADDITIONS
 
 
 def make_repo(path: Path) -> Path:
@@ -271,15 +277,22 @@ def test_two_gated_runs_start_status_report_cancel(platform):
 # ── exit criterion 4: the contract, frozen ───────────────────────────────────
 
 
-def test_contract_is_published_and_frozen_at_1_0_0():
-    assert CONTRACT_VERSION == "1.0.0"
+def test_contract_is_published_and_versioned():
+    assert CONTRACT_VERSION == "1.1.0"
     committed = json.loads((REPO_ROOT / SPEC_ARTIFACT).read_text(encoding="utf-8"))
-    assert committed["info"]["version"] == "1.0.0"
-    assert committed["info"]["x-contract-status"].startswith("frozen at 1.0.0")
+    assert committed["info"]["version"] == "1.1.0"
+    status = committed["info"]["x-contract-status"]
+    assert status.startswith("1.1.0") and "frozen at 1.0.0" in status and "additive" in status
     live = create_app(ControlConfig(token="spec")).openapi()
     live_ids = {op["operationId"] for methods in live["paths"].values() for op in methods.values()}
-    assert live_ids == FROZEN_1_0_0_OPERATIONS, (
-        "the ezaid contract is frozen at 1.0.0 — a surface change must bump CONTRACT_VERSION, "
-        "regenerate docs/api/ezaid-openapi.json (make control-spec) and update the inventory")
+    assert live_ids == CONTRACT_OPERATIONS, (
+        "the ezaid contract surface changed — bump CONTRACT_VERSION (additive → minor, "
+        "breaking → major), regenerate docs/api/ezaid-openapi.json (make control-spec) and "
+        "update the inventory in the same PR")
     assert contract_surface(committed) == contract_surface(live)
-    assert len(FROZEN_1_0_0_OPERATIONS) == 29
+    assert len(FROZEN_1_0_0_OPERATIONS) == 29  # the P2 close surface, untouched
+    assert len(CONTRACT_OPERATIONS) == 31
+    # every 1.0.0 operation is still served with its 1.0.0 path and method
+    for op_id in FROZEN_1_0_0_OPERATIONS:
+        assert any(op["operationId"] == op_id for methods in live["paths"].values()
+                   for op in methods.values()), op_id

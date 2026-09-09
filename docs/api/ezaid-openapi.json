@@ -735,6 +735,105 @@
         "title": "Liveness",
         "type": "object"
       },
+      "MemoryAdd": {
+        "properties": {
+          "kind": {
+            "default": "project_rule",
+            "enum": [
+              "project_rule",
+              "coding_style",
+              "architecture_decision"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "text": {
+            "description": "the rule / style / decision to remember",
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "MemoryAdd",
+        "type": "object"
+      },
+      "MemoryAdded": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "project": {
+            "title": "Project",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "project",
+          "message"
+        ],
+        "title": "MemoryAdded",
+        "type": "object"
+      },
+      "MemoryView": {
+        "description": "A registered project's memory (contract 1.1.0, PR-19).",
+        "properties": {
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Counts",
+            "type": "object"
+          },
+          "exists": {
+            "title": "Exists",
+            "type": "boolean"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "project": {
+            "title": "Project",
+            "type": "string"
+          },
+          "records": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Records",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "project",
+          "path",
+          "exists",
+          "total",
+          "counts",
+          "records"
+        ],
+        "title": "MemoryView",
+        "type": "object"
+      },
       "ModelList": {
         "properties": {
           "generation": {
@@ -1522,8 +1621,8 @@
   "info": {
     "description": "One authenticated control plane over the platform's declarative state \u2014 Registry v2 + generations, runtime descriptors, governance queue, rendered artifacts \u2014 for the `local-ezai` CLI (connected mode), the Admin Center and the SWE tool server. Every `/v1` call presents the service token as a bearer credential and may forward the human it acts for (`X-EZAI-User`) and its own name (`X-EZAI-Client`); the audit log records `<user> via <client>`. Mutating calls accept an `Idempotency-Key` header: a retry with the same key and payload replays the stored response, a different payload is a conflict. Every error is `{\"error\": {\"code\", \"message\", \"fix\"}}` \u2014 the same object the CLI prints.",
     "title": "Local-EZAI Platform Control Plane (ezaid)",
-    "version": "1.0.0",
-    "x-contract-status": "frozen at 1.0.0 (P2 phase close, ADR-028 Accepted) \u2014 a surface change bumps the version: additive \u2192 minor, breaking \u2192 major"
+    "version": "1.1.0",
+    "x-contract-status": "1.1.0 \u2014 additive over the surface frozen at 1.0.0 (P2 phase close, ADR-028 Accepted): PR-19 added the project memory operations; a surface change bumps the version: additive \u2192 minor, breaking \u2192 major"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -4038,6 +4137,308 @@
           }
         ],
         "summary": "Register a repository (CLI: local-ezai project add)",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/v1/projects/{name}/memory": {
+      "get": {
+        "operationId": "project_memory",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "one memory kind",
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "one memory kind",
+              "title": "Kind"
+            }
+          },
+          {
+            "description": "keyword search",
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "keyword search",
+              "title": "Search"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "forwarded identity of the human the caller acts for",
+            "in": "header",
+            "name": "X-EZAI-User",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "forwarded identity of the human the caller acts for",
+              "title": "X-Ezai-User"
+            }
+          },
+          {
+            "description": "name of the calling surface (cli, admin-center, \u2026)",
+            "in": "header",
+            "name": "X-EZAI-Client",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "name of the calling surface (cli, admin-center, \u2026)",
+              "title": "X-Ezai-Client"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "missing or invalid service token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "no such model / request / role / project"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "refused by a lifecycle or governance rule (message names the fix)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "invalid request or unservable proposal"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not attached to a platform"
+          }
+        },
+        "security": [
+          {
+            "serviceToken": []
+          }
+        ],
+        "summary": "Browse a registered project's memory (CLI: local-ezai memory)",
+        "tags": [
+          "projects"
+        ]
+      },
+      "post": {
+        "operationId": "project_memory_add",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "forwarded identity of the human the caller acts for",
+            "in": "header",
+            "name": "X-EZAI-User",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "forwarded identity of the human the caller acts for",
+              "title": "X-Ezai-User"
+            }
+          },
+          {
+            "description": "name of the calling surface (cli, admin-center, \u2026)",
+            "in": "header",
+            "name": "X-EZAI-Client",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "name of the calling surface (cli, admin-center, \u2026)",
+              "title": "X-Ezai-Client"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryAdd"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryAdded"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "missing or invalid service token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "no such model / request / role / project"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "refused by a lifecycle or governance rule (message names the fix)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "invalid request or unservable proposal"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "not attached to a platform"
+          }
+        },
+        "security": [
+          {
+            "serviceToken": []
+          }
+        ],
+        "summary": "Add a curated memory entry (CLI: local-ezai memory --add)",
         "tags": [
           "projects"
         ]

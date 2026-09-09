@@ -16,7 +16,7 @@ refused with the fix named instead of failing half-way.
 from __future__ import annotations
 
 import shutil
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
@@ -209,6 +209,29 @@ class ProjectOutcome(BaseModel):
     message: str
 
 
+class MemoryView(BaseModel):
+    """A registered project's memory (contract 1.1.0, PR-19)."""
+
+    project: str
+    path: str
+    exists: bool
+    total: int
+    counts: dict[str, int]
+    records: list[dict[str, Any]]
+
+
+class MemoryAdd(BaseModel):
+    kind: Literal["project_rule", "coding_style", "architecture_decision"] = "project_rule"
+    text: str = Field(min_length=1, description="the rule / style / decision to remember")
+
+
+class MemoryAdded(BaseModel):
+    id: int
+    kind: str
+    project: str
+    message: str
+
+
 # ── models ───────────────────────────────────────────────────────────────────
 
 
@@ -398,3 +421,26 @@ def project_remove(request: Request, ctx: PlatformDep,
                    ) -> ProjectOutcome:
     with request.app.state.mutation_lock:
         return ProjectOutcome(**ops.remove_project(ctx, target))
+
+
+# ── project memory (contract 1.1.0, PR-19 — additive) ────────────────────────
+
+
+@router.get("/projects/{name}/memory", response_model=MemoryView, operation_id="project_memory",
+            tags=["projects"], summary="Browse a registered project's memory "
+                                       "(CLI: local-ezai memory)", responses=PLATFORM_ERRORS)
+def project_memory(ctx: PlatformDep, name: str,
+                   kind: Annotated[str | None, Query(description="one memory kind")] = None,
+                   search: Annotated[str | None, Query(description="keyword search")] = None,
+                   limit: Annotated[int, Query(ge=1, le=500)] = 50) -> MemoryView:
+    return MemoryView(**ops.project_memory(ctx, name, kind=kind, search=search, limit=limit))
+
+
+@router.post("/projects/{name}/memory", response_model=MemoryAdded,
+             operation_id="project_memory_add", tags=["projects"],
+             summary="Add a curated memory entry (CLI: local-ezai memory --add)",
+             responses=PLATFORM_ERRORS)
+def project_memory_add(request: Request, ctx: PlatformDep, name: str,
+                       body: MemoryAdd) -> MemoryAdded:
+    with request.app.state.mutation_lock:
+        return MemoryAdded(**ops.add_project_memory(ctx, name, kind=body.kind, text=body.text))
