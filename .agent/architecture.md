@@ -245,6 +245,12 @@ through `local-ezai model …` + the governance queue. Modules:
   `EZAI_CONTROL_URL`; a requested connected transport with no daemon (or a
   daemon without a configured token) fails fast; `bootstrap`/`up`/`down`
   stay host-only.
+- **P2 closed** (PR-12, ADR-028 Accepted): kill-the-daemon (real process,
+  SIGKILL — repo work unaffected, management falls back / fails fast), two
+  concurrent runs supervised through the API, contract **frozen at 1.0.0**
+  (29 operations, inventory-pinned); deployment shapes: `make control-up`
+  (container overlay, model/governance over `config/`) and
+  `make control-serve` (host daemon, SWE runs).
 
 ## Target additions (control/execution/knowledge planes)
 

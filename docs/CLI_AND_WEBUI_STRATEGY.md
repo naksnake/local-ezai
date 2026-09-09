@@ -166,3 +166,12 @@ state transitions and audit records. WebUI is validated by the existing
 Browser QA machinery against the Admin Center itself — the platform
 dog-foods its own Browser QA agent
 ([V1_IMPLEMENTATION_PLAN.md](V1_IMPLEMENTATION_PLAN.md) §P4).
+
+> **As built (P2 close, PR-12):** the seed of this harness exists —
+> CLI-direct vs CLI-connected parity for seven verbs (PR-11), two runs
+> supervised concurrently through the API, and the kill-the-daemon test (a
+> real `ezaid` process SIGKILLed: repo work unaffected, management verbs
+> fall back to direct on the same state). The API contract is frozen at
+> `1.0.0` (`docs/api/ezaid-openapi.json`, 29 operations, inventory-pinned).
+> The three-surface harness with audit-record equivalence becomes the
+> release gate in PR-24.

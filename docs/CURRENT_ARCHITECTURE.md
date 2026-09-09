@@ -57,9 +57,12 @@ queue / project allowlist operations of the CLI as `/v1` endpoints (PR-9:
 same functions, same JSON, idempotency keys, one error vocabulary), the
 async run registry (PR-10: `POST /v1/runs` for run/fix/sprint/evolve/plan
 on registered projects, status/report/journal/cancel, concurrency limits),
-OpenAPI contract `docs/api/ezaid-openapi.json`. Defined in `docker-compose.control.yml`,
-started with `make control-up`; not part of `make up` until CLI connected
-mode (PR-11).
+OpenAPI contract `docs/api/ezaid-openapi.json` **frozen at 1.0.0** (P2
+close). Two deployment shapes: the container overlay
+(`docker-compose.control.yml`, `make control-up` — model/governance over
+`config/`) and the host daemon (`make control-serve` — sees the registered
+repositories, so SWE runs through the API work). Not part of `make up` in
+V1 (opt-in); the CLI's connected mode uses whichever answers.
 
 ### Deployment profiles (same topology, different engine)
 

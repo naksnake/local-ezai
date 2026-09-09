@@ -288,7 +288,7 @@ clean: ## Remove all containers, images, and volumes (WARNING: deletes data)
 # Autonomous SWE runtime (agentd) — additive targets, see agentd/README.md
 # ═══════════════════════════════════════════════════════════════════════════
 .PHONY: swe-install swe-browsers swe-test swe-lint swe-run swe-plan \
-        control-up control-down control-logs control-spec
+        control-up control-down control-logs control-spec control-serve
 
 swe-install: ## Install the agentd runtime into ./.venv-agentd (editable, dev + browser + control extras)
 	python3 -m venv .venv-agentd
@@ -314,6 +314,10 @@ control-logs: ## Follow the ezaid control plane logs
 
 control-spec: ## Regenerate the versioned OpenAPI contract artifact ($(EZAID_SPEC)) from the app
 	$(EZAID_CLI) --write-spec $(EZAID_SPEC)
+
+control-serve: ## Run the ezaid control plane ON THIS HOST (foreground) — sees your repositories, so SWE runs through the API work
+	@test -x .venv-agentd/bin/ezaid || command -v ezaid >/dev/null 2>&1 || $(MAKE) swe-install
+	$(EZAID_CLI) --platform config --host $(or $(EZAI_CONTROL_HOST),127.0.0.1) --port $(or $(EZAI_CONTROL_PORT),8010)
 
 swe-browsers: ## Download the Playwright Chromium used by Browser QA
 	.venv-agentd/bin/playwright install chromium

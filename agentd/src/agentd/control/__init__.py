@@ -14,10 +14,13 @@ for the CLI to use (``local-ezai status`` probes the control plane) when the
 
 from __future__ import annotations
 
-#: Contract version of the OpenAPI document (``info.version``). PR-12 freezes
-#: it as ``1.0.0``; until then every PR that changes the surface bumps the
-#: pre-release tag and regenerates ``docs/api/ezaid-openapi.json``.
-CONTRACT_VERSION = "1.0.0-draft.10"
+#: Contract version of the OpenAPI document (``info.version``). **Frozen at
+#: 1.0.0 by the P2 phase close (PR-12, ADR-028 Accepted):** a change to the
+#: surface (operations, parameters, response codes, security, schema names)
+#: bumps this version — additive changes the minor, breaking ones the major —
+#: and regenerates ``docs/api/ezaid-openapi.json``; the frozen inventory test
+#: fails otherwise.
+CONTRACT_VERSION = "1.0.0"
 API_PREFIX = "/v1"
 SERVICE_NAME = "ezaid"
 

@@ -282,12 +282,15 @@ class RunRegistry:
 
     def list(self, *, kind: str | None = None, status: str | None = None,
              project: str | None = None, limit: int = 50) -> list[RunRecord]:
+        """Newest first — by submission order (recovered records are loaded
+        by run id, i.e. chronologically), not by the second-resolution
+        timestamp, so two runs submitted within one second keep their order."""
         with self._lock:
             records = list(self._records.values())
+        records.reverse()
         records = [r for r in records
                    if (kind is None or r.kind == kind) and (status is None or r.status == status)
                    and (project is None or project in (r.project, r.project_name))]
-        records.sort(key=lambda r: (r.submitted_at, r.run_id), reverse=True)
         return records[:max(1, limit)]
 
     def active(self) -> list[RunRecord]:

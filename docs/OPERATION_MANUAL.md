@@ -32,7 +32,8 @@ scripts authenticate with `Authorization: Bearer $MCP_API_KEY`.
 
 | Action | Command |
 |---|---|
-| Start / stop / logs | `make control-up` · `make control-down` · `make control-logs` |
+| Start / stop / logs (container overlay: models, governance, health) | `make control-up` · `make control-down` · `make control-logs` |
+| Run on the host instead (foreground; sees your repositories → SWE runs through the API) | `make control-serve` (`EZAI_CONTROL_HOST`, `EZAI_CONTROL_PORT`) |
 | Liveness (open) | `curl http://localhost:8010/health` |
 | Aggregated health (stack services + platform state) | `curl -H "Authorization: Bearer $EZAI_CONTROL_TOKEN" http://localhost:8010/v1/health` |
 | Audit tail | `curl -H "Authorization: Bearer $EZAI_CONTROL_TOKEN" "http://localhost:8010/v1/audit?limit=50"` |

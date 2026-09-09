@@ -331,7 +331,9 @@ def create_app(settings: ControlConfig, ctx: PlatformContext | None = None, *,
             return app.openapi_schema
         schema = get_openapi(title=app.title, version=CONTRACT_VERSION,
                              description=app.description, routes=app.routes)
-        schema["info"]["x-contract-status"] = "draft — frozen by the P2 phase-close PR"
+        schema["info"]["x-contract-status"] = (
+            "frozen at 1.0.0 (P2 phase close, ADR-028 Accepted) — a surface change bumps the "
+            "version: additive → minor, breaking → major")
         schema["servers"] = [{"url": f"http://localhost:{DEFAULT_PORT}",
                               "description": "compose overlay (EZAI_CONTROL_PORT)"}]
         app.openapi_schema = schema

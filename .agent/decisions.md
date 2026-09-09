@@ -844,8 +844,19 @@ hand-written variants become test fixtures; `make bootstrap` /
 first departure from "no host Python", by design). ADR-027 → Accepted.
 
 ## ADR-028 — `ezaid` Platform Control Plane (P2)
-**Date:** 2026-09-08 · **Status:** Proposed (entered with PR-8; flips to
-Accepted with the P2 phase-close PR-12)
+**Date:** 2026-09-08 · **Status:** **Accepted** (2026-09-09, PR-12 — P2
+closed: parity smoke, two concurrent runs through the API, kill-the-daemon,
+contract frozen at 1.0.0). Entered as Proposed with PR-8.
+**As built (PR-8..12):** `agentd.control` — FastAPI behind the optional
+`agentd[control]` extra, opt-in compose overlay or host daemon (`make
+control-up` / `make control-serve`); bearer service token + forwarded
+identity; the platform's single audit log; one error vocabulary shared with
+the CLI; 29 operations (health, identity, audit, model lifecycle, generations,
+roles, catalog, governance, projects, async runs) — each mutating one
+idempotency-keyed and audited, mapped to one CLI verb; the CLI's connected
+mode makes the daemon transparent (same text/JSON/errors) and falls back to
+direct mode when it is absent; the contract `docs/api/ezaid-openapi.json`
+is frozen at `1.0.0` with a tripwire and a frozen inventory.
 **Context:** ADR-025 (1) requires one control plane wrapping the Python
 functions the platform already has, so that CLI connected mode, the Admin
 Center and the SWE tool server are thin clients of one contract and one
@@ -945,3 +956,21 @@ mode keeps P1's in-process management (the strategy's "fail fast" applies
 to a requested connected transport and to the no-platform case) — both
 modes write one declarative store. Deferred: freeze + kill-the-daemon +
 two-concurrent-runs tests (PR-12), the release-gate parity harness (PR-24).
+**PR-12 slice (2026-09-09) — phase close, ADR-028 → Accepted:** the P2
+exit criteria as tests — (2) two real scripted runs on two repositories
+started through `POST /v1/runs`, active together, both completed with
+reports, plus a gated pair with a mid-flight cancel; (3) a real `ezaid`
+process SIGKILLed after the CLI used it: repo work (`plan`) unaffected,
+`status` falls back to direct on the same state, `--transport connected`
+fails fast, the audit log shows `control.started` without `control.stopped`;
+(4) `CONTRACT_VERSION = "1.0.0"`, artifact regenerated, a frozen inventory
+of the 29 operations pinned (a surface change bumps the version — additive
+→ minor, breaking → major — and updates the inventory); (1) is the PR-11
+parity smoke. **Deployment decision** (deferred by PR-10): two shapes in
+V1 — the container overlay (`make control-up`) for model/governance/health
+over `config/`, and the host daemon (`make control-serve`, agentd venv) for
+SWE runs because it shares the filesystem with the registered projects;
+starting the daemon from `make up` stays opt-in (ADR-002; the P5 installer
+may wire a default). Stability item fixed in the close: run listing orders
+by submission, not by the second-resolution timestamp. P3 (ADR-029), P4
+(ADR-030) and P5 (ADR-031) proceed in parallel from PR-12.

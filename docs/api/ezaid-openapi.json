@@ -1522,8 +1522,8 @@
   "info": {
     "description": "One authenticated control plane over the platform's declarative state \u2014 Registry v2 + generations, runtime descriptors, governance queue, rendered artifacts \u2014 for the `local-ezai` CLI (connected mode), the Admin Center and the SWE tool server. Every `/v1` call presents the service token as a bearer credential and may forward the human it acts for (`X-EZAI-User`) and its own name (`X-EZAI-Client`); the audit log records `<user> via <client>`. Mutating calls accept an `Idempotency-Key` header: a retry with the same key and payload replays the stored response, a different payload is a conflict. Every error is `{\"error\": {\"code\", \"message\", \"fix\"}}` \u2014 the same object the CLI prints.",
     "title": "Local-EZAI Platform Control Plane (ezaid)",
-    "version": "1.0.0-draft.10",
-    "x-contract-status": "draft \u2014 frozen by the P2 phase-close PR"
+    "version": "1.0.0",
+    "x-contract-status": "frozen at 1.0.0 (P2 phase close, ADR-028 Accepted) \u2014 a surface change bumps the version: additive \u2192 minor, breaking \u2192 major"
   },
   "openapi": "3.1.0",
   "paths": {

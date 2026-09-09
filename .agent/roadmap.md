@@ -56,7 +56,7 @@ install / validate / benchmark, catalog + recommender), PR-5 (activate /
 upgrade / rollback / retire + governance queue, atomic apply with
 self-rollback), PR-6 (CLI namespaces, role aliases in code — CF-3 closed),
 PR-7 (bootstrap core + `.env` seed consumption + cutover) implemented
-([docs/prs/](../docs/prs/)). 🟡 **P2 in progress (ADR-028 Proposed)** —
+([docs/prs/](../docs/prs/)). ✅ **P2 done (2026-09-09, ADR-028 Accepted)** —
 PR-8 (`ezaid` service skeleton: FastAPI app behind `agentd[control]`,
 service-token auth + forwarded identity, single audit log, `/v1/health`
 aggregation, OpenAPI contract artifact, opt-in compose overlay) and PR-9
@@ -69,10 +69,13 @@ registered projects only, never a push) and PR-11 (CLI connected mode:
 liveness auto-detect, the management verbs through the API with token +
 forwarded identity + idempotency keys, same text/JSON/errors in both
 transports, fail-fast on a requested-but-unreachable daemon, host-only
-`bootstrap`/`up`/`down`) implemented. All eleven await human merge on
-`claude/next-ready-pr-bnq7r3`. Next ready: **PR-12** (P2 phase close:
-kill-the-daemon test, two-concurrent-runs test, spec freeze → ADR-028
-Accepted).
+`bootstrap`/`up`/`down`) and PR-12 (phase close: real-process
+kill-the-daemon test, two concurrent runs through the API, contract frozen
+at 1.0.0, deployment shapes `make control-up` / `make control-serve`)
+implemented. All twelve await human merge on `claude/next-ready-pr-bnq7r3`.
+P3 / P4 / P5 run in parallel from here; next ready by plan order: **PR-13**
+(`swe-server` MCP tool server, phase P3, ADR-029 Proposed), with PR-16
+(Admin Center, P4) and PR-21 (`install.sh`, P5) also unblocked.
 
 **Product review (ADR-026, 2026-09-01):** agnosticism audit passed with
 remediations — roles/groups become the only stable names (role aliases

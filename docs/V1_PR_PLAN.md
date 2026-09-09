@@ -183,8 +183,17 @@ As built: `control/client.py::ConnectedOps` mirrors the direct operations
 a requested connected transport or a token-less reachable daemon fails fast
 (exit 2), `bootstrap`/`up`/`down` stay host-only; `status` shows its
 transport.
-**PR-12 · Phase close** — S: kill-the-daemon test, two-concurrent-runs
-test, spec freeze. **ADR-028 → Accepted.**
+**PR-12 · Phase close** — S — ✅ **implemented**
+([prs/PR-12-p2-phase-close.md](prs/PR-12-p2-phase-close.md); 4 tests,
+suite 558 green, goldens intact; **ADR-028 → Accepted — P2 closed**)
+Scope: kill-the-daemon test, two-concurrent-runs test, spec freeze.
+As built: a real `ezaid` process SIGKILLed with repo work unaffected and
+management verbs falling back / failing fast; two real scripted runs on
+two repositories supervised concurrently through the API plus a gated
+cancel pair; contract frozen at `1.0.0` with a 29-operation inventory;
+deployment shapes decided (`make control-up` container overlay for model /
+governance, `make control-serve` host daemon for SWE runs; `make up` does
+not start it in V1). P3 / P4 / P5 are ready in parallel.
 
 ### Phase P3 — OpenWebUI integration (ADR-029)
 
