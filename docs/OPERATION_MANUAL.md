@@ -7,6 +7,7 @@ runtime. Maintenance/repair procedures: [MAINTENANCE_GUIDE.md](MAINTENANCE_GUIDE
 
 | Action | Command |
 |---|---|
+| First run, steps 1–3: detect hardware, create or repair `.env` (secrets minted, model seeds validated before any download), one review edit | `./install.sh` (or `make install`; `--yes` skips the edit stop, `--check` writes nothing, `--profile n97` asserts a class) |
 | First-time setup (per hardware profile) | `make setup-n97` · `make setup-cpu` · `make setup-gpu` |
 | Start / stop / restart | `make up-n97` (or `up-cpu`/`up`) · `make down` · `make restart` |
 | Health of all 8 services | `make health` |
@@ -23,7 +24,10 @@ auto-relocated on `make up*`.
 
 **Secrets** live in `.env` (never committed): `LITELLM_MASTER_KEY`,
 `WEBUI_SECRET_KEY`, `MCP_API_KEY`, `SEARXNG_SECRET`, `EZAI_CONTROL_TOKEN`,
-monitor passwords. Generate with `openssl rand -hex 32`.
+monitor passwords. `./install.sh` mints them — on a fresh `.env`, and on a
+re-run for any that is missing, empty or still the example's placeholder
+(a backup `.env.bak.<timestamp>` is written first; your other values are
+never touched). By hand: `openssl rand -hex 32`.
 
 **Monitor RBAC:** `admin` / `viewer` HTTP Basic (passwords in `.env`);
 scripts authenticate with `Authorization: Bearer $MCP_API_KEY`.

@@ -1258,3 +1258,68 @@ needed. Deferred beyond P4: evolution and release-candidate items in the
 queue (pipeline work), a runtime verb (a 1.x contract slice), a reverse
 proxy shipped with the stack for the trusted-header path, WebUI-side deep
 links into the console.
+
+## ADR-031 — Installer & onboarding: the five-step first run (P5)
+**Date:** 2026-09-09 · **Status:** Proposed (entered with PR-21; flips to
+Accepted with the P5 close, PR-23)
+**Context:** TARGET_PRODUCT_V1 §2 promises one edit of `.env`, once, and
+never a config file again; FINAL_FIRST_RUN_EXPERIENCE §3 decomposes `make
+setup` into detect → validate → secrets → fetch → render → up → verify →
+report, and the bootstrap core (PR-7) already covers validate, the model
+part of fetch, and render. Still a README paragraph until now: hardware
+detection into `.env`, secrets, the review-edit stop, the repair of an
+existing install (F5) — and, later in the phase, the smoke, the "Platform
+ready" card, `local-ezai init` and the offline bundle.
+**Decision (PR-21 slice — `install.sh`, steps 1–3):** (1) **One thin bash
+entry, one Python module.** `install.sh` does preflight (python3 ≥ 3.10;
+Docker present or the fix printed — it installs nothing but the agentd venv
+it needs, through `make swe-install`) and runs `python -m agentd.installer`;
+every decision lives in the module, offline-testable, reusing the platform's
+own pieces — `capability.detect_vector` / `classify` (step 1),
+`bootstrap.read_seeds` / `validate_seeds` (F8), the descriptors, the
+catalog. No second detector, no second validator. (2) **Detection is
+recorded, assertions are honored.** The detected vector and class are
+written to `.env` as a comment block (stable text: an unchanged host
+re-renders byte-identical); a class asserted with `--profile
+cpu|n97|n97-igpu` or `--class` is written as `EZAI_CAPABILITY_CLASS`, which
+re-runs of the installer and `platform_cli.build_context` (make exports
+`.env`) both honor, so the installer and `make bootstrap` never disagree on
+the class; `--profile gpu` checks that an accelerator exists and asserts
+nothing (HARDWARE_AGNOSTIC §1: setup targets assert a class). (3) **The
+runtime default is descriptor data.** A new optional field
+`default_for_classes` on a runtime descriptor names the classes for which
+the installer proposes it as `AI_RUNTIME` (shipped: the GGUF runtime for the
+CPU classes, the HF runtime for the accelerator classes); candidates are the
+descriptors with an image for the detected accelerator kind, a host no
+default serves gets the first candidate with the reason printed, `--runtime`
+overrides and is checked against the host. The module names no runtime,
+model or vendor. (4) **The installer never picks models** (ADR-026: users
+select models, the platform adapts). A fresh `.env` is the shipped example
+with its seven placeholder secrets minted (the LiteLLM key keeps `sk-`),
+`AI_RUNTIME` uncommented in the seed section and the hardware recorded; the
+model seeds are the human's one edit. Validation runs the bootstrap's F8
+rules against the chosen class and runtime and adds a class-aware hint when
+the file still carries the example's legacy accelerator-sized default on a
+CPU class; nothing is downloaded. (5) **Repair mode (F5) edits `.env` and
+nothing else:** a timestamped backup first; user values kept byte for byte,
+in place; only secrets that are missing, empty or equal to the example's
+placeholder are minted — the example's model defaults and settings are
+never copied into a user's file; `AI_RUNTIME` is set only when unset and the
+seeds not yet consumed; a consumed stamp means the seeds are history and are
+reported, not validated; a second run changes nothing and writes no backup;
+`config/`, `models/` and volumes are never touched. (6) **The one review-edit
+stop** (F2/F7): a freshly created `.env` opens once in `$VISUAL` / `$EDITOR`
+(else nano, vi) on a terminal and is validated after the editor closes;
+without a terminal the installer prints what to edit and exits 3; `--yes`
+accepts the generated file; `--check` writes nothing. Exit codes: 0 ready ·
+1 problems printed · 2 usage / preflight · 3 review stop. (7) **The legacy
+make entry points stay.** `make install` runs the script; `make setup` keeps
+its meaning (system packages) until PR-22 folds steps 4–8 into it; the
+installer's "next" lines name `make bootstrap` and the profile's `make up-*`
+/ `make setup-*` from the preset table (data).
+**Consequences / deferred:** PR-22 — `make setup` = `install.sh` + fetch →
+render → up → verify → report, the "Platform ready" card, `local-ezai init`
+as the fallback when seeds are missing, the class assertion passed by `make
+setup-*`; PR-23 — offline bundle, the scripted F1–F11 acceptance suite,
+onboarding under Browser QA → Accepted. Host Python remains a V1
+requirement (PR-7's departure from "no host Python").

@@ -87,13 +87,17 @@ from agentd.render import (
     rendered_dir,
 )
 from agentd.routing import PLATFORM_ENV, find_platform_config
-from agentd.runtime_descriptor import RuntimeDescriptor, load_descriptors
+from agentd.runtime_descriptor import CAPABILITY_CLASSES, RuntimeDescriptor, load_descriptors
 
 log = get_logger("platform-cli")
 
 PLATFORM_COMMANDS = ("model", "governance", "project", "status", "up", "down", "bootstrap")
 #: Verbs that act on THIS host (compose files, .env) — never sent to a daemon.
 HOST_ONLY_COMMANDS = ("bootstrap", "up", "down")
+#: A capability class ASSERTED by the operator (install.sh --profile/--class
+#: writes it to .env; make exports .env) — the installer and the CLI then
+#: agree on the class instead of each detecting (PR-21). Unset → detect.
+CLASS_ENV = "EZAI_CAPABILITY_CLASS"
 PROJECTS_FILENAME = "projects.yaml"
 DEFAULT_GROUPS = ("reasoning", "coding", "chat")
 ROUTER_PORT = 4000
@@ -178,8 +182,12 @@ def build_context(config: AgentdConfig, project: Path, actor: str | None = None)
             f"local-ezai checkout, set platform.config_dir, or export {PLATFORM_ENV}")
     descriptors = load_descriptors(config_dir)
     vector = detect_vector()
+    asserted = (os.environ.get(CLASS_ENV) or "").strip() or None
+    if asserted and asserted not in CAPABILITY_CLASSES:
+        raise PlatformError(f"{CLASS_ENV}={asserted} is not a capability class (known: "
+                            f"{', '.join(CAPABILITY_CLASSES)}) — fix or remove the line in .env")
     platform = Platform(config_dir=config_dir, platform_root=config_dir.parent,
-                        descriptors=descriptors, vector=vector)
+                        descriptors=descriptors, vector=vector, capability_class=asserted)
     return PlatformContext(
         config=config, config_dir=config_dir, root=config_dir.parent,
         descriptors=descriptors, catalog=load_catalog(config_dir), vector=vector,

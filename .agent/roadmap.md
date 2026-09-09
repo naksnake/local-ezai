@@ -114,9 +114,19 @@ confirmations instead of native dialogs; the Overview banner rolls back the
 last change in three clicks; the five zero-CLI journeys as one Browser-QA
 workflow file run by the platform's own harness in real Chromium against a
 launcher that serves the monitor over an in-process daemon; P4 exit
-criterion 1 proven on both surfaces) implemented. All twenty await human
-merge on `claude/next-ready-pr-bnq7r3`. Next ready by plan order: **PR-21**
-(`install.sh` — opens P5, ADR-031).
+criterion 1 proven on both surfaces) implemented. 🟡 **P5 in progress
+(ADR-031 Proposed)** — PR-21 (`install.sh` → `python -m agentd.installer`:
+hardware detected with the platform's own capability code or asserted with
+`--profile` / `--class` and recorded in `.env`; a fresh `.env` from the
+example with the seven secrets minted and `AI_RUNTIME` chosen from the
+descriptors' `default_for_classes` data; repair of an existing `.env` —
+backup, user values untouched, only missing or placeholder secrets minted,
+idempotent, nothing else on disk touched; the bootstrap's F8 validation with
+a class-aware hint before any download; the one review-edit stop; `make
+install`) implemented. All twenty-one await human merge on
+`claude/next-ready-pr-bnq7r3`. Next ready by plan order: **PR-22** (setup
+pipeline + smoke: `make setup` = `install.sh` + fetch → render → up → verify
+→ report, the "Platform ready" card, `local-ezai init`).
 
 **Product review (ADR-026, 2026-09-01):** agnosticism audit passed with
 remediations — roles/groups become the only stable names (role aliases

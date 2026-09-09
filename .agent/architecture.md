@@ -345,6 +345,24 @@ through `local-ezai model …` + the governance queue. Modules:
   over an in-process daemon on a scratch platform, seams faked) run under
   `BrowserQAHarness` as a CI test. Compose: four `MONITOR_SSO_*` keys on the
   monitor, additive to the chat-stack baseline.
+- **Installer, steps 1–3 of the first run** (`install.sh` →
+  `agentd/src/agentd/installer.py`, PR-21, ADR-031 Proposed): preflight
+  (python3 ≥ 3.10, the agentd venv via `make swe-install`, Docker present or
+  the fix printed) → detect (`capability.detect_vector` / `classify`) or
+  assert (`--profile` via `PROFILE_PRESETS`, `--class`; written as
+  `EZAI_CAPABILITY_CLASS`, honored by `platform_cli.build_context`) → `.env`:
+  fresh from `.env.example` with the seven placeholder secrets minted
+  (`mint()`), `AI_RUNTIME` uncommented from the descriptors'
+  `default_for_classes` (new optional field; candidates = descriptors with
+  an image for the accelerator kind), the hardware recorded as a stable
+  comment block; or repaired (`.env.bak.<ts>` backup, `EnvText` replaces /
+  uncomments / appends — user lines untouched, only missing or placeholder
+  secrets minted, runtime only when unset and seeds not consumed,
+  idempotent) → `bootstrap.read_seeds` + `validate_seeds` (F8) + a
+  class-aware hint, nothing fetched → the review-edit stop (`$VISUAL` /
+  `$EDITOR` on a TTY; exit 3 without one; `--yes`; `--check`). Exit codes
+  0/1/2/3. `make install`; `scripts/check-ports.sh` reused. The module names
+  no runtime, model or vendor; the installer never picks models.
 
 ## Target additions (control/execution/knowledge planes)
 

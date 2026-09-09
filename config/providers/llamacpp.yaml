@@ -13,6 +13,9 @@ runtime: llamacpp
 version: 1
 display_name: llama.cpp
 serves_formats: [gguf]
+# The installer's AI_RUNTIME default for these capability classes (PR-21); any
+# host whose accelerator kind is listed below may still choose this runtime.
+default_for_classes: [cpu-standard, cpu-low]
 
 capabilities:
   # tool_call_format values the --jinja template engine handles

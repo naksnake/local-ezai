@@ -25,6 +25,17 @@ once** (`.env`), and never again
 Air-gapped variant: `install.sh --offline <bundle>` consumes a pre-fetched
 image+weights bundle; steps are otherwise identical.
 
+> **As-built (PR-21):** `./install.sh` exists for the first four branches of
+> the tree — detect (a capability class, not a profile: HARDWARE_AGNOSTIC §1;
+> `--profile` still asserts one), `.env` from `.env.example` with the secrets
+> minted (`EZAI_CONTROL_TOKEN` included) and `AI_RUNTIME` chosen from the
+> descriptors, the one review-edit stop — and for F5 (a re-run is a repair,
+> never a wipe: backup, user values untouched, only missing or placeholder
+> secrets minted). Ports relocate through the existing
+> `scripts/check-ports.sh`. `docker compose up` + wait-ready and the ✔ line
+> are PR-22; `--offline <bundle>` is PR-23. `make install` runs the script;
+> `make setup` is not yet the alias (it still installs system packages).
+
 ## 2. What `.env` is — and is not
 
 `.env` = **installation parameters only**: hardware profile, ports,

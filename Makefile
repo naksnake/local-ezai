@@ -1,4 +1,4 @@
-.PHONY: help setup build pull up up-cpu pull-cpu download-cpu update-cpu setup-cpu wait-ready \
+.PHONY: help setup install build pull up up-cpu pull-cpu download-cpu update-cpu setup-cpu wait-ready \
         bootstrap require-rendered \
         up-n97 pull-n97 download-n97 update-n97 setup-n97 up-n97-igpu bench \
         setup-gpu download-gpu \
@@ -61,6 +61,12 @@ help: ## Show all available commands
 
 setup: ## Run the automated system setup script (first time only)
 	@bash scripts/setup.sh
+
+# V1 first run, steps 1–3 (ADR-031, PR-21): detect hardware → generate or REPAIR
+# .env (secrets minted, model seeds validated before any download) → one review
+# stop. Pass flags with INSTALL_ARGS="--yes --profile n97". Then: make bootstrap.
+install: ## First run: detect hardware, generate/repair .env with minted secrets, validate the model seeds (./install.sh)
+	@bash install.sh $(INSTALL_ARGS)
 
 build: ## Build custom Docker images (embed-server, mcpo, monitor)
 	docker compose build embed-server mcpo monitor

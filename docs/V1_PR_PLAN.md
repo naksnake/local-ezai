@@ -314,9 +314,24 @@ queue items). P4 exit criterion 1 proven on both surfaces.
 
 ### Phase P5 — First-Run Experience (ADR-031)
 
-**PR-21 · install.sh** — M: capability detect, `.env`
-generation/validation with printed fixes **before any download** (F8),
-secrets minting, single review-edit stop, re-run repair mode (F5).
+**PR-21 · install.sh** — M — ✅ **implemented**
+([prs/PR-21-install-sh.md](prs/PR-21-install-sh.md); 21 tests incl. the
+bash entry driven end to end and the F5 repair proof, suite 667 green,
+goldens intact; **ADR-031 Proposed**)
+Scope: capability detect, `.env` generation/validation with printed fixes
+**before any download** (F8), secrets minting, single review-edit stop,
+re-run repair mode (F5).
+As built: `install.sh` (preflight + the agentd venv) → `python -m
+agentd.installer`: detect with the platform's own `capability.py`, or assert
+a class (`--profile` / `--class`, recorded as `EZAI_CAPABILITY_CLASS` and
+honored by `make bootstrap`); a fresh `.env` from the example with the seven
+secrets minted, `AI_RUNTIME` from the descriptors' new `default_for_classes`
+data and the hardware recorded; repair of an existing `.env` (backup, user
+values byte-identical, only missing / placeholder secrets minted,
+idempotent, nothing else on disk touched); the bootstrap's F8 validation
+with a class-aware hint, nothing downloaded; the one review-edit stop
+(editor on a terminal, exit 3 otherwise, `--yes` skips it, `--check` writes
+nothing); `make install`. The installer never picks models.
 **PR-22 · Setup pipeline + smoke** — M: steps 4–8 of
 FINAL_FIRST_RUN_EXPERIENCE §3 (fetch→render→up→verify→report), the
 "Platform ready" card, `local-ezai init` fallback wizard.

@@ -80,7 +80,11 @@ Profile overrides use the Compose `!override` YAML tag to *replace* the GPU
 cutover (ADR-027, PR-7) LiteLLM routing and the engine slot are **rendered
 per model generation** into `config/rendered/` by `make bootstrap` /
 `local-ezai`; the per-profile LiteLLM config variants are retired (kept as
-test fixtures) and every `make up*` adds the rendered engine override.
+test fixtures) and every `make up*` adds the rendered engine override. Since
+PR-21 `./install.sh` writes `.env` itself — hardware detected (or a class
+asserted via `--profile`), secrets minted, `AI_RUNTIME` chosen from the
+runtime descriptors, the model seeds validated before any download — and
+repairs an existing `.env` without touching anything else.
 
 ---
 

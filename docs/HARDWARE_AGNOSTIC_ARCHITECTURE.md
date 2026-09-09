@@ -35,6 +35,18 @@ entry points; they *assert* a class (gpu→accel-*, cpu→cpu-standard,
 n97→cpu-low preset) instead of selecting bespoke files. Existing installs
 keep working; `n97` becomes an alias, not an architecture.
 
+> **As-built note (PR-21, `install.sh`):** the vector is detected by the
+> installer and recorded in `.env` as a comment block (accelerator kind,
+> memory, cores, SIMD flags → class). The class is *asserted* only when the
+> operator says so: `install.sh --profile cpu|n97|n97-igpu` or `--class`
+> writes `EZAI_CAPABILITY_CLASS`, which re-runs of the installer and the
+> CLI's platform context (`make bootstrap`, `local-ezai …`) honor over
+> detection; `--profile gpu` checks that an accelerator exists and asserts
+> nothing. The installer's `AI_RUNTIME` proposal is descriptor data
+> (`default_for_classes` per runtime) filtered by the descriptors' image
+> table for the detected accelerator kind — the table below stays the only
+> other place hardware knowledge lives.
+
 ## 2. Where hardware knowledge is allowed to live
 
 Exactly **one** place: runtime descriptor data

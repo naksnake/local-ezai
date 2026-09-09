@@ -51,6 +51,15 @@ product; the descriptors are content.
 > timings field) and are executed by the lifecycle manager from PR-4/PR-5
 > on. `ready` already renders as the engine service's compose healthcheck.
 
+> **As-built (PR-21):** one optional field joined the contract —
+> `default_for_classes: [<capability class>, …]`, the classes for which the
+> installer proposes this runtime as `AI_RUNTIME` on a fresh `.env`
+> (shipped: the GGUF runtime for the CPU classes, the HF runtime for the
+> accelerator classes). It is a default, not a rule: the candidates are the
+> descriptors with an image for the host's accelerator kind, the user's
+> `AI_RUNTIME` always wins, and a host no default serves gets the first
+> candidate with the reason printed. The installer names no runtime.
+
 ## 3. Neutral naming (killing the `vllm`-name coupling, compatibly)
 
 - The compose service name `vllm` is **kept** (ADR-001 compatibility; no

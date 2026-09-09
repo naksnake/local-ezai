@@ -87,6 +87,24 @@ the generation is rendered only (the default until the cutover, PR-7).
 `--by NAME` sets the actor recorded in `config/governance/log.jsonl`
 (default `$USER`).
 
+## The installer (`install.sh`, V1 · PR-21)
+
+`./install.sh [--yes] [--check] [--profile gpu|cpu|n97|n97-igpu | --class C]
+[--runtime R] [--no-editor] [--json]` — also `make install`; the logic is
+`python -m agentd.installer --root <checkout>` and runs from the agentd venv
+the script creates on demand. Steps 1–3 of the first run: **detect** the
+capability class (or assert one — `--profile cpu|n97|n97-igpu` / `--class`
+write `EZAI_CAPABILITY_CLASS` into `.env`, which `bootstrap` then honors;
+`--profile gpu` only checks that an accelerator exists); **generate** `.env`
+from `.env.example` with the seven placeholder secrets minted and
+`AI_RUNTIME` chosen from the runtime descriptors, or **repair** an existing
+`.env` (backup first; your values untouched; only missing or placeholder
+secrets minted; idempotent); **validate** the model seeds with the same
+rules as `bootstrap` — every problem with its fix, nothing downloaded. A
+fresh `.env` opens once in `$EDITOR` on a terminal; without one the script
+prints what to edit and exits 3. Exit codes: 0 ready · 1 problems printed ·
+2 usage / preflight · 3 review stop. The installer never picks models.
+
 ## The control plane daemon (`ezaid`, V1 · PR-8)
 
 `ezaid` (installed with the `agentd[control]` extra) serves the platform

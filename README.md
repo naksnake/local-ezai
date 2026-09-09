@@ -73,13 +73,16 @@ cd local-ezai
 # 2. No Docker yet? This installs it (safe to skip otherwise):
 bash scripts/setup.sh
 
-# 3. Configure
-cp .env.example .env
-nano .env
-#    change: LITELLM_MASTER_KEY, WEBUI_SECRET_KEY, SEARXNG_SECRET,
-#            MONITOR_ADMIN_PASSWORD, MONITOR_VIEWER_PASSWORD
-#    set:    LAN_HOST=<this machine's IP>   (needed for browser-side tools)
-#    The default chat model is already Qwen2.5-1.5B — nothing else needed.
+# 3. Configure — one command, one edit
+./install.sh
+#    detects the hardware (here: a low-power CPU class), creates .env with
+#    fresh secrets and the runtime for this machine, and opens it ONCE:
+#      set:  REASONING_MODEL=auto  CODING_MODEL=auto  CHAT_MODEL=auto
+#            (the platform picks GGUF models that fit this box; or name
+#             your own hf: / gguf: sources)
+#      set:  LAN_HOST=<this machine's IP>   (needed for browser-side tools)
+#    Problems are printed with their fix before anything is downloaded.
+#    Re-running later repairs .env and never overwrites your values.
 
 # 4. Everything else in one command: pull, build, download models,
 #    start all 8 services, wait until healthy (~15-30 min first time)
@@ -264,6 +267,7 @@ openssl rand -hex 32
 ```
 make help        List all commands
 make setup       First-time system setup (Docker, NVIDIA, Python, Node)
+make install     First run: detect hardware, create/repair .env with minted secrets, validate the model seeds (./install.sh)
 make build       Build embed-server, mcpo, and monitor images
 make pull        Pull official Docker images
 make setup-gpu   GPU stack end-to-end: pull, build, download, start, health
@@ -320,18 +324,26 @@ Supports Ubuntu 24.04 and 26.04 LTS.
 > If NVIDIA drivers were installed, the script exits and asks you to reboot.  
 > After rebooting, run `bash scripts/setup.sh` again to finish.
 
-### 2. Configure secrets
+### 2. Configure — `.env`, once
 
 ```bash
-cp .env.example .env
+./install.sh          # or: make install
 ```
 
-Open `.env` and change at minimum:
-- `LITELLM_MASTER_KEY` — used as the API key everywhere
-- `WEBUI_SECRET_KEY` — signs OpenWebUI session cookies
-- `SEARXNG_SECRET` — HMAC key for SearXNG
+Detects your hardware (class, not brand), creates `.env` from
+`.env.example` with fresh secrets (`LITELLM_MASTER_KEY`, `WEBUI_SECRET_KEY`,
+`MCP_API_KEY`, `EZAI_CONTROL_TOKEN`, `SEARXNG_SECRET`, the two monitor
+passwords) and the runtime that fits the machine, then opens it **once** so
+you can set the model seeds (`REASONING_MODEL` / `CODING_MODEL` /
+`CHAT_MODEL` — `auto` lets the platform pick models that fit, or name a
+`hf:` / `gguf:` source) and `LAN_HOST` if other devices will use the UI.
+Every problem with the seeds is printed with its fix before anything is
+downloaded. Re-running the script later *repairs* `.env` (missing or
+placeholder secrets, new keys) and never overwrites your values — a backup
+is written first. `./install.sh --yes` skips the edit stop, `--check` writes
+nothing, `--profile n97` asserts the low-power class.
 
-Everything else can stay as-is for a local-only deployment.
+By hand instead: `cp .env.example .env` and change the values marked ⚠️.
 
 ### 3. Download models
 

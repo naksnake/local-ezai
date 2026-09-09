@@ -196,6 +196,10 @@ class RuntimeDescriptor(BaseModel):
     version: int = DESCRIPTOR_VERSION
     display_name: str = ""
     serves_formats: list[str]
+    #: Capability classes for which the installer proposes this runtime as
+    #: ``AI_RUNTIME`` (PR-21) — a default the user may override, never a rule;
+    #: a runtime is still a candidate for any host its ``accelerators`` serve.
+    default_for_classes: list[str] = Field(default_factory=list)
     capabilities: Capabilities = Field(default_factory=Capabilities)
     verbs: Verbs = Field(default_factory=Verbs)
     weights: WeightsMount
@@ -231,7 +235,7 @@ class RuntimeDescriptor(BaseModel):
                 problems.append(
                     f"unknown accelerator kind '{kind}' (known: "
                     f"{', '.join(ACCELERATOR_KINDS)})")
-        for name in self.classes:
+        for name in (*self.classes, *self.default_for_classes):
             if name not in CAPABILITY_CLASSES:
                 problems.append(
                     f"unknown capability class '{name}' (known: "

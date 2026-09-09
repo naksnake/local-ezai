@@ -8,6 +8,8 @@ runtime: vllm
 version: 1
 display_name: vLLM
 serves_formats: [hf, awq, gptq]
+# The installer's AI_RUNTIME default for these capability classes (PR-21).
+default_for_classes: [accel-large, accel-small]
 
 capabilities:
   # built-in --tool-call-parser values

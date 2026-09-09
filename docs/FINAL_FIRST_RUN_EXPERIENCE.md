@@ -100,6 +100,26 @@ atomic generation — never a half-configured platform).
 > `make setup`); `make setup-*` already runs `make bootstrap` before `up`.
 > `--dry-run` prints the planned generation-1 diff (F10) without fetching.
 
+> **As-built (PR-21, `install.sh` → `agentd/src/agentd/installer.py`):**
+> steps 1 and 3 and the `.env` half of step 2. **Detect** with the platform's
+> own capability code, or assert a class with `--profile cpu|n97|n97-igpu` /
+> `--class` (recorded as `EZAI_CAPABILITY_CLASS`, honored by `make bootstrap`;
+> `--profile gpu` only checks that an accelerator exists); the vector is
+> recorded in `.env` as a comment. **Generate** `.env` from `.env.example`
+> with the seven placeholder secrets minted and `AI_RUNTIME` chosen from the
+> runtime descriptors (`default_for_classes`, data), or **repair** an
+> existing `.env` (F5: timestamped backup, user values byte-identical, only
+> missing or placeholder secrets minted, runtime only when unset and the
+> seeds not consumed, idempotent, nothing else on disk touched). **Validate**
+> with the bootstrap's own F8 rules against the chosen class and runtime,
+> plus a class-aware hint when the file still carries the example's legacy
+> accelerator-sized default on a CPU class — nothing downloaded. Then the
+> **one review-edit stop**: a fresh `.env` opens once in `$EDITOR` on a
+> terminal and is re-validated; without one the installer prints what to
+> edit and exits 3; `--yes` accepts the file (F7); `--check` writes nothing.
+> The installer never picks models. `make install` runs it; steps 4–8 stay
+> `make bootstrap` + `make up-*` until PR-22 folds them into `make setup`.
+
 ## 4. First WebUI contact
 
 - OpenWebUI opens on account creation (existing flow, first user = admin).
