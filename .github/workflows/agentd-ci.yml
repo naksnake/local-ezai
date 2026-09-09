@@ -25,3 +25,5 @@ jobs:
         run: cd agentd && ruff check src tests
       - name: Test (offline — scripted LLM, real git/subprocesses/Chromium)
         run: cd agentd && python -m pytest tests -v
+      - name: Chat-ops boundary drill (governance unreachable from chat, prompt injection, chat/RAG byte-identical)
+        run: cd agentd && python -m pytest tests/security -v

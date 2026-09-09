@@ -96,7 +96,8 @@ into the container at the same path (see the commented hint in
 |---|---|
 | Install (Linux dev) | `make swe-install` (+ `make swe-browsers` for Browser QA) |
 | Install (pipx / Windows) | see [agentd/INSTALL.md](../agentd/INSTALL.md) |
-| Self-test the runtime | `make swe-test` (offline, 260+ tests) · `make swe-lint` |
+| Self-test the runtime | `make swe-test` (offline, 590+ tests) · `make swe-lint` |
+| Drill the chat-ops boundary | `make swe-drill` (offline: governance unreachable from chat, prompt-injection red-team, chat/RAG byte-identical baseline — `python3 scripts/chat-stack-baseline.py --update` after a deliberate chat-stack change) |
 | Point at the model plane | `AGENTD_LLM__BASE_URL=http://localhost:4000/v1` + `LITELLM_MASTER_KEY` |
 | Show model routing | `local-ezai models` |
 | Verify models + quality metrics | `local-ezai evaluate-models [--report]` |

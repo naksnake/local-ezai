@@ -297,6 +297,7 @@ make monitor     Open the monitor dashboard in your browser
 make control-up  Start the ezaid control plane overlay (:8010; V1 P2, optional)
 make control-down / control-logs / control-spec  Stop it · follow logs · regenerate docs/api/ezaid-openapi.json
 make control-serve  Run ezaid on this host instead (sees your repos → SWE runs through the API)
+make swe-drill   Chat-ops boundary drill (offline): governance unreachable from chat, prompt-injection red-team, chat/RAG byte-identical
 make update      Pull latest images and restart
 make k8s         Deploy to K3s Kubernetes
 make clean       Remove all containers, images, volumes (destructive)

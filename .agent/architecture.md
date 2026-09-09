@@ -252,7 +252,7 @@ through `local-ezai model …` + the governance queue. Modules:
   (29 operations, inventory-pinned); deployment shapes: `make control-up`
   (container overlay, model/governance over `config/`) and
   `make control-serve` (host daemon, SWE runs).
-- **SWE Tool Server** (`mcp-servers/swe-server/`, PR-13, ADR-029 Proposed):
+- **SWE Tool Server** (`mcp-servers/swe-server/`, PR-13, ADR-029 Accepted):
   a vendored FastMCP server behind mcpo (`:8200/swe`), a thin adapter over
   the 1.0.0 contract (no agentd import) — `swe_projects`, `swe_plan` (A0,
   waits), `swe_run`/`swe_sprint`/`swe_fix`/`swe_evolve` (run id at once),
@@ -269,6 +269,17 @@ through `local-ezai model …` + the governance queue. Modules:
   `make orchestrator` installs the persona model row on `role-orchestrator`
   with the tool server bound to it only (database pattern of
   `install-autorag.sh`, after the first admin exists).
+- **Chat-ops boundary hardening** (PR-15, P3 close): a per-client policy
+  in the control plane (`control/policy.py`, enforced by the `platform()`
+  dependency) — the `swe-server` client may read and `run_start` only,
+  every other 1.0.0 mutation is `client_forbidden` (401) and audited
+  `client.forbidden`; humans (CLI, Admin Center) unrestricted. Proven by
+  `agentd/tests/security/` (`make swe-drill`): the catalog through the real
+  MCP protocol, the twelve other mutations from the chat client, the
+  prompt-injection drill (hostile scripted model: push / escapes / shell
+  denied and journaled; local commit never pushed; registry + queue
+  untouched), and the chat-stack byte-identical baseline
+  (`scripts/chat-stack-baseline.py` → `tests/fixtures/chat_stack_baseline.json`).
 
 ## Target additions (control/execution/knowledge planes)
 

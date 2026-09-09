@@ -72,18 +72,23 @@ transports, fail-fast on a requested-but-unreachable daemon, host-only
 `bootstrap`/`up`/`down`) and PR-12 (phase close: real-process
 kill-the-daemon test, two concurrent runs through the API, contract frozen
 at 1.0.0, deployment shapes `make control-up` / `make control-serve`)
-implemented. 🟡 **P3 in progress (ADR-029 Proposed)** — PR-13
+implemented. ✅ **P3 closed (ADR-029 Accepted)** — PR-13
 (`swe-server`: vendored MCP tool server behind mcpo, start + inspect only,
-thin over the frozen contract, mcpo registration) and PR-14 (Orchestrator
+thin over the frozen contract, mcpo registration), PR-14 (Orchestrator
 persona: role + alias proven as data, system preset
 `config/prompts/orchestrator.md`, tool server pre-registered in OpenWebUI,
-`make orchestrator` installs the persona) implemented. All fourteen await
-human merge on `claude/next-ready-pr-bnq7r3`. P3 / P4 / P5 run in
-parallel; next ready by plan order: **PR-15** (P3 boundary hardening:
-negative tests proving governance mutations unreachable from chat,
-prompt-injection drill in CI, chat/RAG byte-identical regression pass →
-ADR-029 Accepted), with PR-16 (Admin Center, P4) and PR-21 (`install.sh`,
-P5) also unblocked.
+`make orchestrator` installs the persona) and PR-15 (boundary hardening:
+per-client policy in the control plane — the chat-ops client may read and
+start runs only, every other mutation `client_forbidden` + audited;
+negative tests through the real MCP protocol and the API; the
+prompt-injection drill with a hostile scripted model — push, workspace
+escapes and unlisted shell denied, local commit never pushed, registry and
+queue untouched; the chat-stack byte-identical baseline; `make swe-drill`)
+implemented. All fifteen await human merge on
+`claude/next-ready-pr-bnq7r3`. P4 / P5 run in parallel; next ready by plan
+order: **PR-16** (Admin Center: `ezaid` client + Overview/Runs pages as a
+monitor extension, P4, ADR-030), with PR-21 (`install.sh`, P5) also
+unblocked.
 
 **Product review (ADR-026, 2026-09-01):** agnosticism audit passed with
 remediations — roles/groups become the only stable names (role aliases

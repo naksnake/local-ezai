@@ -976,8 +976,8 @@ by submission, not by the second-resolution timestamp. P3 (ADR-029), P4
 (ADR-030) and P5 (ADR-031) proceed in parallel from PR-12.
 
 ## ADR-029 — Chat-ops boundary: the SWE Tool Server (P3)
-**Date:** 2026-09-09 · **Status:** Proposed (entered with PR-13; flips to
-Accepted with the P3 close, PR-15)
+**Date:** 2026-09-09 · **Status:** **Accepted** (2026-09-09, PR-15 — the P3
+close; entered as Proposed with PR-13)
 **Context:** OpenWebUI is the product's front door (ADR-025); chat must be
 able to start autonomous work and read its results without ever reaching
 the governance boundary — a prompt-injected conversation may waste a run,
@@ -1026,3 +1026,33 @@ idempotently by `make orchestrator` (the `install-autorag.sh` database
 pattern; needs the first admin account, so the P5 setup pipeline will call
 it). Plain chat models untouched. Verification boundary: the `server:<id>`
 tool-id form is checked once on a stack host.
+**PR-15 slice (2026-09-09) — boundary hardening, ADR-029 → Accepted:** the
+boundary now holds at **two layers**, so a future tool server cannot grow
+past it by accident. (1) The catalog layer, proven through the real MCP
+protocol: every governance / lifecycle / cancel / push / merge verb an
+attacker would ask for is "Unknown tool"; undeclared arguments are dropped
+by schema validation before the daemon sees them; an unregistered path is
+`not_found`. (2) A **per-client policy in the control plane**
+(`control/policy.py`, enforced by the `platform()` dependency before any
+operation runs): the `swe-server` client may read (every GET) and
+`run_start` — and nothing else. Every other mutation of the 1.0.0 contract
+from that client is refused as `client_forbidden` (HTTP 401 — the frozen
+surface has no 403; a 1.1 may add it) and audited as `client.forbidden`
+with the operation, then access-logged with status 401; humans (CLI, Admin
+Center) are unrestricted. (3) The **prompt-injection drill**: a hostile
+task enters through the tool server and a scripted model obeys it (worst
+case) — `git_push` is denied by the coder's tool allowlist, workspace
+escapes (relative and absolute) by `PathEscapeError`, `curl … | sh` by the
+sandbox command allowlist (audited); the run still completes with a local,
+never-pushed commit, the bare `origin` stays empty, the registry
+generation and the governance queue are untouched, and the injected text
+is recorded as data only. (4) The **chat/RAG byte-identical regression**:
+`scripts/chat-stack-baseline.py` snapshots the chat path (compose services
+openwebui/litellm/embed-server/qdrant/searxng/mcpo/monitor minus the SWE
+additions, the four original mcpo servers, the LiteLLM RAG hook and the
+SearXNG settings by hash) into a committed fixture; a test compares the
+tree against it, so a future PR that touches the chat stack must update
+the baseline on purpose. Deferred, unchanged: the 1.1 tool additions
+(`swe_test`, `swe_review`, `model_benchmark`), a header-passing gateway for
+`<user> via swe-server`. Run locally with `make swe-drill`; the hosted CI
+runs the same package (workflow remains manual-only).

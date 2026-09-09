@@ -108,6 +108,12 @@ Legend: ✅ full · 🔍 read-only · ❌ deliberately absent.
 1. **Chat can start work but never govern** — approval/activation/rollback
    from a conversation would let prompt-injected content reach the
    governance boundary ([OPENWEBUI_INTEGRATION.md](OPENWEBUI_INTEGRATION.md) §5).
+   *As built (PR-15):* enforced by the control plane itself, not only by
+   the tool catalog — the `swe-server` client is allowed `GET *` and
+   `POST /v1/runs`; every other 1.0.0 mutation from it is `client_forbidden`
+   and audited. The CLI (`cli` client) and the Admin Center are unrestricted,
+   so the parity matrix above is unchanged: the same operations exist on
+   both surfaces, and only the chat surface is capped.
 2. **Stack lifecycle stays CLI/installer-only** — a WebUI that stops its
    own containers strands the user.
 3. **`.env` is untouched by both** — install-time file, period

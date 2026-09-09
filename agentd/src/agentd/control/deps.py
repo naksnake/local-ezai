@@ -24,6 +24,7 @@ from pydantic import BaseModel
 from agentd.audit import AuditLog
 from agentd.control import CLIENT_HEADER, TOKEN_ENV, USER_HEADER
 from agentd.control.auth import AuthError, Caller, authenticate
+from agentd.control.policy import client_may, refusal
 from agentd.platform_cli import PlatformContext
 
 # ── error envelope ───────────────────────────────────────────────────────────
@@ -115,6 +116,14 @@ def platform(request: Request, who: CallerDep) -> PlatformContext:
         raise ApiError(503, "platform_unavailable", "ezaid is not attached to a platform",
                        "start ezaid inside the local-ezai checkout or set "
                        "AGENTD_PLATFORM__CONFIG_DIR")
+    # Client capability policy (PR-15): the chat-ops surface starts and reads.
+    operation = getattr(request.scope.get("route"), "operation_id", None) or request.url.path
+    if not client_may(who.client, operation, request.method):
+        message, fix = refusal(who.client, operation)
+        record(request.app, "client.forbidden", who.actor, client=who.client,
+               operation=operation, path=request.url.path, method=request.method)
+        # 401 keeps the frozen 1.0.0 response surface; the code names the cause.
+        raise ApiError(401, "client_forbidden", message, fix)
     return replace(ctx, actor=who.actor)
 
 

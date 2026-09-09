@@ -219,9 +219,20 @@ As built: role + alias proven (they were data since P1), the preset
 OpenWebUI's `TOOL_SERVER_CONNECTIONS`, `make orchestrator` installing the
 persona model row (base `role-orchestrator`, preset, tool server bound to
 this persona only) idempotently after the first login.
-**PR-15 · Boundary hardening** — M: negative tests proving governance
-mutations unreachable from chat; prompt-injection drill script in CI;
-regression pass showing chat/RAG byte-identical. **ADR-029 → Accepted.**
+**PR-15 · Boundary hardening** — M — ✅ **implemented**
+([prs/PR-15-boundary-hardening.md](prs/PR-15-boundary-hardening.md); 21
+tests, suite 594 green, goldens intact; **ADR-029 → Accepted, P3 closed**)
+Scope: negative tests proving governance mutations unreachable from chat;
+prompt-injection drill script in CI; regression pass showing chat/RAG
+byte-identical.
+As built: a per-client policy in the control plane (`swe-server` may read
+and `run_start` only; everything else `client_forbidden` + audited), the
+catalog and every other 1.0.0 mutation negative-tested through the real MCP
+protocol and the API, the injection drill (hostile task obeyed by a
+scripted model: push, workspace escapes and an unlisted shell command all
+denied and journaled; local commit, empty `origin`, registry and queue
+untouched), a committed chat-stack baseline (`scripts/chat-stack-baseline.py`)
+compared by test; `make swe-drill` + the CI step.
 
 ### Phase P4 — Admin Center (ADR-030)
 

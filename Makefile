@@ -290,7 +290,7 @@ clean: ## Remove all containers, images, and volumes (WARNING: deletes data)
 # ═══════════════════════════════════════════════════════════════════════════
 # Autonomous SWE runtime (agentd) — additive targets, see agentd/README.md
 # ═══════════════════════════════════════════════════════════════════════════
-.PHONY: swe-install swe-browsers swe-test swe-lint swe-run swe-plan \
+.PHONY: swe-install swe-browsers swe-test swe-lint swe-drill swe-run swe-plan \
         control-up control-down control-logs control-spec control-serve
 
 swe-install: ## Install the agentd runtime into ./.venv-agentd (editable, dev + browser + control extras)
@@ -330,6 +330,9 @@ swe-test: ## Run the agentd test suite (offline — no models needed)
 
 swe-lint: ## Lint the agentd runtime with ruff
 	cd agentd && ../.venv-agentd/bin/python -m ruff check src tests
+
+swe-drill: ## Chat-ops boundary drill: governance unreachable from chat, prompt-injection red-team, chat/RAG byte-identical (offline)
+	cd agentd && ../.venv-agentd/bin/python -m pytest tests/security -v
 
 swe-run: ## Autonomous run: make swe-run TASK="fix the bug" REPO=/path/to/repo
 	.venv-agentd/bin/ezai run "$(TASK)" --repo "$(REPO)"
