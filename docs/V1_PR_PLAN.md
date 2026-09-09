@@ -250,8 +250,21 @@ path routes from one framework-free template, data aggregated per page, a
 daemon that is down is a page state; compose/Dockerfile/`.env.example`
 wiring in the mcpo pattern; the chat-stack baseline treats the monitor's
 control-plane keys as additive (fixture unchanged).
-**PR-17 · Models/Routing/Runtime pages** — L: role-first cards, fit
-badges, explain views, runtime switch pre-check UX.
+**PR-17 · Models/Routing/Runtime pages** — L — ✅ **implemented**
+([prs/PR-17-admin-center-models-routing-runtime.md](prs/PR-17-admin-center-models-routing-runtime.md);
+15 tests incl. a real-Chromium smoke with an admin action, suite 619
+green, goldens intact; ADR-030 PR-17 slice)
+Scope: role-first cards, fit badges, explain views, runtime switch
+pre-check UX.
+As built: Models page (group panels in resolution order, fit badges from the
+platform recommender only, catalog with per-variant verdicts, generations,
+queue; admin mutations install · benchmark · activate · upgrade · retire ·
+uninstall · rollback through the daemon, approval-gated where a serving role
+changes), Routing page (MODEL_ROUTING §7 explain view: reasons, contracts,
+checks, generation), Runtime page (engine slot + per-runtime switch
+pre-check naming blockers and candidates; no switch button — the contract
+has no runtime verb). One additive snapshot enrichment (per-model groups /
+context / format / license); the 1.0.0 artifact is byte-identical.
 **PR-18 · Governance queue + approval modal** — M: evidence panels,
 approve/reject, deep links.
 **PR-19 · Sprints/Evolution/Memory/Projects pages** — M.

@@ -111,8 +111,16 @@ Legend: ✅ full · 🔍 read-only · ❌ deliberately absent.
 > in PR-18). The console is a thin client exactly as this document requires:
 > the monitor calls `ezaid` with the service token and forwards its login as
 > the human (`admin via admin-center`), so the audit trail is the one the CLI
-> writes. Model / routing / governance / project rows of the column arrive
-> with PR-17..19.
+> writes. Governance / project rows of the column arrive with PR-18..19.
+
+> **As built (PR-17):** the model rows of the Admin Center column are live on
+> `/models`, `/routing`, `/runtime`: "Model install / benchmark / retire —
+> ✅", "Model activate / upgrade (approval flow) — ✅ request" (approve
+> itself follows in PR-18; the page names the CLI verb meanwhile),
+> "Rollback (generation) — ✅", "Explain routing — ✅ Routing page". Each
+> button is the CLI verb through the daemon (`local-ezai model …`), shown in
+> the page footer; a mutation the CLI lacks (role/group editing, a runtime
+> switch verb) is absent here too.
 
 ## 4. Deliberate asymmetries (and why)
 

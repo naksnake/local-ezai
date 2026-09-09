@@ -103,7 +103,14 @@ monitor reaches the control plane at `EZAI_CONTROL_URL_MONITOR` (default
 your monitor login as the audited human (`admin via admin-center`). With the
 control plane down the pages say so and name the fix; the health view and
 the knowledge base keep working. Rebuild the monitor image after updating
-(`docker compose build monitor`).
+(`docker compose build monitor`). **Models / Routing / Runtime (PR-17):**
+`/models` manages the model lifecycle as an admin — add a model (catalog id
+or `hf:` / `gguf:`), benchmark, activate into a group, upgrade, retire,
+uninstall, roll back to a generation — with the same approvals and
+refusals as `local-ezai model …`; fit badges are the platform's own
+verdicts. `/routing` explains what serves each role and why; `/runtime`
+shows the engine slot and a pre-check for switching to another runtime
+(a switch is an approval-gated activation of a model that runtime serves).
 
 ## 2. The Autonomous SWE runtime
 

@@ -1107,3 +1107,40 @@ identity later replaces the header value without touching the daemon.
 Validation already follows the plan's rule "the product is tested by its own
 testing capability": a real-Chromium smoke renders the pages with console
 errors failing the test; the declarative journey suite is PR-20.
+**PR-17 slice (2026-09-09) — Models / Routing / Runtime pages:** (1)
+**Role-first, models as evidence** (WEBUI_PRODUCT_STRATEGY §1): the Models
+page draws group panels whose serving order is the *resolution* order (an
+unpinned role's primary + fallbacks) followed by the group's non-serving
+members, then role cards, the catalog, the generations and the queue; a
+group no model belongs to and no role resolves through is invisible to the
+contract — and to the page. (2) **Fit badges come only from the platform's
+recommender** (`GET /v1/catalog/recommendations`): a model that matches a
+catalog candidate on its runtime shows that verdict; a user-supplied
+source shows "no verdict" and its measured tokens/s — the browser never
+computes fit (HARDWARE_AGNOSTIC §3 has one `fit()`). (3) **One additive
+data enrichment in the control plane, no surface change:** the snapshot's
+per-model entries gain `groups`, `context`, `format`, `license`; the
+`models` object is untyped in the 1.0.0 contract, the artifact and the
+frozen inventory are byte-identical. (4) **Mutations are the CLI's, through
+the daemon, admin only, same-origin guarded:** install (catalog id or any
+`hf:`/`gguf:` source), benchmark, activate and upgrade (→ the approval queue
+whenever a serving role changes; the page says so and names the CLI verb
+that decides until PR-18), retire, uninstall (with `force` for rollback
+targets), rollback to a generation (immediate, audited, reason recorded).
+Every refusal is the daemon's own error object — a source with no
+declared tool-call format cannot become the coder's primary, and the page
+shows the negotiation text. (5) **Routing = the explain view** of
+MODEL_ROUTING_DESIGN §7: every defined role's source (pin or group),
+chain, reason lines, contract, per-model checks with failure text and the
+generation it was resolved from; roles the registry does not define are
+listed as such; the generation history with diffs. (6) **Runtime page,
+honest about switching:** the engine slot (runtime, class, accelerator,
+memory, engine/router health, active models) and, for every other runtime
+the descriptors serve, a **pre-check** — which active models lack a
+variant for it (with the RUNTIME_ABSTRACTION §5 fix wording) and which
+catalog candidates fit per group, contract failures included (on a small
+host the vllm descriptor's context budget rules out every candidate — the
+page carries the recommender's sentence). A switch is described as what it
+is in P1: activating a model served by the other runtime, a change request
+flagged `runtime.switch` that needs approval; **no switch button**, since
+the contract has no runtime verb (a 1.1 candidate, not this slice).

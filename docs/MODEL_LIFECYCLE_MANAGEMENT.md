@@ -9,6 +9,17 @@ All operations exist twice with identical semantics: `local-ezai model
 <verb>` and the Admin Center **Models** page — both thin clients of the
 same control-plane operations ([CLI_AND_WEBUI_STRATEGY.md](CLI_AND_WEBUI_STRATEGY.md)).
 
+> **As built (PR-17, `monitor/admin_center.py`):** the Models page offers
+> install (catalog id or `hf:` / `gguf:`), benchmark, activate (into a
+> group), upgrade, retire, uninstall (force on request) and rollback (to a
+> generation, reason recorded) — each proxied to the same `/v1` operation
+> the CLI calls, admin role only, and every refusal shown in the daemon's
+> words (a source without a declared tool-call format is refused as the
+> coder's primary by the render-time negotiation, exactly as on the CLI).
+> Activation / upgrade requests that change a serving role wait in the
+> queue; until the Governance page (PR-18) the page names
+> `local-ezai governance approve <id>`.
+
 ## 1. Lifecycle state machine
 
 ```

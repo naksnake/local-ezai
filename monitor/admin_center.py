@@ -5,21 +5,29 @@ Admin Center pages of the monitor (V1 P4 · PR-16 · ADR-030;
 docs/WEBUI_ADMIN_CENTER.md §1–§2, docs/CLI_AND_WEBUI_STRATEGY.md §3).
 
 The monitor renders ONLY what the ezaid control plane (:8010) serves. This
-module is a thin client over the frozen 1.0.0 contract plus the first two
-pages — Overview, and Runs with a deep-linkable run detail (cancel for
-admins). The service token never reaches the browser: the page's JavaScript
-calls this service under /api/ezai/…, which calls the daemon with the token
-and forwards the monitor login as the human identity (audit actor
+module is a thin client over the frozen 1.0.0 contract plus the pages —
+Overview and Runs with a deep-linkable run detail (PR-16), Models / Routing /
+Runtime (PR-17). The service token never reaches the browser: the page's
+JavaScript calls this service under /api/ezai/…, which calls the daemon with
+the token and forwards the monitor login as the human identity (audit actor
 "<user> via admin-center"). Nothing here touches files or docker; anything
-the pages show, `local-ezai` shows too (parity, not dependence).
+the pages show, `local-ezai` shows too (parity, not dependence); every
+mutation is the CLI's verb, admin only, same-origin guarded.
 
-  GET  /overview                        Overview page
-  GET  /runs                            Runs page (filters: kind, status)
-  GET  /runs/{run_id}                   Run detail — the deep link CLI + chat print
+  GET  /overview · /models · /routing · /runtime · /runs · /runs/{run_id}   pages
   GET  /api/ezai/overview               health · platform · roles · queue · recent runs
   GET  /api/ezai/runs                   run list (kind / status / project / limit)
   GET  /api/ezai/runs/{run_id}          record + report (once written) + journal tail
-  POST /api/ezai/runs/{run_id}/cancel   admin role only
+  POST /api/ezai/runs/{run_id}/cancel   admin
+  GET  /api/ezai/models                 groups in resolution order · fit verdicts · catalog
+                                        · generations · queue
+  POST /api/ezai/models                 install (catalog id · hf: · gguf:)        admin
+  POST /api/ezai/models/upgrade                                                  admin
+  POST /api/ezai/models/{name}/benchmark | activate | retire                     admin
+  DELETE /api/ezai/models/{name}[?force=true]                                    admin
+  POST /api/ezai/generations/rollback                                            admin
+  GET  /api/ezai/routing                the explain view (every defined role)
+  GET  /api/ezai/runtime                engine slot + per-runtime switch pre-check
 """
 # ruff: noqa: E501  — the embedded page template carries long markup lines
 from __future__ import annotations
@@ -27,10 +35,10 @@ from __future__ import annotations
 import asyncio
 import uuid
 from collections.abc import Callable
-from typing import Any
+from typing import Annotated, Any
 
 import httpx
-from fastapi import Depends, FastAPI, Header, Query
+from fastapi import Body, Depends, FastAPI, Header, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 
 CLIENT_NAME = "admin-center"
@@ -40,6 +48,12 @@ TERMINAL = ("completed", "failed", "cancelled")
 #: Roles the Overview explains (ADR-026: roles are the interface, models are
 #: evidence). A role the registry does not define is simply not shown.
 OVERVIEW_ROLES = ("orchestrator", "planner", "coder", "debugger", "reviewer", "chat")
+#: The platform's logical LLM roles (MODEL_ROUTING_DESIGN §3) — what the
+#: Routing page explains; a role the registry does not define is reported as such.
+ROUTING_ROLES = ("orchestrator", "planner", "coder", "debugger", "reviewer", "memory", "chat",
+                 "documentation", "evolution", "sprint")
+SAME_ORIGIN_MESSAGE = ("mutations need the X-Requested-With header the Admin Center's own page "
+                       "sends")
 UNREACHABLE_FIX = ("start it with `make control-up` (container) or `make control-serve` (host); "
                    "when it runs elsewhere set EZAI_CONTROL_URL_MONITOR in .env")
 TOKEN_FIX = ("set EZAI_CONTROL_TOKEN in .env (the value the control plane uses) and "
@@ -127,16 +141,10 @@ async def overview(plane: ControlPlane, user: str) -> dict[str, Any]:
         health = await plane.get("/health", user)
     except ControlPlaneError as exc:
         return {"connected": False, "control_url": plane.url, "error": exc.envelope()["error"]}
-    explained = await asyncio.gather(*(plane.get(f"/roles/{role}", user) for role in OVERVIEW_ROLES),
-                                     return_exceptions=True)
     roles = []
-    for role, result in zip(OVERVIEW_ROLES, explained, strict=True):
-        if isinstance(result, ControlPlaneError):
-            continue  # the registry has no such role — nothing to explain
-        if isinstance(result, BaseException):
-            raise result
+    for result in await explain_roles(plane, user, OVERVIEW_ROLES):
         source = result.get("source") or {}
-        roles.append({"role": role, "group": source.get("group") or "",
+        roles.append({"role": result["role"], "group": source.get("group") or "",
                       "pinned": bool(source.get("pin")), "primary": result.get("primary") or "",
                       "fallbacks": list(result.get("fallbacks") or []),
                       "ok": bool(result.get("ok")), "reason": list(result.get("reason") or [])})
@@ -174,6 +182,191 @@ async def run_detail(plane: ControlPlane, user: str, run_id: str, tail: int) -> 
             "journal_total": journal.get("total", 0)}
 
 
+# ── models · routing · runtime (PR-17) ───────────────────────────────────────
+
+
+async def explain_roles(plane: ControlPlane, user: str,
+                        roles: tuple[str, ...]) -> list[dict[str, Any]]:
+    """`GET /v1/roles/{role}` for every role, in one round; a role the
+    registry does not define (404) is simply absent from the answer."""
+    explained = await asyncio.gather(*(plane.get(f"/roles/{role}", user) for role in roles),
+                                     return_exceptions=True)
+    out: list[dict[str, Any]] = []
+    for role, result in zip(roles, explained, strict=True):
+        if isinstance(result, ControlPlaneError):
+            continue
+        if isinstance(result, BaseException):
+            raise result
+        out.append({**result, "role": result.get("role") or role})
+    return out
+
+
+async def recommendations(plane: ControlPlane, user: str, groups: list[str],
+                          runtime: str | None = None) -> dict[str, dict[str, Any]]:
+    """The platform's recommender per group — every catalog candidate with
+    its fit verdict on this host (the only source of fit badges)."""
+    results = await asyncio.gather(*(plane.get("/catalog/recommendations", user, group=group,
+                                               runtime=runtime) for group in groups),
+                                   return_exceptions=True)
+    out: dict[str, dict[str, Any]] = {}
+    for group, result in zip(groups, results, strict=True):
+        if isinstance(result, ControlPlaneError):
+            out[group] = {"candidates": [], "error": result.envelope()["error"]}
+            continue
+        if isinstance(result, BaseException):
+            raise result
+        out[group] = result
+    return out
+
+
+def active_runtime(models: dict[str, Any]) -> str | list[str] | None:
+    """The engine slot's runtime: the one runtime the active set uses (a
+    list when mixed — the renderer refuses that; None when nothing serves)."""
+    runtimes = sorted({m.get("runtime") for m in models.values()
+                       if m.get("state") == "active" and m.get("runtime")})
+    if len(runtimes) == 1:
+        return runtimes[0]
+    return runtimes or None
+
+
+def group_names(models: dict[str, Any], roles: list[dict[str, Any]]) -> list[str]:
+    names = {g for m in models.values() for g in (m.get("groups") or [])}
+    names |= {(r.get("source") or {}).get("group") for r in roles}
+    return sorted(n for n in names if n)
+
+
+def source_group(role: dict[str, Any]) -> str:
+    return (role.get("source") or {}).get("group") or ""
+
+
+def is_pinned(role: dict[str, Any]) -> bool:
+    return bool((role.get("source") or {}).get("pin"))
+
+
+async def models_page(plane: ControlPlane, user: str) -> dict[str, Any]:
+    """Everything the Models page shows: group panels with the serving chain
+    (resolution order) and every member, fit badges from the recommender,
+    roles, the catalog with per-variant verdicts, generations, the queue."""
+    listing = await plane.get("/models", user)
+    models: dict[str, Any] = listing.get("models") or {}
+    roles = await explain_roles(plane, user, ROUTING_ROLES)
+    names = group_names(models, roles)
+    runtime = active_runtime(models)
+    recs = await recommendations(plane, user, names)  # every runtime; filtered below
+    catalog = await plane.get("/catalog", user)
+    history = await plane.get("/generations", user, limit=10)
+    pending = (await plane.get("/governance", user, status="pending")).get("requests", [])
+    candidates = [c for rec in recs.values() for c in rec.get("candidates") or []]
+    by_id_provider = {(c["id"], c["provider"]): c for c in candidates}
+    runtimes = sorted({c["provider"] for c in candidates}
+                      | {m["runtime"] for m in models.values() if m.get("runtime")})
+    verdicts: dict[str, dict[str, Any]] = {}
+    for c in candidates:
+        if runtime is None or c["provider"] == runtime:
+            verdicts.setdefault(c["id"], {})[c["format"]] = c
+
+    def card(name: str, serving: bool) -> dict[str, Any]:
+        info = models[name]
+        match = by_id_provider.get((name, info.get("runtime")))
+        return {"name": name, **info, "serving": serving,
+                "fit": match["verdict"] if match else None,
+                "fit_explain": match["explain"] if match else ""}
+
+    groups = []
+    for name in names:
+        chain = next(([r["primary"], *(r.get("fallbacks") or [])] for r in roles
+                      if source_group(r) == name and not is_pinned(r)), None)
+        members = sorted(m for m, info in models.items() if name in (info.get("groups") or []))
+        if chain is None:  # no unpinned role resolves through this group: active members
+            chain = [m for m in members if models[m].get("state") == "active"]
+        chain = [m for m in chain if m in models]
+        rec = recs.get(name) or {}
+        groups.append({"group": name,
+                       "roles": [r["role"] for r in roles if source_group(r) == name],
+                       "serving": [card(m, True) for m in chain],
+                       "others": [card(m, False) for m in members if m not in chain],
+                       "candidates": [c for c in rec.get("candidates") or []
+                                      if runtime is None or c["provider"] == runtime]})
+    class_ = next((rec.get("class") for rec in recs.values() if rec.get("class")), None)
+    return {"generation": listing.get("generation"), "runtime": runtime, "runtimes": runtimes,
+            "class": class_, "models": models, "groups": groups,
+            "orphans": [card(m, False) for m, info in sorted(models.items())
+                        if not info.get("groups")],
+            "roles": roles, "catalog": catalog, "verdicts": verdicts,
+            "history": history.get("generations") or [],
+            "pending": [{"id": r.get("id"), "kind": r.get("kind"), "title": r.get("title"),
+                         "requested_by": r.get("requested_by")} for r in pending]}
+
+
+async def routing_page(plane: ControlPlane, user: str) -> dict[str, Any]:
+    """The explain view (MODEL_ROUTING_DESIGN §7): every defined role's
+    resolution with its reasons and contract checks, plus the generations."""
+    listing = await plane.get("/models", user)
+    roles = await explain_roles(plane, user, ROUTING_ROLES)
+    history = await plane.get("/generations", user, limit=20)
+    return {"generation": listing.get("generation"), "models": listing.get("models") or {},
+            "roles": roles, "known_roles": list(ROUTING_ROLES),
+            "history": history.get("generations") or []}
+
+
+async def runtime_page(plane: ControlPlane, user: str) -> dict[str, Any]:
+    """The engine slot and, for every other runtime the descriptors serve, a
+    switch pre-check (RUNTIME_ABSTRACTION §5): which active models lack a
+    variant for it and which catalog candidates fit per group."""
+    health = await plane.get("/health", user)
+    platform = health.get("platform") or {}
+    models: dict[str, Any] = platform.get("models") or {}
+    roles = await explain_roles(plane, user, ROUTING_ROLES)
+    names = group_names(models, roles)
+    recs = await recommendations(plane, user, names)
+    candidates = [c for rec in recs.values() for c in rec.get("candidates") or []]
+    runtimes = sorted({c["provider"] for c in candidates}
+                      | {m["runtime"] for m in models.values() if m.get("runtime")})
+    active = active_runtime(models)
+    active_models = [{"name": n, **m} for n, m in sorted(models.items())
+                     if m.get("state") == "active"]
+    serving_groups = {source_group(r) for r in roles}
+    prechecks = []
+    for target in runtimes:
+        if target == active:
+            continue
+        per_group = []
+        for name in names:
+            cands = [c for c in (recs.get(name) or {}).get("candidates") or []
+                     if c["provider"] == target]
+            per_group.append({"group": name, "candidates": cands,
+                              "eligible": sum(1 for c in cands if c.get("eligible"))})
+        variants = {c["id"] for c in candidates if c["provider"] == target}
+        blockers = [{"name": m["name"], "runtime": m.get("runtime"), "format": m.get("format"),
+                     "variant_in_catalog": m["name"] in variants}
+                    for m in active_models if m.get("runtime") != target]
+        ready = all(b["variant_in_catalog"] for b in blockers) and all(
+            g["eligible"] for g in per_group if g["group"] in serving_groups)
+        prechecks.append({"runtime": target, "groups": per_group, "active_models": blockers,
+                          "ready": ready})
+    return {"platform": platform, "ok": bool(health.get("ok")),
+            "services": [s for s in health.get("services") or []
+                         if s.get("id") in ("engine", "router")],
+            "active": active, "runtimes": runtimes, "active_models": active_models,
+            "prechecks": prechecks, "generation": platform.get("generation")}
+
+
+#: A JSON object body, optional (module scope: annotations are postponed and
+#: FastAPI resolves them against the module's globals).
+Payload = Annotated[dict[str, Any] | None, Body()]
+
+
+def same_origin(x_requested_with: str | None) -> JSONResponse | None:
+    """The monitor login is ambient (HTTP Basic): a cross-site form could post
+    with the browser's credentials. Forms cannot set custom headers — the
+    page's JavaScript does, so every mutation requires one."""
+    if x_requested_with == CLIENT_NAME:
+        return None
+    return ControlPlaneError(400, "same_origin_required", SAME_ORIGIN_MESSAGE,
+                            "use the buttons on the page, or send "
+                            f"'X-Requested-With: {CLIENT_NAME}' with the request").response()
+
+
 # ── routes ────────────────────────────────────────────────────────────────────
 
 
@@ -209,30 +402,98 @@ def install(app: FastAPI, plane: ControlPlane, *, viewer: Callable[..., Any],
         except ControlPlaneError as exc:
             return exc.response()
 
-    @app.post("/api/ezai/runs/{run_id}/cancel")
-    async def ezai_cancel(run_id: str, role: str = Depends(admin),
-                          x_requested_with: str | None = Header(None)):
-        # The monitor login is ambient (HTTP Basic): a cross-site form could
-        # post here with the browser's credentials. Forms cannot set custom
-        # headers — the page's JavaScript does, so mutations require one.
-        if x_requested_with != CLIENT_NAME:
-            return ControlPlaneError(
-                400, "same_origin_required",
-                "mutations need the X-Requested-With header the Admin Center's own page sends",
-                "use the button on the run page, or send "
-                f"'X-Requested-With: {CLIENT_NAME}' with the request").response()
+    async def mutate(x_requested_with: str | None, call: Callable[[], Any]):
+        """Admin mutations: same-origin guard, then the daemon's answer or
+        its error object, unchanged."""
+        refused = same_origin(x_requested_with)
+        if refused is not None:
+            return refused
         try:
-            return await plane.post(f"/runs/{run_id}/cancel", role)
+            return await call()
         except ControlPlaneError as exc:
             return exc.response()
 
-    @app.get("/overview", response_class=HTMLResponse)
-    async def overview_page(role: str = Depends(viewer)) -> str:
-        return ADMIN_HTML
+    @app.post("/api/ezai/runs/{run_id}/cancel")
+    async def ezai_cancel(run_id: str, role: str = Depends(admin),
+                          x_requested_with: str | None = Header(None)):
+        return await mutate(x_requested_with, lambda: plane.post(f"/runs/{run_id}/cancel", role))
 
-    @app.get("/runs", response_class=HTMLResponse)
-    async def runs_page(role: str = Depends(viewer)) -> str:
-        return ADMIN_HTML
+    # ── models · routing · runtime (PR-17) ───────────────────────────────
+
+    @app.get("/api/ezai/models")
+    async def ezai_models(role: str = Depends(viewer)):
+        try:
+            return {**await models_page(plane, role), "role": role}
+        except ControlPlaneError as exc:
+            return exc.response()
+
+    @app.get("/api/ezai/routing")
+    async def ezai_routing(role: str = Depends(viewer)):
+        try:
+            return {**await routing_page(plane, role), "role": role}
+        except ControlPlaneError as exc:
+            return exc.response()
+
+    @app.get("/api/ezai/runtime")
+    async def ezai_runtime(role: str = Depends(viewer)):
+        try:
+            return {**await runtime_page(plane, role), "role": role}
+        except ControlPlaneError as exc:
+            return exc.response()
+
+    @app.post("/api/ezai/models")
+    async def ezai_install(body: Payload = None, role: str = Depends(admin),
+                           x_requested_with: str | None = Header(None)):
+        data = body or {}
+        fields = {k: data.get(k) for k in ("ref", "name", "group", "runtime", "refetch")}
+        return await mutate(x_requested_with, lambda: plane.post("/models", role, **fields))
+
+    @app.post("/api/ezai/models/upgrade")
+    async def ezai_upgrade(body: Payload = None, role: str = Depends(admin),
+                           x_requested_with: str | None = Header(None)):
+        data = body or {}
+        return await mutate(x_requested_with, lambda: plane.post(
+            "/models/upgrade", role, old=data.get("old"), new=data.get("new")))
+
+    @app.post("/api/ezai/models/{name}/benchmark")
+    async def ezai_benchmark(name: str, role: str = Depends(admin),
+                             x_requested_with: str | None = Header(None)):
+        return await mutate(x_requested_with,
+                            lambda: plane.post(f"/models/{name}/benchmark", role))
+
+    @app.post("/api/ezai/models/{name}/activate")
+    async def ezai_activate(name: str, body: Payload = None, role: str = Depends(admin),
+                            x_requested_with: str | None = Header(None)):
+        data = body or {}
+        return await mutate(x_requested_with, lambda: plane.post(
+            f"/models/{name}/activate", role, group=data.get("group"), role=data.get("role"),
+            position=data.get("position")))
+
+    @app.post("/api/ezai/models/{name}/retire")
+    async def ezai_retire(name: str, role: str = Depends(admin),
+                          x_requested_with: str | None = Header(None)):
+        return await mutate(x_requested_with, lambda: plane.post(f"/models/{name}/retire", role))
+
+    @app.delete("/api/ezai/models/{name}")
+    async def ezai_uninstall(name: str, force: bool = False, role: str = Depends(admin),
+                             x_requested_with: str | None = Header(None)):
+        return await mutate(x_requested_with, lambda: plane.call(
+            "DELETE", f"/models/{name}", user=role, params={"force": "true"} if force else None))
+
+    @app.post("/api/ezai/generations/rollback")
+    async def ezai_rollback(body: Payload = None, role: str = Depends(admin),
+                            x_requested_with: str | None = Header(None)):
+        data = body or {}
+        return await mutate(x_requested_with, lambda: plane.post(
+            "/generations/rollback", role, to_generation=data.get("to_generation"),
+            reason=data.get("reason") or ""))
+
+    # ── pages: one template, the path picks the view ─────────────────────
+
+    for path in ("/overview", "/models", "/routing", "/runtime", "/runs"):
+        @app.get(path, response_class=HTMLResponse, name=f"page_{path.strip('/')}")
+        async def admin_page(role: str = Depends(viewer)) -> str:
+            return ADMIN_HTML
 
     @app.get("/runs/{run_id}", response_class=HTMLResponse)
     async def run_page(run_id: str, role: str = Depends(viewer)) -> str:
@@ -304,9 +565,20 @@ ADMIN_HTML = """<!doctype html>
   .toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
   select { background: var(--bg); color: var(--text); border: 1px solid var(--border);
            border-radius: 6px; padding: 6px 10px; font-size: 13px; }
-  button.btn { background: var(--red); color: white; border: 0; border-radius: 6px; padding: 7px 14px;
+  button.btn { background: var(--blue); color: white; border: 0; border-radius: 6px; padding: 7px 14px;
                font-size: 13px; font-weight: 600; cursor: pointer; }
+  button.btn.danger { background: var(--red); }
+  button.btn.sm { padding: 3px 9px; font-size: 12px; background: var(--border); color: var(--text); margin: 1px 2px; }
+  button.btn.sm.primary { background: var(--blue); color: white; }
+  button.btn.sm.danger { background: rgba(239,68,68,.25); color: var(--red); }
   button.btn:disabled { opacity: .5; cursor: wait; }
+  input { background: var(--bg); color: var(--text); border: 1px solid var(--border);
+          border-radius: 6px; padding: 6px 10px; font-size: 13px; }
+  .notice { padding: 0 24px; font-size: 13px; }
+  .notice:not(:empty) { padding: 10px 24px; border-bottom: 1px solid var(--border); }
+  .notice.ok { color: var(--green); }
+  .notice.err { color: var(--red); }
+  .badge.fit { text-transform: none; letter-spacing: 0; }
   pre.journal { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
                 background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
                 padding: 12px; overflow: auto; max-height: 420px; white-space: pre; }
@@ -325,10 +597,14 @@ ADMIN_HTML = """<!doctype html>
   </div>
   <nav class="nav" id="nav">
     <a href="/overview" data-nav="overview">Overview</a>
+    <a href="/models" data-nav="models">Models</a>
+    <a href="/routing" data-nav="routing">Routing</a>
+    <a href="/runtime" data-nav="runtime">Runtime</a>
     <a href="/runs" data-nav="runs">Runs</a>
     <a href="/" data-nav="health">Health &amp; Knowledge</a>
   </nav>
 </header>
+<div id="notice" class="notice"></div>
 <main id="app"><div class="muted">Loading…</div></main>
 <footer id="footer"></footer>
 
@@ -348,6 +624,7 @@ const route = (() => {
   const m = p.match(/^\\/runs\\/([^/]+)$/);
   if (m) return { view: 'run', id: decodeURIComponent(m[1]) };
   if (p === '/runs') return { view: 'runs' };
+  if (p === '/models' || p === '/routing' || p === '/runtime') return { view: p.slice(1) };
   return { view: 'overview' };
 })();
 document.querySelectorAll('#nav a').forEach(a => {
@@ -519,7 +796,7 @@ async function renderRun(id) {
   document.title = `Run ${r.run_id} · Local-EZAI Admin Center`;
   $('subtitle').textContent = `${r.kind} ${r.run_id} on ${r.project_name} — ${r.status}`;
   const progress = r.progress ? `${r.progress.events} journal events · last <code>${esc(r.progress.last_event)}</code> ${when(r.progress.last_ts)}` : '';
-  const cancel = active ? `<button class="btn" id="cancel-btn">Cancel run</button> <span class="muted" id="cancel-status">` +
+  const cancel = active ? `<button class="btn danger" id="cancel-btn">Cancel run</button> <span class="muted" id="cancel-status">` +
     `${r.cancel_requested ? 'cancellation requested — stops at the next model call' : ''}</span>` : '';
   const head = `<section class="card"><div class="card-header"><span class="name">${esc(r.kind)} <code>${esc(r.run_id)}</code> on <strong>${esc(r.project_name)}</strong></span>${badge(r.status)}</div>` +
     `<div class="grid" style="margin-top:12px">` +
@@ -554,8 +831,157 @@ async function renderRun(id) {
   if (active) timer = setTimeout(() => renderRun(id), 3000);
 }
 
+// ── Models · Routing · Runtime (PR-17) ───────────────────────────
+const isAdmin = d => d.role === 'admin';
+const runtimeLabel = r => Array.isArray(r) ? (r.join(' + ') || 'none') : (r || 'none');
+const tps = m => m.tokens_per_s ? m.tokens_per_s + ' tok/s' : 'not benchmarked';
+const fitBadge = v => !v
+  ? '<span class="badge fit unknown" title="not a catalog model on this runtime — no fit verdict; benchmarks are the evidence">fit: no verdict</span>'
+  : `<span class="badge fit ${v.fits ? 'ok' : 'down'}" title="${esc((v.warnings || []).join(' · ') || ('needs ~' + v.required_memory_gb + ' GB of ' + v.available_memory_gb + ' GB'))}">` +
+    `${v.fits ? '✓ fits' : '✗ no fit'} · ${esc(v.placement)} · ${esc(v.speed_band)}</span>`;
+const contractText = c => Object.entries(c || {}).filter(([k, v]) => v).map(([k, v]) => v === true ? k : `${k} ≥ ${v}`).join(', ') || 'none';
+const rolesTable = roles => `<table><thead><tr><th>role</th><th>source</th><th>primary</th><th>fallbacks</th><th>contract</th><th></th></tr></thead><tbody>` +
+  roles.map(r => { const s = r.source || {}; return `<tr><td><strong>${esc(r.role)}</strong></td>` +
+    `<td>${s.pin && s.pin.length ? '📌 ' + esc(s.pin.join(' → ')) : 'group ' + esc(s.group)}</td><td>${esc(r.primary)}</td>` +
+    `<td class="muted">${esc((r.fallbacks || []).join(', ') || '—')}</td><td class="muted">${esc(contractText(r.contract))}</td>` +
+    `<td>${badge(r.ok ? 'ok' : 'down')}</td></tr>`; }).join('') + `</tbody></table>`;
+const historyTable = (history, extra) => `<table><thead><tr><th>gen</th><th>saved</th><th>note</th><th>active set</th><th>changes</th>${extra ? '<th></th>' : ''}</tr></thead><tbody>` +
+  history.map(h => `<tr><td><strong>${h.generation}</strong></td><td class="muted">${when(h.saved_at)}</td><td>${esc(h.note)}</td>` +
+    `<td>${esc((h.active || []).join(', '))}</td><td class="muted">${(h.diff || []).map(esc).join('<br>') || '—'}</td>${extra ? '<td>' + extra(h) + '</td>' : ''}</tr>`).join('') + `</tbody></table>`;
+
+function report(text, ok) { const el = $('notice'); el.textContent = text; el.className = 'notice ' + (ok ? 'ok' : 'err'); }
+async function act(path, method, body) {
+  return api(path, { method, headers: { 'X-Requested-With': 'admin-center', 'Content-Type': 'application/json' },
+                     body: body === undefined ? undefined : JSON.stringify(body) });
+}
+async function run(label, call, render, okOf) {
+  report(`${label}…`, true);
+  try { const r = await call(); report(render(r), okOf ? okOf(r) : true); setTimeout(renderModels, 800); }
+  catch (e) { report(`✗ ${label}: ${e.message}${e.fix ? ' — fix: ' + e.fix : ''}`, false); }
+}
+const proposalText = r => { const q = r.request || {};
+  if (r.applied) return `${q.id}: applied — ${r.applied.message}`;
+  const affected = Object.keys(q.affected_roles || {});
+  return `${q.id} queued for approval (${affected.length ? 'affects ' + affected.join(', ') : 'runtime switch'}) — decide with: local-ezai governance approve ${q.id}`; };
+
+async function modelAction(ds, d) {
+  const n = ds.name, groups = d.groups.map(g => g.group), path = `/api/ezai/models/${encodeURIComponent(n || '')}`;
+  switch (ds.act) {
+    case 'benchmark': return run(`benchmark ${n}`, () => act(path + '/benchmark', 'POST'), r => `${r.message} — state ${r.state}`);
+    case 'activate': { const g = prompt(`Activate ${n} as primary of which group? (${groups.join(', ')})`, groups[0] || '');
+      if (!g) return; return run(`activate ${n} in ${g}`, () => act(path + '/activate', 'POST', { group: g }), proposalText); }
+    case 'upgrade': { const to = prompt(`Upgrade ${n} to which benchmarked model? (swaps it in every group and pin; ${n} is retired)`);
+      if (!to) return; return run(`upgrade ${n} → ${to}`, () => act('/api/ezai/models/upgrade', 'POST', { old: n, new: to }), proposalText); }
+    case 'retire': if (!confirm(`Retire ${n}? It leaves resolution; the weights stay for rollback.`)) return;
+      return run(`retire ${n}`, () => act(path + '/retire', 'POST'), r => r.message);
+    case 'uninstall': { if (!confirm(`Uninstall ${n} and delete its weights?`)) return;
+      const force = confirm('Force, even if a stored generation could still roll back to it? (Cancel = no force)');
+      return run(`uninstall ${n}`, () => act(path + (force ? '?force=true' : ''), 'DELETE'), r => r.message); }
+    case 'install': return run(`install ${ds.ref} (${ds.runtime})`, () => act('/api/ezai/models', 'POST', { ref: ds.ref, runtime: ds.runtime }),
+      r => `${r.message}${r.ok ? ' — next: benchmark ' + r.name : r.error ? ' — ' + r.error : ''}`, r => r.ok);
+    case 'rollback': { const reason = prompt(`Roll back to generation ${ds.gen}? Rollback applies at once (no approval queue) and is audited. Reason:`);
+      if (reason === null) return; return run(`rollback to generation ${ds.gen}`, () => act('/api/ezai/generations/rollback', 'POST', { to_generation: Number(ds.gen), reason }), r => r.message, r => r.ok); }
+  }
+}
+
+async function renderModels() {
+  document.title = 'Models · Local-EZAI Admin Center';
+  let d; try { d = await api('/api/ezai/models'); } catch (e) { fail(e); return; }
+  const admin = isAdmin(d), runtime = runtimeLabel(d.runtime);
+  $('subtitle').textContent = `Models · generation ${d.generation ?? '—'} · runtime ${runtime}${d.class ? ' · class ' + d.class : ''}`;
+  const actions = m => { if (!admin) return ''; const b = [];
+    if (['installed', 'benchmarked', 'active'].includes(m.state)) b.push(`<button class="btn sm" data-act="benchmark" data-name="${esc(m.name)}">benchmark</button>`);
+    if (m.state === 'benchmarked' || m.state === 'retired') b.push(`<button class="btn sm primary" data-act="activate" data-name="${esc(m.name)}">activate…</button>`);
+    if (m.state === 'active') b.push(`<button class="btn sm" data-act="upgrade" data-name="${esc(m.name)}">upgrade…</button>`, `<button class="btn sm" data-act="retire" data-name="${esc(m.name)}">retire</button>`);
+    if (['retired', 'failed', 'registered'].includes(m.state)) b.push(`<button class="btn sm danger" data-act="uninstall" data-name="${esc(m.name)}">uninstall</button>`);
+    return b.join(''); };
+  const head = `<tr><th>#</th><th>model</th><th>state</th><th>runtime · format</th><th>size · context</th><th>measured here</th><th>fit</th><th></th></tr>`;
+  const row = (m, i) => `<tr><td class="muted">${i == null ? '' : i + 1}</td><td><strong>${esc(m.name)}</strong>${m.license ? `<div class="muted">${esc(m.license)}</div>` : ''}</td>` +
+    `<td>${badge(m.state)}</td><td>${esc(m.runtime)} · ${esc(m.format || '?')}</td><td>${(m.size_gb || 0).toFixed(1)} GB · ctx ${m.context || '?'}</td>` +
+    `<td>${esc(tps(m))}</td><td>${fitBadge(m.fit)}</td><td>${actions(m)}</td></tr>`;
+  const groups = d.groups.map(g => card(`${esc(g.group)} <span class="muted">· roles: ${esc(g.roles.join(', ') || 'none')} · ${g.serving.length} serving · ${g.candidates.length} catalog candidate${g.candidates.length === 1 ? '' : 's'} on ${esc(runtime)}</span>`,
+    `<table><thead>${head}</thead><tbody>${g.serving.map(row).join('')}${g.others.map(m => row(m, null)).join('')}` +
+    `${!g.serving.length && !g.others.length ? '<tr><td colspan="8" class="muted">no member</td></tr>' : ''}</tbody></table>`)).join('');
+  const orphans = d.orphans.length ? card('Not in any group', `<table><thead>${head}</thead><tbody>${d.orphans.map(m => row(m, null)).join('')}</tbody></table>`) : '';
+  const pending = d.pending || [];
+  const gov = pending.length ? `<div class="banner warn"><strong>⚠ ${pending.length} change request${pending.length > 1 ? 's' : ''} await approval:</strong> ` +
+    pending.map(q => `<code>${esc(q.id)}</code> ${esc(q.title)}`).join(' · ') +
+    `<div class="muted">Decide with <code>local-ezai governance approve|reject &lt;id&gt;</code> — the Governance page arrives in the next Admin Center slice.</div></div>` : '';
+  const add = admin ? card('Add model <span class="muted">· a catalog id, or any hf:&lt;org/repo&gt; / gguf:&lt;url | path&gt; source (equal citizens)</span>',
+    `<form id="install-form" class="toolbar"><input name="ref" placeholder="hf:Org/Repo · gguf:… · catalog id" required size="42">` +
+    `<input name="name" placeholder="name (optional)" size="16"><select name="group"><option value="">group (optional)</option>${d.groups.map(g => `<option>${esc(g.group)}</option>`).join('')}</select>` +
+    `<select name="runtime"><option value="">runtime (by format)</option>${(d.runtimes || []).map(r => `<option>${esc(r)}</option>`).join('')}</select><button class="btn" type="submit">Install</button></form>`) : '';
+  const cat = card(`Catalog <span class="muted">· ${d.catalog.count} entries · fit verdicts for ${esc(runtime)} on class ${esc(d.class || '?')} · <code>local-ezai model catalog</code></span>`,
+    `<table><thead><tr><th>entry</th><th>groups</th><th>license</th><th>context</th><th>variants · fit on this host</th></tr></thead><tbody>` +
+    Object.entries(d.catalog.entries).sort().map(([id, e]) => `<tr><td><strong>${esc(e.display_name || id)}</strong><div class="muted"><code>${esc(id)}</code></div></td>` +
+      `<td>${esc((e.groups || []).join(', '))}</td><td>${esc(e.license)}</td><td>${e.context}</td><td>` +
+      Object.entries(e.variants).map(([fmt, v]) => { const c = (d.verdicts[id] || {})[fmt];
+        return `<div>${esc(fmt)} · ${v.size_gb} GB${v.quant ? ' · ' + esc(v.quant) : ''} ` +
+          (c ? fitBadge(c.verdict) + (c.contract_failures.length ? ` <span class="muted" title="${esc(c.contract_failures.join(' · '))}">contract ✗</span>` : '') : `<span class="muted">not served by ${esc(runtime)}</span>`) +
+          (admin && c ? ` <button class="btn sm" data-act="install" data-ref="${esc(id)}" data-runtime="${esc(c.provider)}">install</button>` : '') + `</div>`; }).join('') +
+      `</td></tr>`).join('') + `</tbody></table>`);
+  const hist = card('Generations <span class="muted">· <code>local-ezai model history</code> · rollback restores an approved state at once</span>',
+    historyTable(d.history, admin ? h => (h.generation !== d.generation ? `<button class="btn sm danger" data-act="rollback" data-gen="${h.generation}">roll back to ${h.generation}</button>` : '<span class="muted">current</span>') : null));
+  $('app').innerHTML = gov + add + groups + orphans + card('Roles <span class="muted">· <a href="/routing">explain routing</a></span>', rolesTable(d.roles)) + cat + hist;
+  const form = $('install-form');
+  if (form) form.onsubmit = async e => { e.preventDefault(); const f = new FormData(form); const body = { ref: f.get('ref') };
+    for (const k of ['name', 'group', 'runtime']) if (f.get(k)) body[k] = f.get(k);
+    await run(`install ${body.ref}`, () => act('/api/ezai/models', 'POST', body), r => `${r.message}${r.ok ? ' — next: benchmark ' + r.name : r.error ? ' — ' + r.error : ''}`, r => r.ok); };
+  document.querySelectorAll('button[data-act]').forEach(b => b.onclick = () => modelAction(b.dataset, d));
+  footer(`rendered from generation ${d.generation ?? '—'} · runtime ${esc(runtime)} · CLI twins: <code>local-ezai model install|benchmark|activate|upgrade|rollback|retire|uninstall</code>`);
+}
+
+async function renderRouting() {
+  document.title = 'Routing · Local-EZAI Admin Center';
+  let d; try { d = await api('/api/ezai/routing'); } catch (e) { fail(e); return; }
+  $('subtitle').textContent = `Routing · generation ${d.generation ?? '—'} · role → group → model`;
+  const defined = new Set(d.roles.map(r => r.role));
+  const cards = d.roles.map(r => { const s = r.source || {};
+    const checks = Object.entries(r.checks || {}).map(([m, c]) => `<li>${c.ok ? '✅' : '❌'} <strong>${esc(m)}</strong> <span class="muted">${c.failures && c.failures.length ? esc(c.failures.join('; ')) : esc(Object.entries(c.checks || {}).filter(([k, v]) => v).map(([k]) => k).join(', ') || 'no requirements')}</span></li>`).join('');
+    return `<section class="card" id="role-${esc(r.role)}"><div class="card-header"><span class="name">${esc(r.role)} <span class="muted">→ ${s.pin && s.pin.length ? '📌 pin ' + esc(s.pin.join(' → ')) : 'group ' + esc(s.group)}</span></span>${badge(r.ok ? 'ok' : 'down')}</div>` +
+      `<div style="margin-top:8px"><strong>${esc(r.primary || '—')}</strong> <span class="muted">${r.fallbacks && r.fallbacks.length ? '→ ' + esc(r.fallbacks.join(' → ')) : '(no fallback)'}</span></div>` +
+      `<ul class="checks" style="margin-top:6px">${(r.reason || []).map(x => `<li class="muted">${esc(x)}</li>`).join('')}</ul>` +
+      `<div class="muted" style="margin-top:6px">contract: ${esc(contractText(r.contract))}</div><ul class="checks">${checks}</ul>` +
+      `<div class="muted">resolved from generation ${r.generation}</div></section>`; }).join('');
+  const missing = d.known_roles.filter(r => !defined.has(r));
+  $('app').innerHTML = card('Standing table <span class="muted">· what serves each role now · <code>local-ezai models</code></span>',
+      rolesTable(d.roles) + (missing.length ? `<div class="muted" style="margin-top:8px">roles not defined in this registry: ${esc(missing.join(', '))}</div>` : '')) +
+    cards + card('Generation history <span class="muted">· diffs between consecutive generations</span>', historyTable(d.history));
+  footer(`generation ${d.generation ?? '—'} · CLI: <code>local-ezai model explain &lt;role&gt;</code> · <code>local-ezai model history</code>`);
+}
+
+async function renderRuntime() {
+  document.title = 'Runtime · Local-EZAI Admin Center';
+  let d; try { d = await api('/api/ezai/runtime'); } catch (e) { fail(e); return; }
+  const p = d.platform || {}, active = runtimeLabel(d.active);
+  $('subtitle').textContent = `Runtime · engine slot: ${active} · class ${p.capability_class || '—'}`;
+  const health = (d.services || []).map(s => `${esc(s.id)} ${badge(s.ok ? 'ok' : 'down')}`).join(' ') || '<span class="muted">not probed</span>';
+  const activeCard = card('Active runtime <span class="muted">· the single engine slot behind the router</span>',
+    `<div class="grid"><div class="kv"><label>runtime</label><div class="v">${esc(active)}</div></div>` +
+    `<div class="kv"><label>capability class</label><div class="v">${esc(p.capability_class || '—')} · accelerator ${esc(p.accelerator || 'none')}</div></div>` +
+    `<div class="kv"><label>this host</label><div class="v">${p.system_memory_gb ?? '?'} GB RAM · ${p.cpu_cores ?? '?'} cores</div></div>` +
+    `<div class="kv"><label>slot health</label><div class="v">${health}</div></div>` +
+    `<div class="kv"><label>generation</label><div class="v">${p.generation ?? '—'} (rendered ${p.rendered_generation ?? '—'})</div></div></div>` +
+    `<table style="margin-top:10px"><thead><tr><th>active model</th><th>runtime</th><th>format</th><th>groups</th><th>measured</th></tr></thead><tbody>` +
+    (d.active_models.map(m => `<tr><td><strong>${esc(m.name)}</strong></td><td>${esc(m.runtime)}</td><td>${esc(m.format || '?')}</td><td class="muted">${esc((m.groups || []).join(', '))}</td><td>${esc(tps(m))}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">no active model</td></tr>') + `</tbody></table>`);
+  const pre = d.prechecks.map(pc => card(`Switch to ${esc(pc.runtime)} — pre-check ${badge(pc.ready ? 'ok' : 'down')}`,
+    `<div><strong>Active models and ${esc(pc.runtime)}:</strong></div><ul class="checks">` +
+    (pc.active_models.map(m => m.variant_in_catalog
+      ? `<li>✓ ${esc(m.name)} — the catalog has a ${esc(pc.runtime)} variant: install it, then activate it</li>`
+      : `<li>✗ ${esc(m.name)} is ${esc(m.format || '?')} (${esc(m.runtime)}) — no ${esc(pc.runtime)} variant in the catalog: install one (<code>hf:</code> / <code>gguf:</code>) on the <a href="/models">Models page</a> or keep ${esc(active)}</li>`).join('') || '<li class="muted">none</li>') + `</ul>` +
+    `<div style="margin-top:8px"><strong>Catalog candidates per group on ${esc(pc.runtime)}:</strong></div>` +
+    pc.groups.map(g => `<div style="margin-top:6px"><span class="chip">${esc(g.group)} · ${g.eligible}/${g.candidates.length} eligible</span><ul class="checks">` +
+      (g.candidates.map(c => `<li>${c.eligible ? '✅' : '❌'} <code>${esc(c.id)}</code> ${esc(c.format)} ${fitBadge(c.verdict)}${c.contract_failures.length ? ' <span class="muted">' + esc(c.contract_failures.join('; ')) + '</span>' : ''}</li>`).join('') || '<li class="muted">no catalog entry served by this runtime</li>') + `</ul></div>`).join('') +
+    `<div class="muted" style="margin-top:8px">How a switch happens: activate a model served by ${esc(pc.runtime)} (Models page). The activation request is flagged as a runtime switch and needs approval; on approval the next generation is rendered and the slot reloaded, with the previous generation one rollback away. The single engine slot serves one runtime — models of ${esc(active)} become unservable until they have a ${esc(pc.runtime)} variant.</div>`)).join('');
+  $('app').innerHTML = activeCard + (pre || card('Other runtimes', '<div class="muted">no other runtime serves a catalog entry on this host</div>'));
+  footer(`runtimes known to this host: ${esc(d.runtimes.join(', '))} · CLI: <code>local-ezai model catalog --group &lt;g&gt; --runtime &lt;r&gt;</code> · <code>local-ezai status</code>`);
+}
+
 if (route.view === 'run') renderRun(route.id);
 else if (route.view === 'runs') renderRuns();
+else if (route.view === 'models') renderModels();
+else if (route.view === 'routing') renderRouting();
+else if (route.view === 'runtime') renderRuntime();
 else renderOverview();
 </script>
 </body>

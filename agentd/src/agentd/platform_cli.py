@@ -681,8 +681,13 @@ def platform_snapshot(ctx: PlatformContext) -> dict[str, Any]:
     ``GET /v1/health`` reports (PR-8). Read fresh on every call."""
     registry = ctx.registry(required=False)
     pending = ctx.queue.list(status="pending")
+    # Per-model facts the Admin Center's role-first cards need (PR-17):
+    # group membership, context, source format, license — additive keys in
+    # the contract's untyped ``models`` object.
     models = {name: {"state": e.state, "runtime": e.provider, "size_gb": e.size_gb,
-                     "tokens_per_s": e.benchmarks.get("tokens_per_s")}
+                     "tokens_per_s": e.benchmarks.get("tokens_per_s"),
+                     "groups": list(e.groups), "context": e.context,
+                     "format": next(iter(e.source), ""), "license": e.license}
               for name, e in (registry.models.items() if registry else {})}
     active_runtimes = sorted({e.provider for e in (registry.models.values() if registry else [])
                               if e.state == "active"})

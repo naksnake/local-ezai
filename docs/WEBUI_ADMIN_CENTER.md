@@ -54,9 +54,32 @@ local-ezai CLI ─────────────────────�
 > the service token (never sent to the browser) and forwards the login as
 > the audited human (`admin via admin-center`). A daemon that is down is a
 > page state with the fix; **Health** (`/`) and **Knowledge** keep working
-> unchanged. Remaining pages: Models / Routing / Runtime (PR-17), Governance
-> (PR-18), Sprints / Evolution / Memory / Projects (PR-19); SSO handoff and
-> the Browser-QA journey suite (PR-20).
+> unchanged. Remaining pages: Governance (PR-18), Sprints / Evolution /
+> Memory / Projects (PR-19); SSO handoff and the Browser-QA journey suite
+> (PR-20).
+
+> **As built (PR-17):** **Models** (`/models`) is role-first — group panels
+> in *resolution* order (an unpinned role's primary + fallbacks, then the
+> group's other members) with state, runtime · format, size · context,
+> measured tokens/s and a fit badge that is the recommender's verdict for a
+> matching catalog candidate (a user-supplied source shows "no verdict");
+> models in no group; role cards; the catalog with per-variant verdicts for
+> the active runtime; the generation history; the queue. Mutations (admin,
+> same-origin header): add model (catalog id or `hf:` / `gguf:`), install a
+> catalog variant, benchmark, activate into a group, upgrade, retire,
+> uninstall (force on request), roll back to a generation — each the CLI
+> verb through the daemon, approval-gated where a serving role changes, and
+> every refusal the daemon's own text. **Routing** (`/routing`) is the
+> explain view (MODEL_ROUTING_DESIGN §7): standing table, per-role card with
+> reasons, contract, per-model checks and the generation resolved from,
+> undefined roles listed, generation diffs. "Edit role/group assignment" has
+> no 1.0.0 operation and no CLI verb — parity or absence — so it is not
+> offered. **Runtime** (`/runtime`): the engine slot (runtime, class,
+> accelerator, memory, engine/router health, active models) and, per other
+> runtime, the switch pre-check of RUNTIME_ABSTRACTION §5 (active models
+> lacking a variant, catalog candidates per group with fit + contract
+> verdicts); switching is an activation flagged as a runtime switch — no
+> switch button, the contract has no runtime verb.
 
 ## 3. The Governance queue (the page that matters most)
 

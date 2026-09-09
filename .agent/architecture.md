@@ -290,8 +290,22 @@ through `local-ezai model …` + the governance queue. Modules:
   recent runs; record + report + journal tail), renders a daemon that is
   down as a page state, and never lets the browser reach the daemon. `/`
   (health + knowledge) unchanged apart from header + nav. Later slices:
-  Models/Routing/Runtime (PR-17), Governance (PR-18), Sprints/Evolution/
-  Memory/Projects (PR-19), SSO + Browser-QA journeys (PR-20).
+  Governance (PR-18), Sprints/Evolution/Memory/Projects (PR-19), SSO +
+  Browser-QA journeys (PR-20).
+- **Models / Routing / Runtime pages** (PR-17): `/models` — group panels in
+  resolution order (unpinned role's chain, then the group's other members),
+  fit badges only from `GET /v1/catalog/recommendations` (a user source
+  shows "no verdict" + measured tok/s), catalog with per-variant verdicts,
+  generations, queue; admin mutations install · benchmark · activate ·
+  upgrade · retire · uninstall · rollback proxied to the daemon (same-origin
+  header, daemon refusals passed through). `/routing` — the MODEL_ROUTING
+  §7 explain view (source, chain, reasons, contract, per-model checks,
+  generation; undefined roles listed). `/runtime` — the engine slot and a
+  per-runtime switch pre-check (blockers = active models without a variant,
+  candidates per group with fit + contract verdicts); a switch is an
+  activation flagged `runtime.switch`, no runtime verb exists. Snapshot
+  enrichment: per-model `groups` / `context` / `format` / `license`
+  (contract artifact unchanged).
 
 ## Target additions (control/execution/knowledge planes)
 

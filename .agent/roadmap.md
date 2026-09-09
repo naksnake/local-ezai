@@ -90,11 +90,17 @@ control-plane client — token never in the browser, monitor login forwarded
 as the audited human — with the Overview page (health, generation, roles →
 models, pending queue, recent runs) and the Runs page + deep-linkable run
 detail (report by kind, journal, cancel for admins); a daemon that is down
-is a page state; real-Chromium smoke) implemented. All sixteen await human
-merge on `claude/next-ready-pr-bnq7r3`. P4 / P5 run in parallel; next ready
-by plan order: **PR-17** (Models / Routing / Runtime pages: role-first
-cards, fit badges, explain views, runtime switch pre-check UX), with PR-21
-(`install.sh`, P5) also unblocked.
+is a page state; real-Chromium smoke) and PR-17 (Models page: role-first
+group panels in resolution order, fit badges from the platform recommender,
+catalog verdicts, generations, admin mutations install / benchmark /
+activate / upgrade / retire / uninstall / rollback through the daemon with
+approvals where a serving role changes; Routing page: the explain view;
+Runtime page: engine slot + per-runtime switch pre-check, no switch button
+because the contract has no runtime verb) implemented. All seventeen await
+human merge on `claude/next-ready-pr-bnq7r3`. P4 / P5 run in parallel; next
+ready by plan order: **PR-18** (Governance queue + approval modal: evidence
+panels, approve/reject, deep links), with PR-21 (`install.sh`, P5) also
+unblocked.
 
 **Product review (ADR-026, 2026-09-01):** agnosticism audit passed with
 remediations — roles/groups become the only stable names (role aliases

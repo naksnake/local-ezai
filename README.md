@@ -383,7 +383,9 @@ All 8 checks should pass.
    `make control-up` or `make control-serve`). Pick it in the dropdown.
 5. Open the **Admin Center** at `http://localhost:8888/overview` (monitor
    login `admin` / `viewer`): platform health, roles → models, the
-   governance queue, and every run with its report at `/runs`.
+   governance queue, every run with its report at `/runs`, the model
+   lifecycle at `/models` (install · benchmark · activate · rollback), the
+   routing explanation at `/routing` and the engine slot at `/runtime`.
 
 ### 7. Connect MCP agent tools
 

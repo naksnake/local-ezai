@@ -113,6 +113,20 @@ request-time failure.
   (PROVIDER_ABSTRACTION §4/§7) — stated to users as a fitting problem, not
   a mystery.
 
+> **As built (PR-17, Admin Center `/runtime`):** the Runtime page shows the
+> engine slot (runtime, class, accelerator, memory, engine/router health,
+> active models) and, for every other runtime the descriptors serve, a
+> **pre-check**: the active models that have no variant for it (with the
+> fix above — install a served variant or keep the current runtime) and the
+> catalog candidates per group with the recommender's fit and contract
+> verdicts (on a small host the vllm descriptor's context budget rules out
+> every candidate; the page carries that sentence). Switching is what P1
+> built: activating a model served by the other runtime — the change
+> request is flagged `runtime.switch` (activation.propose) and needs
+> approval. There is **no switch button** and no `local-ezai runtime`
+> verb yet: the 1.0.0 contract has no runtime operation; a dedicated verb is
+> a 1.1 candidate.
+
 ## 6. The third-runtime drill (acceptance test)
 
 Before V1 ships, prove agnosticism empirically: implement a **mock

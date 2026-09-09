@@ -199,6 +199,15 @@ Three levels, all served from the same resolution:
 Every explain answer names the **generation** it was resolved from, so an
 answer is reproducible even after later changes.
 
+> **As built (PR-17):** the Admin Center **Routing** page (`/routing`)
+> renders `GET /v1/roles/{role}` for every logical role: source (pin or
+> group), primary and fallbacks, the resolver's reason lines, the contract,
+> the per-model checks with the failure text, the generation resolved from;
+> roles the registry does not define are listed as such; the generation
+> history with diffs sits below. The Models page's group panels use the
+> same resolution as their serving order. "What DID serve stage Y of run Z"
+> is the run detail page (PR-16, `models used`).
+
 ## 8. Fallback semantics (unchanged, restated)
 
 Request-time fallback walks the chain on model failure (journaled
