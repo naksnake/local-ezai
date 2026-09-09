@@ -259,6 +259,14 @@ services:
       - QDRANT_PORT=${QDRANT_PORT:-6333}
       - SEARXNG_PORT=${SEARXNG_PORT:-8092}
       - MCPO_PORT=${MCPO_PORT:-8200}
+      # Admin Center pages (V1 P4, /overview and /runs): where the monitor
+      # finds the ezaid control plane (container overlay by default;
+      # host.docker.internal for a host daemon) and the service token it
+      # presents on the server side — the browser never sees it.
+      - EZAI_CONTROL_URL=${EZAI_CONTROL_URL_MONITOR:-http://ezaid:8010}
+      - EZAI_CONTROL_TOKEN=${EZAI_CONTROL_TOKEN:-ezai-control-key}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - ai-net
     depends_on:

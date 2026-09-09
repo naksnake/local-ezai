@@ -236,7 +236,20 @@ compared by test; `make swe-drill` + the CI step.
 
 ### Phase P4 — Admin Center (ADR-030)
 
-**PR-16 · ezaid client + Overview/Runs pages** — L (monitor extension).
+**PR-16 · ezaid client + Overview/Runs pages** — L (monitor extension) —
+✅ **implemented**
+([prs/PR-16-admin-center-overview-runs.md](prs/PR-16-admin-center-overview-runs.md);
+10 tests incl. a real-Chromium smoke, suite 604 green, goldens intact;
+**ADR-030 → Proposed**)
+Scope: the control-plane client inside the monitor, the Overview and Runs
+pages (run detail deep-linkable, cancel for admins).
+As built: `monitor/admin_center.py` installed on the existing monitor app
+with its RBAC (viewer reads, admin cancels), token server-side, the monitor
+login forwarded as the audited human (`<login> via admin-center`), pages as
+path routes from one framework-free template, data aggregated per page, a
+daemon that is down is a page state; compose/Dockerfile/`.env.example`
+wiring in the mcpo pattern; the chat-stack baseline treats the monitor's
+control-plane keys as additive (fixture unchanged).
 **PR-17 · Models/Routing/Runtime pages** — L: role-first cards, fit
 badges, explain views, runtime switch pre-check UX.
 **PR-18 · Governance queue + approval modal** — M: evidence panels,

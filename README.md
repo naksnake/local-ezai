@@ -191,9 +191,10 @@ local-ezai/
 │   ├── Dockerfile
 │   └── server.py
 │
-├── monitor/                    Live monitoring dashboard (FastAPI + SSE)
+├── monitor/                    Admin Center: live dashboard (FastAPI + SSE) + platform console pages
 │   ├── Dockerfile
-│   └── monitor.py
+│   ├── monitor.py              Health & knowledge dashboard, RBAC, RAG upload API
+│   └── admin_center.py         /overview and /runs pages over the ezaid control plane (V1 P4)
 │
 ├── mcpo/                       MCP tool proxy container
 │   └── Dockerfile
@@ -293,7 +294,7 @@ make embed       Ingest ./documents into the Qdrant knowledge base
 make install-autorag  (optional) install the in-OpenWebUI RAG filter — RAG
                  already works via the LiteLLM hook without this
 make orchestrator  Install/refresh the Local-EZAI Orchestrator persona in OpenWebUI (after first login)
-make monitor     Open the monitor dashboard in your browser
+make monitor     Open the Admin Center (monitor) in your browser — health & knowledge at /, /overview, /runs
 make control-up  Start the ezaid control plane overlay (:8010; V1 P2, optional)
 make control-down / control-logs / control-spec  Stop it · follow logs · regenerate docs/api/ezaid-openapi.json
 make control-serve  Run ezaid on this host instead (sees your repos → SWE runs through the API)
@@ -380,6 +381,9 @@ All 8 checks should pass.
    (plans and starts autonomous engineering work on projects you registered
    with `local-ezai project add <path>`; needs the control plane:
    `make control-up` or `make control-serve`). Pick it in the dropdown.
+5. Open the **Admin Center** at `http://localhost:8888/overview` (monitor
+   login `admin` / `viewer`): platform health, roles → models, the
+   governance queue, and every run with its report at `/runs`.
 
 ### 7. Connect MCP agent tools
 

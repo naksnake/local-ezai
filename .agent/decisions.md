@@ -1056,3 +1056,54 @@ the baseline on purpose. Deferred, unchanged: the 1.1 tool additions
 (`swe_test`, `swe_review`, `model_benchmark`), a header-passing gateway for
 `<user> via swe-server`. Run locally with `make swe-drill`; the hosted CI
 runs the same package (workflow remains manual-only).
+
+## ADR-030 — Admin Center: the monitor evolves into the platform console (P4)
+**Date:** 2026-09-09 · **Status:** Proposed (entered with PR-16; flips to
+Accepted with the P4 close, PR-20)
+**Context:** WEBUI_ADMIN_CENTER names the monitor (:8888 — RBAC admin/viewer,
+health view, knowledge-base bar) as the management console: an evolution of a
+component we own, not a new frontend project and not an OpenWebUI fork. The
+control plane (ADR-028, contract 1.0.0) already serves everything the console
+must show, and the capped chat surface (ADR-029) sends humans here for
+decisions.
+**Decision (PR-16 slice — the client and the first pages):** (1) the monitor
+stays **one service, one image**; the Admin Center is a sibling module
+(`monitor/admin_center.py`) installed on the existing FastAPI app with the
+existing RBAC dependencies — viewer reads, admin mutates; `/` (health +
+knowledge) is unchanged apart from the shared header and a navigation bar.
+(2) **The browser never talks to the daemon**: page JavaScript calls the
+monitor (`/api/ezai/…`), the monitor calls `ezaid` with the service token
+(`EZAI_CONTROL_TOKEN`, server side only) and forwards the monitor login as
+the human (`X-EZAI-User: admin|viewer`, `X-EZAI-Client: admin-center` → audit
+actor `<login> via admin-center`), a fresh `Idempotency-Key` per mutation.
+(3) **Pages are path routes** serving one template — `/overview`, `/runs`,
+`/runs/{id}` — so the deep links the CLI and the SWE tools already print
+resolve; the view is chosen client-side from the path, framework-free (UX
+principle 5: the monitor's look evolves, no rewrite, no build step). (4)
+**Data is aggregated server-side per page** (one request renders a page):
+Overview = aggregated health + platform snapshot + role explanations (roles
+are the interface — orchestrator/planner/coder/debugger/reviewer/chat, a role
+the registry lacks is skipped) + the pending queue + recent runs; run detail
+= record + report (once written) + journal tail. (5) **A daemon that is down
+is a page state**, not a broken console: `connected: false` with the same
+code/message/fix the CLI prints; health and the knowledge base keep working.
+(6) **Parity or absence:** the only mutation is *cancel* (admin) — the
+matrix's "view, cancel"; starting work from the console is deliberately
+absent, governance decisions arrive with their evidence panels (PR-18).
+Because the monitor login is ambient (HTTP Basic), mutations additionally
+require the `X-Requested-With: admin-center` header the page sends — the
+same-origin guard a cross-site form cannot satisfy. (7)
+**Wiring mirrors the mcpo precedent:** compose gives the monitor
+`EZAI_CONTROL_URL` (`EZAI_CONTROL_URL_MONITOR`, default overlay
+`http://ezaid:8010`, `host.docker.internal` for a host daemon), the token and
+`extra_hosts`; the chat-stack baseline (PR-15) treats these keys as additive,
+so its fixture is unchanged.
+**Consequences / deferred:** Models/Routing/Runtime pages (PR-17), the
+Governance queue with approval modal and evidence (PR-18),
+Sprints/Evolution/Memory/Projects (PR-19), the SSO trusted-header handoff and
+the five zero-CLI journeys as Browser-QA workflows (PR-20 → Accepted).
+Identity is the monitor login (two roles) until SSO; a forwarded OpenWebUI
+identity later replaces the header value without touching the daemon.
+Validation already follows the plan's rule "the product is tested by its own
+testing capability": a real-Chromium smoke renders the pages with console
+errors failing the test; the declarative journey suite is PR-20.

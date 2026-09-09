@@ -103,6 +103,17 @@ Legend: ✅ full · 🔍 read-only · ❌ deliberately absent.
 > cancels (queued now, running at the next model call). `cancel` has no CLI
 > verb on purpose (direct mode is interactive: Ctrl-C); the API never pushes.
 
+> **As built (PR-16, ADR-030 Proposed):** the Admin Center column starts on
+> the monitor (:8888): "Run reports / journals / exec audit — ✅ full detail"
+> and "Start run … — 🔍 view, cancel" are live (`/runs`, `/runs/<id>`, cancel
+> for the admin role), "Health — ✅" gains the control plane's aggregated view
+> on `/overview`, and the governance queue is visible there (decisions follow
+> in PR-18). The console is a thin client exactly as this document requires:
+> the monitor calls `ezaid` with the service token and forwards its login as
+> the human (`admin via admin-center`), so the audit trail is the one the CLI
+> writes. Model / routing / governance / project rows of the column arrive
+> with PR-17..19.
+
 ## 4. Deliberate asymmetries (and why)
 
 1. **Chat can start work but never govern** — approval/activation/rollback

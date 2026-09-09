@@ -37,6 +37,27 @@ local-ezai CLI ─────────────────────�
 | **Health** | existing monitor health + tokens/sec bench + exec-audit tail + disk usage of runs/workspaces | prune old runs/workspaces |
 | **Knowledge** | existing KB bar (unchanged) | ingest (unchanged) |
 
+> **As built (PR-16, ADR-030 Proposed):** the monitor is the Admin Center —
+> one service, one image, `monitor/admin_center.py` installed on the existing
+> app behind the existing RBAC. **Overview** (`/overview`) shows stack health
+> as `ezaid` sees it, generation / capability class / engine runtime, role
+> cards (role → group or pin → primary + fallbacks, from `GET /v1/roles/…`),
+> the pending governance queue (with the CLI verb that decides it until the
+> Governance page lands), recent runs, and a footer naming the generation and
+> registry the view came from. **Runs** (`/runs`, `/runs/<id>` — the deep
+> link the CLI and the SWE tools print) lists and details runs: plan,
+> validation incl. Browser QA, review verdict + findings, healing iterations,
+> models used, delivery (commit, branch, pushed or not, the merge command
+> that stays human), sprint tasks, evolution proposal / benchmark / PR link,
+> journal tail; **cancel** is the one mutation, admin role only. The browser
+> talks to the monitor (`/api/ezai/…`); the monitor talks to the daemon with
+> the service token (never sent to the browser) and forwards the login as
+> the audited human (`admin via admin-center`). A daemon that is down is a
+> page state with the fix; **Health** (`/`) and **Knowledge** keep working
+> unchanged. Remaining pages: Models / Routing / Runtime (PR-17), Governance
+> (PR-18), Sprints / Evolution / Memory / Projects (PR-19); SSO handoff and
+> the Browser-QA journey suite (PR-20).
+
 ## 3. The Governance queue (the page that matters most)
 
 One queue, three item types, one contract: **agents propose, humans

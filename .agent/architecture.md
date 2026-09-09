@@ -280,6 +280,18 @@ through `local-ezai model …` + the governance queue. Modules:
   denied and journaled; local commit never pushed; registry + queue
   untouched), and the chat-stack byte-identical baseline
   (`scripts/chat-stack-baseline.py` → `tests/fixtures/chat_stack_baseline.json`).
+- **Admin Center on the monitor** (`monitor/admin_center.py`, PR-16, ADR-030
+  Proposed): the monitor (:8888) stays one service; a sibling module installs
+  `/overview`, `/runs`, `/runs/{id}` and their `/api/ezai/*` data on the
+  existing app behind the existing RBAC (viewer reads, admin cancels). The
+  monitor calls `ezaid` server-side with `EZAI_CONTROL_TOKEN`, forwards the
+  login as `X-EZAI-User` (`X-EZAI-Client: admin-center`), aggregates one
+  request per page (health + platform + role explanations + pending queue +
+  recent runs; record + report + journal tail), renders a daemon that is
+  down as a page state, and never lets the browser reach the daemon. `/`
+  (health + knowledge) unchanged apart from header + nav. Later slices:
+  Models/Routing/Runtime (PR-17), Governance (PR-18), Sprints/Evolution/
+  Memory/Projects (PR-19), SSO + Browser-QA journeys (PR-20).
 
 ## Target additions (control/execution/knowledge planes)
 

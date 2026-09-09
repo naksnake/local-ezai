@@ -258,8 +258,8 @@ reset-webui: ## Factory-reset OpenWebUI — deletes ALL users, passwords, chats 
 reset-password: ## Reset an OpenWebUI password: make reset-password EMAIL=you@example.com PASSWORD=newpass  (EMAIL=all → every user)
 	@bash scripts/reset-openwebui.sh password "$(EMAIL)" "$(PASSWORD)"
 
-monitor: ## Open the web monitoring dashboard
-	@echo "Monitor dashboard: http://localhost:8888"
+monitor: ## Open the Admin Center (monitor): health & knowledge at /, overview at /overview, runs at /runs
+	@echo "Admin Center (monitor): http://localhost:8888   overview: /overview   runs: /runs"
 	@xdg-open http://localhost:8888 2>/dev/null || open http://localhost:8888 2>/dev/null || true
 
 k8s: ## Deploy to K3s Kubernetes cluster

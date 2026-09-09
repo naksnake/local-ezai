@@ -9,7 +9,7 @@ RUN pip install --no-cache-dir \
     python-multipart==0.0.9 \
     pypdf==4.3.1
 
-COPY monitor/monitor.py .
+COPY monitor/monitor.py monitor/admin_center.py ./
 
 EXPOSE 8888
 

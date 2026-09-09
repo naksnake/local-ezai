@@ -90,6 +90,21 @@ into the container at the same path (see the commented hint in
 `docker-compose.control.yml`). A daemon restart marks its interrupted runs
 `failed` (the journal on disk shows how far they got).
 
+**Admin Center (PR-16):** the monitor at `http://<host>:8888` is growing into
+the platform console. `/overview` shows the stack as the control plane sees
+it, the generation, the roles and their models, the pending governance queue
+and recent runs; `/runs` lists runs and `/runs/<id>` (the link the CLI and
+the SWE tools print) shows plan, validation, review, healing, delivery and
+the journal; an admin may cancel a run there, a viewer only reads. The
+monitor reaches the control plane at `EZAI_CONTROL_URL_MONITOR` (default
+`http://ezaid:8010`, the container overlay; set
+`http://host.docker.internal:8010` for `make control-serve`) with
+`EZAI_CONTROL_TOKEN` — server-side, never sent to the browser — and forwards
+your monitor login as the audited human (`admin via admin-center`). With the
+control plane down the pages say so and name the fix; the health view and
+the knowledge base keep working. Rebuild the monitor image after updating
+(`docker compose build monitor`).
+
 ## 2. The Autonomous SWE runtime
 
 | Action | Command |

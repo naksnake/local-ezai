@@ -1,14 +1,16 @@
 """
 monitor/monitor.py
 ──────────────────────────────────────────────────────────────────────────────
-Web monitoring dashboard for the AI service stack.
+Web monitoring dashboard for the AI service stack — and, since V1 P4, the
+first pages of the Local-EZAI Admin Center (admin_center.py, ADR-030).
 
 Polls all 7 services on a background thread and serves:
-  GET  /               → dashboard HTML
+  GET  /               → dashboard HTML (health + knowledge base, unchanged)
   GET  /api/status     → current status JSON
   GET  /api/stream     → SSE stream (push updates to browser)
   POST /api/rag/upload → embed an uploaded text file into the knowledge base
   GET  /api/rag/status → knowledge-base collection info (chunk count)
+  GET  /overview · /runs · /runs/{id} · /api/ezai/…  → Admin Center (admin_center.py)
 """
 import asyncio
 import json
@@ -19,6 +21,7 @@ import uuid
 from collections import deque
 from typing import AsyncGenerator, Optional
 
+import admin_center
 import httpx
 from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -32,6 +35,13 @@ HISTORY_POINTS = int(os.getenv("HISTORY_POINTS", "60")) # keep last N readings
 
 LITELLM_KEY = os.getenv("LITELLM_MASTER_KEY", "sk-ai-service-2024")
 MCP_KEY     = os.getenv("MCP_API_KEY",         "local-tools-key")
+
+# ── Admin Center (V1 P4, PR-16) ───────────────────────────────────────────────
+# The pages under /overview and /runs render what the ezaid control plane
+# serves (admin_center.py): where the monitor finds the daemon and the service
+# token it presents — server-side only, the browser never sees it.
+EZAI_CONTROL_URL   = os.getenv("EZAI_CONTROL_URL",   admin_center.DEFAULT_CONTROL_URL)
+EZAI_CONTROL_TOKEN = os.getenv("EZAI_CONTROL_TOKEN", "")
 
 # ── RBAC ──────────────────────────────────────────────────────────────────────
 # Two browser roles via HTTP Basic auth, plus a machine credential:
@@ -261,7 +271,7 @@ async def _poll_loop() -> None:
 
 
 # ── FastAPI app ───────────────────────────────────────────────────────────────
-app = FastAPI(title="AI Service Monitor", version="1.0.0")
+app = FastAPI(title="Local-EZAI Admin Center (monitor)", version="1.1.0")
 
 # Open CORS so other lab dashboards on the LAN can call the RAG upload API
 # directly from browser JavaScript.
@@ -275,6 +285,11 @@ app.add_middleware(
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 if os.path.isdir(STATIC_DIR):
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+# Admin Center routes (Overview, Runs, run detail and their /api/ezai data),
+# guarded by the RBAC above: viewer reads, admin may also cancel a run.
+admin_center.install(app, admin_center.ControlPlane(EZAI_CONTROL_URL, EZAI_CONTROL_TOKEN),
+                     viewer=require_viewer, admin=require_admin)
 
 
 @app.on_event("startup")
@@ -505,7 +520,7 @@ _DASHBOARD_HTML = """<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>AI Service Monitor</title>
+<title>Local-EZAI Admin Center · Health</title>
 <style>
   :root {
     --bg:    #0f1117;
@@ -526,6 +541,10 @@ _DASHBOARD_HTML = """<!doctype html>
            padding: 16px 24px; display: flex; align-items: center; gap: 16px; }
   header h1 { font-size: 18px; font-weight: 600; }
   header .subtitle { color: var(--muted); font-size: 13px; }
+  nav.nav { display: flex; gap: 4px; margin-left: auto; }
+  nav.nav a { color: var(--muted); text-decoration: none; padding: 6px 12px; border-radius: 6px;
+              font-size: 13px; font-weight: 600; }
+  nav.nav a.active, nav.nav a:hover { background: var(--bg); color: var(--text); }
   .conn-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--yellow);
               flex-shrink: 0; transition: background .3s; }
   .conn-dot.live { background: var(--green); }
@@ -589,9 +608,14 @@ _DASHBOARD_HTML = """<!doctype html>
 <header>
   <div class="conn-dot" id="conn-dot"></div>
   <div>
-    <h1>AI Service Monitor</h1>
+    <h1>Local-EZAI Admin Center</h1>
     <div class="subtitle" id="subtitle">Connecting…</div>
   </div>
+  <nav class="nav">
+    <a href="/overview">Overview</a>
+    <a href="/runs">Runs</a>
+    <a href="/" class="active">Health &amp; Knowledge</a>
+  </nav>
 </header>
 
 <div class="summary" id="summary"></div>
