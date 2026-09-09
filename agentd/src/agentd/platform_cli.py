@@ -8,16 +8,28 @@ docs/CLI_AND_WEBUI_STRATEGY.md §5, docs/MODEL_LIFECYCLE_MANAGEMENT.md §2)::
     local-ezai status
     local-ezai up|down     [--profile P] [--rendered]
 
-**Direct mode** (the only mode until the PR-8 control plane): the verbs act
-in-process on the platform's declarative state — Registry v2 + generations,
-runtime descriptors, catalog, governance queue — through the PR-3/4/5
-modules. Nothing here knows a runtime or a model name; the platform is
-found through ``platform.config_dir`` (config / ``AGENTD_PLATFORM__CONFIG_DIR``)
-or by walking up from the project. The repo-work verbs (run/plan/…) are
-untouched and keep working with the stack down.
+Two transports, one UX (PR-11, CLI_AND_WEBUI_STRATEGY §2):
+
+- **Connected mode** — the ``ezaid`` control plane answers its liveness
+  probe: the management verbs go through the API (``control/client.py``),
+  so the audit trail, the queue and the idempotency keys are shared with
+  the Admin Center and the tool server. Chosen automatically; forced with
+  ``--transport connected`` (fails fast when the daemon is unreachable).
+- **Direct mode** — no daemon: the verbs act in-process on the platform's
+  declarative state — Registry v2 + generations, runtime descriptors,
+  catalog, governance queue — through the PR-3/4/5 modules. Nothing here
+  knows a runtime or a model name; the platform is found through
+  ``platform.config_dir`` (config / ``AGENTD_PLATFORM__CONFIG_DIR``) or by
+  walking up from the project.
+
+Both modes format the SAME operation result (PR-9): the direct operation's
+mapping is the API's response body. ``bootstrap``, ``up`` and ``down`` act
+on the host (compose, ``.env``) and are always direct; the repo-work verbs
+(run/plan/…) are untouched and keep working with the stack down.
 
 Seams (module attributes, replaceable in tests): ``build_validator``,
-``engine_http``, ``default_runner``, ``http_probe``.
+``engine_http``, ``default_runner``, ``http_probe``; the connected transport's
+``control.client.client_factory``.
 """
 
 from __future__ import annotations
@@ -26,7 +38,7 @@ import argparse
 import json
 import os
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -38,8 +50,17 @@ from agentd.activation import ComposeReloader, EngineHealth, Platform
 from agentd.capability import PROFILE_PRESETS, CapabilityVector, detect_vector
 from agentd.catalog import Catalog, load_catalog, recommend
 from agentd.config import AgentdConfig
+from agentd.control import (
+    CLI_CLIENT_NAME,
+    TRANSPORT_ENV,
+    TRANSPORTS,
+    URL_ENV,
+)
 from agentd.control import DEFAULT_PORT as CONTROL_PORT
 from agentd.control import PORT_ENV as CONTROL_PORT_ENV
+from agentd.control import TOKEN_ENV as CONTROL_TOKEN_ENV
+from agentd.control import client as control_client
+from agentd.control.client import ConnectedOps, ControlPlaneError
 from agentd.governance import ChangeRequest, GovernanceQueue
 from agentd.lifecycle import (
     EngineHTTP,
@@ -71,13 +92,16 @@ from agentd.runtime_descriptor import RuntimeDescriptor, load_descriptors
 log = get_logger("platform-cli")
 
 PLATFORM_COMMANDS = ("model", "governance", "project", "status", "up", "down", "bootstrap")
+#: Verbs that act on THIS host (compose files, .env) — never sent to a daemon.
+HOST_ONLY_COMMANDS = ("bootstrap", "up", "down")
 PROJECTS_FILENAME = "projects.yaml"
 DEFAULT_GROUPS = ("reasoning", "coding", "chat")
 ROUTER_PORT = 4000
 BASE_COMPOSE = "docker-compose.yml"
 
 
-__all__ = ["PlatformContext", "PlatformError", "build_context", "dispatch_platform"]
+__all__ = ["ConnectedContext", "PlatformContext", "PlatformError", "build_context",
+           "dispatch_platform"]
 
 
 # ── context ──────────────────────────────────────────────────────────────────
@@ -114,6 +138,37 @@ class PlatformContext:
         return RegistryV2(providers=sorted(self.descriptors),
                           groups={group: [] for group in DEFAULT_GROUPS})
 
+    @property
+    def ops(self) -> DirectOps:
+        return DirectOps(self)
+
+
+class DirectOps:
+    """The operations below, bound to a platform context — the in-process
+    twin of ``ConnectedOps`` (same method names, same results)."""
+
+    def __init__(self, ctx: PlatformContext) -> None:
+        self._ctx = ctx
+
+    def __getattr__(self, name: str) -> Callable[..., dict[str, Any]]:
+        operation = _DIRECT_OPERATIONS.get(name)
+        if operation is None:
+            raise AttributeError(name)
+        return lambda *args, **kwargs: operation(self._ctx, *args, **kwargs)
+
+
+@dataclass
+class ConnectedContext:
+    """What a verb needs when the daemon does the work: who acts, where."""
+
+    actor: str
+    url: str
+    ops: ConnectedOps
+
+
+def default_actor(actor: str | None = None) -> str:
+    return actor or os.environ.get("USER") or CLI_CLIENT_NAME
+
 
 def build_context(config: AgentdConfig, project: Path, actor: str | None = None) -> PlatformContext:
     config_dir = find_platform_config(config, project)
@@ -128,8 +183,7 @@ def build_context(config: AgentdConfig, project: Path, actor: str | None = None)
     return PlatformContext(
         config=config, config_dir=config_dir, root=config_dir.parent,
         descriptors=descriptors, catalog=load_catalog(config_dir), vector=vector,
-        platform=platform, queue=GovernanceQueue(config_dir),
-        actor=actor or os.environ.get("USER") or "cli")
+        platform=platform, queue=GovernanceQueue(config_dir), actor=default_actor(actor))
 
 
 # ── seams ────────────────────────────────────────────────────────────────────
@@ -431,12 +485,6 @@ def remove_project(ctx: PlatformContext, target: str) -> dict[str, Any]:
 # ── CLI verbs: format what the operations return ─────────────────────────────
 
 
-def _apply(ctx: PlatformContext, request_id: str, args: argparse.Namespace) -> int:
-    data = apply_request(ctx, request_id, reload=getattr(args, "reload", False))
-    _emit(args, data, [data["message"]])
-    return 0 if data["ok"] else 1
-
-
 def _report_proposal(args: argparse.Namespace, data: dict[str, Any]) -> int:
     req = ChangeRequest.model_validate(data["request"])
     lines = _request_lines(req)
@@ -453,9 +501,13 @@ def _report_proposal(args: argparse.Namespace, data: dict[str, Any]) -> int:
 # ── model verbs ──────────────────────────────────────────────────────────────
 
 
-def cmd_model_install(ctx: PlatformContext, args: argparse.Namespace) -> int:
-    data = install_model(ctx, args.ref, name=args.name, runtime=args.runtime, group=args.group,
-                         refetch=args.refetch)
+#: What a verb formatter needs: ``actor`` and ``ops`` — direct or connected.
+Surface = PlatformContext | ConnectedContext
+
+
+def cmd_model_install(ctx: Surface, args: argparse.Namespace) -> int:
+    data = ctx.ops.install_model(args.ref, name=args.name, runtime=args.runtime,
+                                 group=args.group, refetch=args.refetch)
     lines = [data["message"]]
     if data["error"]:
         lines.append(f"  error: {data['error']}")
@@ -465,8 +517,8 @@ def cmd_model_install(ctx: PlatformContext, args: argparse.Namespace) -> int:
     return 0 if data["ok"] else 1
 
 
-def cmd_model_benchmark(ctx: PlatformContext, args: argparse.Namespace) -> int:
-    data = benchmark_model(ctx, args.name, base_url=args.base_url)
+def cmd_model_benchmark(ctx: Surface, args: argparse.Namespace) -> int:
+    data = ctx.ops.benchmark_model(args.name, base_url=args.base_url)
     _emit(args, data,
           [data["message"],
            f"  state: {data['state']}"
@@ -475,36 +527,38 @@ def cmd_model_benchmark(ctx: PlatformContext, args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_model_activate(ctx: PlatformContext, args: argparse.Namespace) -> int:
-    return _report_proposal(args, activate_model(ctx, args.name, group=args.group, role=args.role,
-                                                 position=args.position, reload=args.reload))
+def cmd_model_activate(ctx: Surface, args: argparse.Namespace) -> int:
+    return _report_proposal(args, ctx.ops.activate_model(
+        args.name, group=args.group, role=args.role, position=args.position,
+        reload=args.reload))
 
 
-def cmd_model_upgrade(ctx: PlatformContext, args: argparse.Namespace) -> int:
-    return _report_proposal(args, upgrade_model(ctx, args.old, args.new, reload=args.reload))
+def cmd_model_upgrade(ctx: Surface, args: argparse.Namespace) -> int:
+    return _report_proposal(args, ctx.ops.upgrade_model(args.old, args.new, reload=args.reload))
 
 
-def cmd_model_rollback(ctx: PlatformContext, args: argparse.Namespace) -> int:
-    data = rollback_generation(ctx, to_generation=args.to_generation, reason=args.reason or "",
-                               reload=args.reload, notify=print)
+def cmd_model_rollback(ctx: Surface, args: argparse.Namespace) -> int:
+    data = ctx.ops.rollback_generation(to_generation=args.to_generation,
+                                       reason=args.reason or "", reload=args.reload,
+                                       notify=print)
     _emit(args, data, [data["message"]])
     return 0 if data["ok"] else 1
 
 
-def cmd_model_retire(ctx: PlatformContext, args: argparse.Namespace) -> int:
-    data = retire_model(ctx, args.name)
+def cmd_model_retire(ctx: Surface, args: argparse.Namespace) -> int:
+    data = ctx.ops.retire_model(args.name)
     _emit(args, data, [data["message"]])
     return 0
 
 
-def cmd_model_uninstall(ctx: PlatformContext, args: argparse.Namespace) -> int:
-    data = uninstall_model(ctx, args.name, force=args.force)
+def cmd_model_uninstall(ctx: Surface, args: argparse.Namespace) -> int:
+    data = ctx.ops.uninstall_model(args.name, force=args.force)
     _emit(args, data, [data["message"]])
     return 0
 
 
-def cmd_model_explain(ctx: PlatformContext, args: argparse.Namespace) -> int:
-    data = explain_role(ctx, args.role)
+def cmd_model_explain(ctx: Surface, args: argparse.Namespace) -> int:
+    data = ctx.ops.explain_role(args.role)
     source = data["source"]
     origin = ("pin " + ", ".join(source["pin"])) if source["pin"] else "group " + source["group"]
     lines = [f"role {args.role} — generation {data['generation']}",
@@ -524,8 +578,8 @@ def cmd_model_explain(ctx: PlatformContext, args: argparse.Namespace) -> int:
     return 0 if data["ok"] else 1
 
 
-def cmd_model_history(ctx: PlatformContext, args: argparse.Namespace) -> int:
-    data = generation_history(ctx, limit=args.limit)
+def cmd_model_history(ctx: Surface, args: argparse.Namespace) -> int:
+    data = ctx.ops.generation_history(limit=args.limit)
     lines: list[str] = []
     for entry in data["generations"]:
         lines.append(f"generation {entry['generation']}  {entry['saved_at']}  {entry['note']}")
@@ -534,21 +588,22 @@ def cmd_model_history(ctx: PlatformContext, args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_model_catalog(ctx: PlatformContext, args: argparse.Namespace) -> int:
+def cmd_model_catalog(ctx: Surface, args: argparse.Namespace) -> int:
     if args.group:
-        data = catalog_recommendations(ctx, args.group, runtime=args.runtime)
+        data = ctx.ops.catalog_recommendations(args.group, runtime=args.runtime)
         _emit(args, data,
               [f"catalog recommendations for group {args.group} on class "
                f"{data['class']} ({data['accelerator']})",
                *(f"  {c['explain']}" for c in data["candidates"])]
               or [f"(no catalog entry lists group {args.group})"])
         return 0
-    data = catalog_listing(ctx)
+    data = ctx.ops.catalog_listing()
     lines = []
-    for catalog_id, entry in sorted(ctx.catalog.entries.items()):
-        variants = ", ".join(f"{fmt} {v.size_gb:.1f} GB" for fmt, v in entry.variants.items())
-        lines.append(f"  {catalog_id:32} {', '.join(entry.groups):22} {entry.license:14} "
-                     f"{variants}")
+    for catalog_id, entry in sorted(data["entries"].items()):
+        variants = ", ".join(f"{fmt} {v['size_gb']:.1f} GB"
+                             for fmt, v in entry["variants"].items())
+        lines.append(f"  {catalog_id:32} {', '.join(entry['groups']):22} "
+                     f"{entry['license']:14} {variants}")
     _emit(args, data, [f"catalog: {data['count']} entr(y/ies) ({data['sources']})", *lines])
     return 0
 
@@ -556,8 +611,8 @@ def cmd_model_catalog(ctx: PlatformContext, args: argparse.Namespace) -> int:
 # ── governance verbs ─────────────────────────────────────────────────────────
 
 
-def cmd_governance_list(ctx: PlatformContext, args: argparse.Namespace) -> int:
-    data = list_requests(ctx, status=args.status)
+def cmd_governance_list(ctx: Surface, args: argparse.Namespace) -> int:
+    data = ctx.ops.list_requests(status=args.status)
     requests = [ChangeRequest.model_validate(r) for r in data["requests"]]
     _emit(args, data,
           [f"  {r.id}  {r.status:10} {r.kind:11} gen {r.base_generation}  {r.title}"
@@ -565,21 +620,21 @@ def cmd_governance_list(ctx: PlatformContext, args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_governance_show(ctx: PlatformContext, args: argparse.Namespace) -> int:
-    data = show_request(ctx, args.id)
+def cmd_governance_show(ctx: Surface, args: argparse.Namespace) -> int:
+    data = ctx.ops.show_request(args.id)
     _emit(args, data, _request_lines(ChangeRequest.model_validate(data["request"])))
     return 0
 
 
-def cmd_governance_approve(ctx: PlatformContext, args: argparse.Namespace) -> int:
-    data = approve_request(ctx, args.id, reason=args.reason or "", reload=args.reload)
+def cmd_governance_approve(ctx: Surface, args: argparse.Namespace) -> int:
+    data = ctx.ops.approve_request(args.id, reason=args.reason or "", reload=args.reload)
     applied = data["applied"]
     _emit(args, data, [f"approved {args.id} by {ctx.actor} — applying", applied["message"]])
     return 0 if applied["ok"] else 1
 
 
-def cmd_governance_reject(ctx: PlatformContext, args: argparse.Namespace) -> int:
-    data = reject_request(ctx, args.id, reason=args.reason or "")
+def cmd_governance_reject(ctx: Surface, args: argparse.Namespace) -> int:
+    data = ctx.ops.reject_request(args.id, reason=args.reason or "")
     req = ChangeRequest.model_validate(data["request"])
     _emit(args, data,
           [f"rejected {req.id} by {ctx.actor}: {req.decision.reason if req.decision else ''}"])
@@ -589,22 +644,22 @@ def cmd_governance_reject(ctx: PlatformContext, args: argparse.Namespace) -> int
 # ── project verbs (chat-ops allowlist, consumed by the P3 tool server) ───────
 
 
-def cmd_project_add(ctx: PlatformContext, args: argparse.Namespace) -> int:
-    data = add_project(ctx, args.path, name=args.name)
+def cmd_project_add(ctx: Surface, args: argparse.Namespace) -> int:
+    data = ctx.ops.add_project(args.path, name=args.name)
     _emit(args, data, [data["message"]])
     return 0
 
 
-def cmd_project_list(ctx: PlatformContext, args: argparse.Namespace) -> int:
-    data = list_projects(ctx)
+def cmd_project_list(ctx: Surface, args: argparse.Namespace) -> int:
+    data = ctx.ops.list_projects()
     _emit(args, data,
           [f"  {p['name']:24} {p['path']}" for p in data["projects"]]
           or ["(no projects registered — local-ezai project add <path>)"])
     return 0
 
 
-def cmd_project_remove(ctx: PlatformContext, args: argparse.Namespace) -> int:
-    data = remove_project(ctx, args.target)
+def cmd_project_remove(ctx: Surface, args: argparse.Namespace) -> int:
+    data = ctx.ops.remove_project(args.target)
     _emit(args, data, [data["message"]])
     return 0
 
@@ -633,6 +688,7 @@ def platform_snapshot(ctx: PlatformContext) -> dict[str, Any]:
                               if e.state == "active"})
     return {"platform_root": str(ctx.root), "config_dir": str(ctx.config_dir),
             "capability_class": ctx.platform.klass, "accelerator": ctx.platform.accel,
+            "system_memory_gb": ctx.vector.system_memory_gb, "cpu_cores": ctx.vector.cpu_cores,
             "generation": registry.generation if registry else None,
             "note": registry.note if registry else None,
             "rendered_generation": _manifest_generation(ctx),
@@ -640,22 +696,48 @@ def platform_snapshot(ctx: PlatformContext) -> dict[str, Any]:
             "models": models, "pending_approvals": len(pending)}
 
 
-def cmd_status(ctx: PlatformContext, args: argparse.Namespace) -> int:
+def status_snapshot(ctx: PlatformContext) -> dict[str, Any]:
+    """``local-ezai status`` in direct mode: the snapshot + this host's view
+    of the stack health (the connected twin asks the daemon)."""
     data = platform_snapshot(ctx)
     engine_port = os.environ.get("LLM_PORT", str(ENGINE_PORT))
     router_port = os.environ.get("LITELLM_PORT", str(ROUTER_PORT))
     control_port = os.environ.get(CONTROL_PORT_ENV, str(CONTROL_PORT))
-    health = {
+    data["health"] = {
         "engine": http_probe(f"http://localhost:{engine_port}/health") == 200,
         "router": http_probe(f"http://localhost:{router_port}/health/liveliness") == 200,
         "control": http_probe(f"http://localhost:{control_port}/health") == 200,
     }
-    data["health"] = health
-    models, pending = data["models"], data["pending_approvals"]
+    data["transport"] = "direct (in-process)"
+    return data
+
+
+#: name → direct operation; ``DirectOps`` binds them to a context. Every name
+#: has a ``ConnectedOps`` method of the same signature (control/client.py).
+_DIRECT_OPERATIONS: dict[str, Callable[..., dict[str, Any]]] = {
+    "status_snapshot": status_snapshot,
+    "install_model": install_model, "benchmark_model": benchmark_model,
+    "activate_model": activate_model, "upgrade_model": upgrade_model,
+    "rollback_generation": rollback_generation, "retire_model": retire_model,
+    "uninstall_model": uninstall_model, "explain_role": explain_role,
+    "generation_history": generation_history, "catalog_listing": catalog_listing,
+    "catalog_recommendations": catalog_recommendations,
+    "list_requests": list_requests, "show_request": show_request,
+    "approve_request": approve_request, "reject_request": reject_request,
+    "list_projects": list_projects, "add_project": add_project,
+    "remove_project": remove_project,
+}
+
+
+def cmd_status(ctx: PlatformContext | ConnectedContext, args: argparse.Namespace) -> int:
+    data = ctx.ops.status_snapshot()
+    health, models, pending = data["health"], data["models"], data["pending_approvals"]
     bootstrapped = data["generation"] is not None
-    lines = [f"platform:   {ctx.root}",
-             f"hardware:   class {ctx.platform.klass} · accelerator {ctx.platform.accel} · "
-             f"{ctx.vector.system_memory_gb:.0f} GB RAM · {ctx.vector.cpu_cores} cores",
+    lines = [f"platform:   {data['platform_root']}",
+             f"transport:  {data['transport']}",
+             f"hardware:   class {data['capability_class']} · accelerator "
+             f"{data['accelerator']} · {data['system_memory_gb']:.0f} GB RAM · "
+             f"{data['cpu_cores']} cores",
              f"generation: {data['generation'] if bootstrapped else '(none — not bootstrapped)'}"
              + (f" — {data['note']}" if bootstrapped and data["note"] else "")
              + (f" · rendered {data['rendered_generation']}"
@@ -770,6 +852,10 @@ def add_platform_parsers(sub: argparse._SubParsersAction, common: argparse.Argum
     def leaf(parent: argparse._SubParsersAction, name: str, help_: str) -> argparse.ArgumentParser:
         parser = parent.add_parser(name, help=help_, parents=[common])
         parser.add_argument("--json", action="store_true", dest="as_json")
+        parser.add_argument("--transport", choices=TRANSPORTS, default=None,
+                            help=f"auto (default; ${TRANSPORT_ENV}): use the control plane "
+                                 f"when it answers at ${URL_ENV} · connected: require it · "
+                                 "direct: act in-process")
         return parser
 
     model = sub.add_parser("model", help="Model lifecycle: install · benchmark · activate · "
@@ -878,12 +964,56 @@ HANDLERS: dict[tuple[str, str | None], Callable[[PlatformContext, argparse.Names
 }
 
 
+def control_url(config: AgentdConfig) -> str:
+    return (config.control.url or f"http://localhost:{config.control.port}").rstrip("/")
+
+
+def select_transport(command: str, args: argparse.Namespace, config: AgentdConfig,
+                     environ: Mapping[str, str] | None = None) -> str:
+    """``connected`` or ``direct`` (PR-11). Host-only verbs are always direct;
+    otherwise ``--transport`` > ``$EZAI_TRANSPORT`` > ``auto``. Auto probes
+    the daemon's liveness once; a requested ``connected`` that gets no
+    answer, or a reachable daemon without a configured token, fails fast —
+    never a silent fallback that would split the audit trail."""
+    env = os.environ if environ is None else environ
+    if command in HOST_ONLY_COMMANDS:
+        return "direct"
+    requested = getattr(args, "transport", None) or env.get(TRANSPORT_ENV) or "auto"
+    if requested not in TRANSPORTS:
+        raise PlatformError(f"unknown transport '{requested}' — one of: {', '.join(TRANSPORTS)}")
+    if requested == "direct":
+        return "direct"
+    url = control_url(config)
+    reachable = control_client.probe_control_plane(url)
+    if requested == "connected" and not reachable:
+        raise PlatformError(f"control plane unreachable at {url} — start it (make control-up), "
+                            f"point {URL_ENV} at it, or use --transport direct")
+    if reachable and not config.control.token:
+        raise PlatformError(f"control plane reachable at {url} but no service token is "
+                            f"configured — set {CONTROL_TOKEN_ENV} (or control.token), or use "
+                            "--transport direct")
+    return "connected" if reachable else "direct"
+
+
 def dispatch_platform(command: str, args: argparse.Namespace, config: AgentdConfig,
                       project: Path) -> int:
     try:
-        ctx = build_context(config, project, actor=getattr(args, "by", None))
+        actor = default_actor(getattr(args, "by", None))
+        if select_transport(command, args, config) == "connected":
+            url = control_url(config)
+            ctx: PlatformContext | ConnectedContext = ConnectedContext(
+                actor=actor, url=url,
+                ops=control_client.connect(url, actor=actor, token=config.control.token))
+        else:
+            ctx = build_context(config, project, actor=actor)
         handler = HANDLERS[(command, getattr(args, "verb", None))]
         return handler(ctx, args)
+    except ControlPlaneError as exc:
+        # Connected mode: the daemon's envelope, printed verbatim (PR-11).
+        if getattr(args, "as_json", False):
+            print(json.dumps({"error": exc.as_dict()}, indent=2))
+        log.error("%s", exc.message)
+        return exc.exit_code
     except platform_exceptions() as exc:
         # The shared error object (PR-9): the same code/message/fix the
         # control plane returns; `--json` prints it, text mode logs it.

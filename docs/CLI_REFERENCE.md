@@ -49,6 +49,18 @@ generations, runtime descriptors, catalog, governance queue under
 or by running inside the local-ezai checkout. Every mutation persists a
 generation and an audit record; `--json` is available everywhere.
 
+**Transport (PR-11).** When the `ezaid` control plane answers its liveness
+probe (`EZAI_CONTROL_URL`, default `http://localhost:8010`), these verbs run
+**through it** — with `EZAI_CONTROL_TOKEN`, your identity forwarded
+(`X-EZAI-User`, `X-EZAI-Client: cli`), an idempotency key per mutation —
+so the audit trail and the queue are shared with the Admin Center and the
+tool server; otherwise they run in-process. Same commands, same text, same
+JSON, same errors. `--transport auto|connected|direct` (or `EZAI_TRANSPORT`)
+forces a mode: `connected` fails fast (exit 2) when the daemon is
+unreachable or no token is configured; `direct` never contacts it.
+`status` prints which transport answered. `bootstrap`, `up` and `down`
+always act on this host.
+
 | Command | What it does | Approval? |
 |---|---|---|
 | `model install <ref> [--name N] [--runtime R] [--group G] [--refetch]` | `<ref>` = `hf:<org/repo>` · `gguf:<url \| hf://org/repo/file.gguf \| path>` · catalog id · `auto` (needs `--group`); fetch → side-load validation → `installed` / `failed` | no (audited) |

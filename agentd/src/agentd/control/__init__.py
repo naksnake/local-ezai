@@ -27,6 +27,15 @@ DEFAULT_PORT = 8010
 #: the ``control:`` config section take precedence.
 TOKEN_ENV = "EZAI_CONTROL_TOKEN"
 PORT_ENV = "EZAI_CONTROL_PORT"
+#: CLI connected mode (PR-11): where the CLI finds the daemon (default
+#: ``http://localhost:<port>``) and how it chooses the transport
+#: (``auto`` | ``connected`` | ``direct``; ``--transport`` wins).
+URL_ENV = "EZAI_CONTROL_URL"
+TRANSPORT_ENV = "EZAI_TRANSPORT"
+TRANSPORTS = ("auto", "connected", "direct")
+CLI_CLIENT_NAME = "cli"
+#: Liveness probe budget of the auto-detect (one request per invocation).
+PROBE_TIMEOUT_S = 1.0
 
 #: Forwarded identity (WEBUI_ADMIN_CENTER §4, OPENWEBUI_INTEGRATION §5.5):
 #: the calling surface authenticates with the service token and forwards

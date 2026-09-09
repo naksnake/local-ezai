@@ -56,6 +56,15 @@ object `local-ezai … --json` prints. The full verb ↔ endpoint table:
 to start. `local-ezai status` shows `control up|down`. Port:
 `EZAI_CONTROL_PORT` (default 8010).
 
+**CLI connected mode (PR-11):** with the daemon up, `local-ezai model|
+governance|project|status` go through it automatically (probe of
+`EZAI_CONTROL_URL`, default `http://localhost:8010`) using
+`EZAI_CONTROL_TOKEN` and your identity — one audit trail for CLI, Admin
+Center and tool server. `local-ezai status` shows `transport: connected …`
+or `direct (in-process)`. Force a mode with `--transport connected|direct`
+(or `EZAI_TRANSPORT`); a CLI on another machine sets `EZAI_CONTROL_URL` +
+`EZAI_CONTROL_TOKEN`. Outputs and errors are identical in both modes.
+
 **Runs through the control plane** execute the same pipelines as the CLI,
 but only on projects registered with `local-ezai project add`, never with
 push, and within `control.max_concurrent_runs` / `max_queued_runs`. The

@@ -171,8 +171,18 @@ on restart, cooperative cancellation through the model client, limits
 `control.max_concurrent_runs`/`max_queued_runs`, one in-place job per
 project, registered projects only and never a push; contract
 `1.0.0-draft.10`.
-**PR-11 · CLI connected mode** — M: transport auto-detect, identical UX
-and outputs both modes; management verbs fail fast offline; parity smoke.
+**PR-11 · CLI connected mode** — M — ✅ **implemented**
+([prs/PR-11-cli-connected-mode.md](prs/PR-11-cli-connected-mode.md); 17
+tests incl. the parity smoke and a real-socket run, suite 554 green,
+goldens intact)
+Scope: transport auto-detect, identical UX and outputs both modes;
+management verbs fail fast offline; parity smoke.
+As built: `control/client.py::ConnectedOps` mirrors the direct operations
+(verbs format `ctx.ops.*` on either context — same text/JSON/errors),
+`--transport auto|connected|direct` / `EZAI_TRANSPORT` / `EZAI_CONTROL_URL`,
+a requested connected transport or a token-less reachable daemon fails fast
+(exit 2), `bootstrap`/`up`/`down` stay host-only; `status` shows its
+transport.
 **PR-12 · Phase close** — S: kill-the-daemon test, two-concurrent-runs
 test, spec freeze. **ADR-028 → Accepted.**
 

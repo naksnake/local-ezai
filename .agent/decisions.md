@@ -926,3 +926,22 @@ the project on the daemon's filesystem (host `ezaid`, or the projects
 directory mounted at the same path) — the shipped overlay mounts only
 `config/`; PR-12/P3 decide the default. Deferred: connected mode (PR-11),
 freeze + kill-the-daemon + two-concurrent-runs tests (PR-12).
+**PR-11 slice (2026-09-09) — CLI connected mode:** the management verbs
+(`model` / `governance` / `project` / `status`) probe the daemon's liveness
+once (`control.url` / `EZAI_CONTROL_URL`, default `http://localhost:<port>`,
+1 s) and, when it answers, run through the API (`control/client.py::
+ConnectedOps` — the PR-9 verb ↔ endpoint mapping, token + forwarded
+identity `X-EZAI-User`/`X-EZAI-Client: cli` + a fresh `Idempotency-Key` per
+mutation); otherwise in-process as P1 built them. The verb formatters call
+`ctx.ops.<operation>()` on a `PlatformContext` (`DirectOps`) or a
+`ConnectedContext` — **same text, same JSON, same error object and exit
+codes** (parity tested for seven verbs, plus a real uvicorn socket).
+`--transport auto|connected|direct` > `$EZAI_TRANSPORT` > `auto`; a
+requested `connected` with no daemon, or a reachable daemon with no
+configured token, fails fast (exit 2, fix named) — never a silent fallback
+that would fork the audit; `bootstrap` / `up` / `down` are host-only and
+always direct. `status` shows its `transport:`. Decision recorded: direct
+mode keeps P1's in-process management (the strategy's "fail fast" applies
+to a requested connected transport and to the no-platform case) — both
+modes write one declarative store. Deferred: freeze + kill-the-daemon +
+two-concurrent-runs tests (PR-12), the release-gate parity harness (PR-24).

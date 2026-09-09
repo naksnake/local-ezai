@@ -236,6 +236,15 @@ through `local-ezai model …` + the governance queue. Modules:
   recovered on restart; limits (`control.max_concurrent_runs`,
   `max_queued_runs`; one in-place job per project); registered projects
   only and never a push (the chat-ops ceiling).
+- **CLI connected mode** (`control/client.py`, `platform_cli` transport
+  selection, PR-11): the management verbs probe the daemon's liveness once
+  and, when it answers, run through the API (token + forwarded identity +
+  idempotency key) — `ctx.ops` is `DirectOps` in-process or `ConnectedOps`
+  over HTTP, the formatters are shared, so text/JSON/errors are identical
+  (parity tested, incl. a real socket); `--transport` / `EZAI_TRANSPORT` /
+  `EZAI_CONTROL_URL`; a requested connected transport with no daemon (or a
+  daemon without a configured token) fails fast; `bootstrap`/`up`/`down`
+  stay host-only.
 
 ## Target additions (control/execution/knowledge planes)
 

@@ -65,10 +65,14 @@ CLI/API parity, idempotency keys, one error vocabulary for CLI and API,
 audited mutations) and PR-10 (run endpoints: async run registry over the
 existing pipelines — start/status/report/journal/cancel for
 run/fix/sprint/evolve/plan, cooperative cancellation, concurrency limits,
-registered projects only, never a push) implemented. All ten await human
-merge on `claude/next-ready-pr-bnq7r3`. Next ready: **PR-11** (CLI
-connected mode: transport auto-detect, identical UX both modes, management
-verbs fail fast offline, parity smoke).
+registered projects only, never a push) and PR-11 (CLI connected mode:
+liveness auto-detect, the management verbs through the API with token +
+forwarded identity + idempotency keys, same text/JSON/errors in both
+transports, fail-fast on a requested-but-unreachable daemon, host-only
+`bootstrap`/`up`/`down`) implemented. All eleven await human merge on
+`claude/next-ready-pr-bnq7r3`. Next ready: **PR-12** (P2 phase close:
+kill-the-daemon test, two-concurrent-runs test, spec freeze → ADR-028
+Accepted).
 
 **Product review (ADR-026, 2026-09-01):** agnosticism audit passed with
 remediations — roles/groups become the only stable names (role aliases

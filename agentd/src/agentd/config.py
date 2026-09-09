@@ -29,6 +29,7 @@ from agentd.control import DEFAULT_HOST as CONTROL_DEFAULT_HOST
 from agentd.control import DEFAULT_PORT as CONTROL_DEFAULT_PORT
 from agentd.control import PORT_ENV as CONTROL_PORT_ENV
 from agentd.control import TOKEN_ENV as CONTROL_TOKEN_ENV
+from agentd.control import URL_ENV as CONTROL_URL_ENV
 
 ENV_PREFIX = "AGENTD_"
 REPO_CONFIG_FILENAME = ".agentd.yaml"
@@ -284,6 +285,9 @@ class ControlConfig(BaseModel):
     host: str = CONTROL_DEFAULT_HOST
     port: int = CONTROL_DEFAULT_PORT
     token: str | None = None
+    #: Client side (PR-11): where the CLI finds the daemon; default
+    #: ``http://localhost:<port>``. Seeded by ``EZAI_CONTROL_URL``.
+    url: str | None = None
     health_targets: dict[str, str] = Field(default_factory=dict)
     #: Run registry (PR-10): worker threads executing pipelines, and how many
     #: submissions may wait for one; beyond that a start is refused (429).
@@ -378,6 +382,8 @@ def load_config(
         config.control.token = environ[CONTROL_TOKEN_ENV]
     if "port" not in control_section and environ.get(CONTROL_PORT_ENV, "").strip().isdigit():
         config.control.port = int(environ[CONTROL_PORT_ENV].strip())
+    if not config.control.url and environ.get(CONTROL_URL_ENV, "").strip():
+        config.control.url = environ[CONTROL_URL_ENV].strip()
     return config
 
 

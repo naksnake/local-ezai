@@ -61,6 +61,22 @@ dev container). Therefore the CLI has two modes, chosen automatically:
 Same commands, same outputs; only the transport differs. This preserves
 every existing behavior and test.
 
+> **As built (PR-11, ADR-028):** the management verbs (`model`,
+> `governance`, `project`, `status`) probe `ezaid`'s liveness once
+> (`EZAI_CONTROL_URL`, default `http://localhost:8010`, 1 s) and go through
+> the API when it answers — token, forwarded identity (`X-EZAI-User` = the
+> CLI's actor, `X-EZAI-Client: cli`), a fresh `Idempotency-Key` per
+> mutation; otherwise they run in-process (P1). Text, JSON and error
+> objects are identical in both transports (tested verb by verb); `status`
+> shows its `transport:`. `--transport auto|connected|direct` (then
+> `$EZAI_TRANSPORT`) overrides; `--transport connected` without a daemon,
+> or a reachable daemon without a configured token, **fails fast** (exit
+> 2, fix named) instead of silently forking the audit. As-built nuance to
+> the paragraph above: with a platform on disk and no daemon, management
+> verbs work in-process (P1's exit criteria, `make bootstrap`); the "fail
+> fast" applies to a requested connected transport and to the no-platform
+> case. `bootstrap`, `up`, `down` are host-only and always direct.
+
 ## 3. Parity matrix (V1 commitments)
 
 | Operation | CLI | OpenWebUI chat | Admin Center |
