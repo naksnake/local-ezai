@@ -123,7 +123,7 @@ section of `.env.example`.
 | **Embed Server** — embedding API | http://localhost:8001 | none |
 | **Qdrant** — vector database | http://localhost:6333 | none |
 | **SearXNG** — private web search | http://localhost:8092 | none |
-| **mcpo** — MCP tools proxy | http://localhost:8200 | `MCP_API_KEY` from `.env` |
+| **mcpo** — MCP tools proxy (filesystem, memory, fetch, knowledge base, `/swe` SWE tools) | http://localhost:8200 | `MCP_API_KEY` from `.env` |
 | **ezaid** — platform control plane (optional: `make control-up`) | http://localhost:8010 | `EZAI_CONTROL_TOKEN` from `.env` (bearer; `/health` open) |
 
 ---

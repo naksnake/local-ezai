@@ -197,9 +197,17 @@ not start it in V1). P3 / P4 / P5 are ready in parallel.
 
 ### Phase P3 — OpenWebUI integration (ADR-029)
 
-**PR-13 · swe-server MCP tool server** — L: tool catalog of
-OPENWEBUI_INTEGRATION §2 (start/inspect only), project allowlist, mcpo
-registration, markdown report rendering.
+**PR-13 · swe-server MCP tool server** — L — ✅ **implemented**
+([prs/PR-13-swe-tool-server.md](prs/PR-13-swe-tool-server.md); 7 tests
+incl. the plan → confirm → run → report loop and the catalog's negative
+check, suite 565 green, goldens intact; **ADR-029 → Proposed**)
+Scope: tool catalog of OPENWEBUI_INTEGRATION §2 (start/inspect only),
+project allowlist, mcpo registration, markdown report rendering.
+As built: vendored `mcp-servers/swe-server/` (FastMCP, thin over the 1.0.0
+contract, no agentd import), twelve tools, refusals rendered as answers,
+mcpo `swe` entry + image copy + compose env (`EZAI_CONTROL_URL_MCPO`,
+`host.docker.internal`); `swe_test`/`swe_review`/`model_benchmark` deferred
+to a 1.1 contract slice; OpenWebUI connection left to PR-14.
 **PR-14 · Orchestrator persona** — S: `orchestrator` role entry +
 LiteLLM alias (data), system preset, first-run pre-registration.
 **PR-15 · Boundary hardening** — M: negative tests proving governance

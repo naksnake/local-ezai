@@ -66,6 +66,16 @@ or `direct (in-process)`. Force a mode with `--transport connected|direct`
 (or `EZAI_TRANSPORT`); a CLI on another machine sets `EZAI_CONTROL_URL` +
 `EZAI_CONTROL_TOKEN`. Outputs and errors are identical in both modes.
 
+**SWE tools in chat (PR-13):** mcpo also serves the SWE Tool Server at
+`http://<host>:8200/swe` (start + inspect only: plan, run, sprint, fix,
+evolve, status, report, journal, models, governance queue — no approvals).
+It talks to the control plane at `EZAI_CONTROL_URL_MCPO` (default
+`http://ezaid:8010` = the container overlay; set
+`http://host.docker.internal:8010` when the daemon runs on the host with
+`make control-serve`). Until the first-run pre-registration lands (PR-14),
+add it in OpenWebUI as a tool server: URL `http://<LAN_HOST>:8200/swe`,
+bearer `MCP_API_KEY`. Runs it starts are audited as actor `swe-server`.
+
 **Runs through the control plane** execute the same pipelines as the CLI,
 but only on projects registered with `local-ezai project add`, never with
 push, and within `control.max_concurrent_runs` / `max_queued_runs`. The

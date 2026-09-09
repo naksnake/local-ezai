@@ -25,6 +25,11 @@ COPY mcp-servers/qdrant-rag/ /mcp-servers/qdrant-rag/
 WORKDIR /mcp-servers/qdrant-rag
 RUN npm install --omit=dev
 
+# The Local-EZAI SWE Tool Server (V1 P3, PR-13): a thin MCP adapter over the
+# ezaid control plane — Python, needs only the mcp + httpx already in the
+# venv above (no agentd install). Configured in config/mcpo-config.json.
+COPY mcp-servers/swe-server/ /mcp-servers/swe-server/
+
 WORKDIR /app
 EXPOSE 8200
 

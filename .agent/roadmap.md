@@ -72,10 +72,14 @@ transports, fail-fast on a requested-but-unreachable daemon, host-only
 `bootstrap`/`up`/`down`) and PR-12 (phase close: real-process
 kill-the-daemon test, two concurrent runs through the API, contract frozen
 at 1.0.0, deployment shapes `make control-up` / `make control-serve`)
-implemented. All twelve await human merge on `claude/next-ready-pr-bnq7r3`.
-P3 / P4 / P5 run in parallel from here; next ready by plan order: **PR-13**
-(`swe-server` MCP tool server, phase P3, ADR-029 Proposed), with PR-16
-(Admin Center, P4) and PR-21 (`install.sh`, P5) also unblocked.
+implemented. 🟡 **P3 in progress (ADR-029 Proposed)** — PR-13
+(`swe-server`: vendored MCP tool server behind mcpo, start + inspect only,
+thin over the frozen contract, mcpo registration) implemented. All thirteen
+await human merge on `claude/next-ready-pr-bnq7r3`. P3 / P4 / P5 run in
+parallel; next ready by plan order: **PR-14** (Orchestrator persona:
+`orchestrator` role entry + LiteLLM alias, system preset, first-run
+pre-registration of the tool server), with PR-16 (Admin Center, P4) and
+PR-21 (`install.sh`, P5) also unblocked.
 
 **Product review (ADR-026, 2026-09-01):** agnosticism audit passed with
 remediations — roles/groups become the only stable names (role aliases

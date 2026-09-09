@@ -39,7 +39,8 @@ openwebui:3000 · litellm:4000 (auto-RAG hook `config/litellm_custom_callbacks.p
 routing rendered per model generation into `config/rendered/`)
 · vllm:8000 (engine slot, network alias `engine`; materialization rendered
 per generation) · embed-server:8001 · qdrant:6333 · searxng:8092
-· mcpo:8200 (filesystem/memory/fetch/qdrant-rag) · monitor:8888 (RBAC)
+· mcpo:8200 (filesystem/memory/fetch/qdrant-rag + `swe` — the SWE tool
+server, PR-13) · monitor:8888 (RBAC)
 · **ezaid:8010** (V1 control plane, opt-in overlay
 `docker-compose.control.yml` — `make control-up`; bearer
 `EZAI_CONTROL_TOKEN`, contract `docs/api/ezaid-openapi.json`).
@@ -251,6 +252,15 @@ through `local-ezai model …` + the governance queue. Modules:
   (29 operations, inventory-pinned); deployment shapes: `make control-up`
   (container overlay, model/governance over `config/`) and
   `make control-serve` (host daemon, SWE runs).
+- **SWE Tool Server** (`mcp-servers/swe-server/`, PR-13, ADR-029 Proposed):
+  a vendored FastMCP server behind mcpo (`:8200/swe`), a thin adapter over
+  the 1.0.0 contract (no agentd import) — `swe_projects`, `swe_plan` (A0,
+  waits), `swe_run`/`swe_sprint`/`swe_fix`/`swe_evolve` (run id at once),
+  `swe_status`, `swe_report` (markdown per kind), `swe_journal`,
+  `model_list`, `model_explain`, `governance_queue` (read-only); no
+  approve/activate/rollback/cancel tools by construction (negative test);
+  refusals rendered as answers; registered in `config/mcpo-config.json`,
+  reaching the daemon at `EZAI_CONTROL_URL_MCPO`.
 
 ## Target additions (control/execution/knowledge planes)
 

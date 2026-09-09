@@ -110,6 +110,13 @@ context. This is the right failure mode for retrieval; it will be exactly the
 *wrong* default for action-taking tools (see GAP_ANALYSIS §5).
 
 ### 3.3 MCP tool plane (mcpo)
+
+> **V1 addition (PR-13):** mcpo also serves the vendored **SWE Tool Server**
+> (`mcp-servers/swe-server/`, `/swe`) — a thin MCP adapter over the `ezaid`
+> control plane: start plan/run/sprint/fix/evolve on registered projects and
+> inspect status, reports, journals, models and the governance queue. No
+> governance verbs exist as tools. Reaches the daemon at
+> `EZAI_CONTROL_URL_MCPO`.
 `config/mcpo-config.json` declares four MCP servers, proxied as REST by mcpo:
 
 | Tool | Implementation | Capability |

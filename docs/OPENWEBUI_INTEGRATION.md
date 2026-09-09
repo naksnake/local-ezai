@@ -49,6 +49,19 @@ The server is a **thin adapter over the Platform Control Plane (`ezaid`)**
 mutating governance actions require the authenticated Admin Center or CLI
 (§5). Chat can *show* the queue, never *decide* it.
 
+> **As built (PR-13, ADR-029 Proposed):** `mcp-servers/swe-server/`
+> (FastMCP, vendored into the mcpo image, served at `:8200/swe`) delivers
+> `swe_projects`, `swe_plan` (starts a `plan` job, waits for it, returns the
+> plan as markdown), `swe_run`, `swe_sprint`, `swe_fix`, `swe_evolve`,
+> `swe_status`, `swe_report`, `swe_journal`, `model_list`, `model_explain`,
+> `governance_queue` over the 1.0.0 control-plane contract. **Deferred to a
+> 1.1 contract slice:** `swe_test`, `swe_review` (need `validate`/`review`
+> run kinds) and `model_benchmark` (needs an evaluate endpoint). The
+> absent verbs are pinned by a negative test on the catalog and on the API
+> paths the server uses (its only `POST` is `/v1/runs`). The daemon
+> enforces the allowlist, limits and the no-push rule; the tool renders the
+> refusal for the model. OpenWebUI registration is PR-14.
+
 ### Async run protocol
 
 Long pipelines don't fit a synchronous tool call. `swe_run`-class tools

@@ -214,6 +214,15 @@ services:
     environment:
       - MCP_API_KEY=${MCP_API_KEY:-local-tools-key}
       - RAG_COLLECTION=${RAG_COLLECTION:-my-knowledge-base}
+      # SWE tool server (chat-ops, V1 P3): where it finds the ezaid control
+      # plane (container overlay by default; host.docker.internal for a host
+      # daemon), its service token, and the Admin Center base for deep links.
+      - EZAI_CONTROL_URL_MCPO=${EZAI_CONTROL_URL_MCPO:-http://ezaid:8010}
+      - EZAI_CONTROL_TOKEN=${EZAI_CONTROL_TOKEN:-ezai-control-key}
+      - LAN_HOST=${LAN_HOST:-localhost}
+      - MONITOR_PORT=${MONITOR_PORT:-8888}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - ai-net
 

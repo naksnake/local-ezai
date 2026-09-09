@@ -974,3 +974,38 @@ starting the daemon from `make up` stays opt-in (ADR-002; the P5 installer
 may wire a default). Stability item fixed in the close: run listing orders
 by submission, not by the second-resolution timestamp. P3 (ADR-029), P4
 (ADR-030) and P5 (ADR-031) proceed in parallel from PR-12.
+
+## ADR-029 — Chat-ops boundary: the SWE Tool Server (P3)
+**Date:** 2026-09-09 · **Status:** Proposed (entered with PR-13; flips to
+Accepted with the P3 close, PR-15)
+**Context:** OpenWebUI is the product's front door (ADR-025); chat must be
+able to start autonomous work and read its results without ever reaching
+the governance boundary — a prompt-injected conversation may waste a run,
+never ship, merge, activate or roll anything back (OPENWEBUI_INTEGRATION
+§5). The control plane (ADR-028) serves everything chat needs.
+**Decision (PR-13 slice — the tool server):** a **vendored MCP server**
+(`mcp-servers/swe-server/swe_server.py`, FastMCP over stdio) behind mcpo at
+`:8200/swe`, a **thin adapter** over the frozen 1.0.0 contract — no
+pipeline logic, no repository access, no agentd import; token +
+`X-EZAI-Client: swe-server` + idempotency key on its one mutating call. The
+**catalog is start + inspect only**: `swe_projects`, `swe_plan` (A0, waits
+for the plan, "confirm before `swe_run`"), `swe_run` / `swe_sprint` /
+`swe_fix` / `swe_evolve` (run id within seconds, follow hint, Admin Center
+link), `swe_status`, `swe_report` (markdown per kind, never raw JSON),
+`swe_journal` (bounded), `model_list`, `model_explain`, `governance_queue`
+(read-only, deep links, "decisions never from chat"). Approve / reject /
+activate / rollback / upgrade / retire / uninstall / install / merge / push /
+cancel **do not exist as tools** — pinned by a negative test on the catalog
+and on the API paths the source uses (the only POST is `/runs`). Policy
+lives in the control plane (allowlist, no push, limits); the tool renders
+its refusals as answers for the model. Registered in `config/mcpo-config.json`
++ the mcpo image; mcpo reaches the daemon at `EZAI_CONTROL_URL_MCPO`
+(overlay `http://ezaid:8010` or `host.docker.internal` for a host daemon).
+**Consequences / deferred:** `swe_test`, `swe_review`, `model_benchmark`
+need `validate`/`review` run kinds and an evaluate endpoint — a **1.1
+contract addition** in a later P3 slice, not a reopening of P2. The
+OpenWebUI connection + the Orchestrator persona are PR-14; negative-test
+hardening and the prompt-injection drill are PR-15 (→ Accepted). Identity:
+mcpo's stdio transport forwards no headers, so the audit actor is
+`swe-server`; a header-passing gateway would restore `<user> via
+swe-server`.

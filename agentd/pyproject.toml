@@ -47,6 +47,9 @@ control = [
 dev = [
     "pytest>=8.0",
     "ruff>=0.5",
+    # the vendored SWE tool server (mcp-servers/swe-server) is exercised by the
+    # suite; the image pins mcp==1.28.1 (mcpo/Dockerfile) — keep the range in step
+    "mcp>=1.28,<2",
 ]
 
 [project.scripts]
