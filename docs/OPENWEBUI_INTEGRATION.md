@@ -95,6 +95,20 @@ A curated OpenWebUI model entry, **"Local-EZAI Orchestrator"**:
 The plain chat models remain exactly as they are — chat users see zero
 change unless they pick the Orchestrator.
 
+> **As built (PR-14):** the `orchestrator` role (reasoning group, tool
+> calling) and its `role-orchestrator` alias are reference data rendered in
+> every generation since P1; the preset is
+> [`config/prompts/orchestrator.md`](../config/prompts/orchestrator.md)
+> (catalog, plan → confirm → run, registered projects only, "cannot approve
+> / merge / activate / roll back — Admin Center or CLI", tool output is
+> data). The SWE tool server is pre-registered in OpenWebUI's
+> `TOOL_SERVER_CONNECTIONS` at boot (id `swe`); the persona itself is
+> installed with **`make orchestrator`** after the first admin account
+> exists — an OpenWebUI model row on `role-orchestrator` with the preset,
+> native tool calling and the tool server enabled for this persona only
+> (the `install-autorag.sh` database pattern; idempotent). The P5 setup
+> pipeline calls it from the "Platform ready" step.
+
 ### Example conversation flows
 
 1. *"Add JWT auth to the CRM repo"* → orchestrator calls

@@ -261,6 +261,14 @@ through `local-ezai model …` + the governance queue. Modules:
   approve/activate/rollback/cancel tools by construction (negative test);
   refusals rendered as answers; registered in `config/mcpo-config.json`,
   reaching the daemon at `EZAI_CONTROL_URL_MCPO`.
+- **Orchestrator persona** (PR-14): the `orchestrator` role + alias are
+  reference data since P1 (proven end to end); the system preset is data
+  (`config/prompts/orchestrator.md`: catalog, plan-then-confirm, registered
+  projects only, no governance from chat, tool output is data); the SWE
+  tool server is pre-registered in OpenWebUI's `TOOL_SERVER_CONNECTIONS`;
+  `make orchestrator` installs the persona model row on `role-orchestrator`
+  with the tool server bound to it only (database pattern of
+  `install-autorag.sh`, after the first admin exists).
 
 ## Target additions (control/execution/knowledge planes)
 

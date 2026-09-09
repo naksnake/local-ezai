@@ -296,9 +296,9 @@ def test_mcpo_registration_and_image_wiring():
     assert env["EZAI_CONTROL_URL_MCPO"].startswith("${EZAI_CONTROL_URL_MCPO:-http://ezaid:8010")
     assert env["EZAI_CONTROL_TOKEN"].startswith("${EZAI_CONTROL_TOKEN")
     assert "host.docker.internal:host-gateway" in mcpo["extra_hosts"]
-    # OpenWebUI's tool-server connections are PR-14's pre-registration, not this PR's
+    # OpenWebUI's tool-server pre-registration (PR-14) points at the same mcpo path
     openwebui_env = "\n".join(compose["services"]["openwebui"]["environment"])
-    assert "/swe" not in openwebui_env
+    assert "/swe" in openwebui_env
 
 
 def test_main_requires_the_service_token(monkeypatch, capsys):

@@ -3,7 +3,7 @@
         up-n97 pull-n97 download-n97 update-n97 setup-n97 up-n97-igpu bench \
         setup-gpu download-gpu \
         down restart logs health status embed \
-        reset-webui reset-password install-autorag \
+        reset-webui reset-password install-autorag orchestrator \
         k8s k8s-delete update clean slurm-setup push-github monitor
 
 # Load .env if it exists
@@ -231,6 +231,9 @@ bench: ## One-question LLM benchmark — prints prompt & generation tokens/sec
 
 install-autorag: ## Install the Auto-RAG filter into OpenWebUI (global, no UI steps)
 	@bash scripts/install-autorag.sh
+
+orchestrator: ## Install/refresh the "Local-EZAI Orchestrator" persona in OpenWebUI (after the first login; no UI steps)
+	@bash scripts/register-orchestrator.sh
 
 status: ## Show status of all containers
 	docker compose ps

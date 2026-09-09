@@ -184,7 +184,8 @@ local-ezai/
 │   ├── providers/              Runtime descriptors (llama.cpp, vLLM) — data for the V1 renderer
 │   ├── searxng/settings.yml    Search engine config
 │   └── prompts/
-│       └── web-search-assistant.md   System prompt for proactive web search
+│       ├── web-search-assistant.md   System prompt for proactive web search
+│       └── orchestrator.md           System preset of the Local-EZAI Orchestrator persona (make orchestrator)
 │
 ├── embed-server/               Embedding API (FastAPI + sentence-transformers)
 │   ├── Dockerfile
@@ -291,6 +292,7 @@ make status      Show container status table
 make embed       Ingest ./documents into the Qdrant knowledge base
 make install-autorag  (optional) install the in-OpenWebUI RAG filter — RAG
                  already works via the LiteLLM hook without this
+make orchestrator  Install/refresh the Local-EZAI Orchestrator persona in OpenWebUI (after first login)
 make monitor     Open the monitor dashboard in your browser
 make control-up  Start the ezaid control plane overlay (:8010; V1 P2, optional)
 make control-down / control-logs / control-spec  Stop it · follow logs · regenerate docs/api/ezaid-openapi.json
@@ -373,8 +375,16 @@ All 8 checks should pass.
 1. Open **http://localhost:3000**
 2. Click **Sign up** → create your admin account
 3. Select model `qwen2.5-7b` in the chat dropdown
+4. `make orchestrator` — installs the **Local-EZAI Orchestrator** persona
+   (plans and starts autonomous engineering work on projects you registered
+   with `local-ezai project add <path>`; needs the control plane:
+   `make control-up` or `make control-serve`). Pick it in the dropdown.
 
 ### 7. Connect MCP agent tools
+
+The mcpo tool servers are pre-registered at boot (Admin Panel → Settings →
+Tools lists them; set `LAN_HOST` in `.env` when you use the UI from other
+devices). To add them by hand instead:
 
 1. In OpenWebUI: **Admin Panel → Settings → Tools**
 2. Add a new tool server:
@@ -385,6 +395,8 @@ All 8 checks should pass.
    - `memory` — persistent knowledge graph across sessions
    - `fetch` — retrieve any web page
    - `search_knowledge_base` — semantic search over your embedded documents
+   - `swe` — the Local-EZAI SWE tools (plan / run / sprint / fix / evolve,
+     status, reports; enabled by default for the Orchestrator persona only)
 
 ### 8. Add documents to the knowledge base
 

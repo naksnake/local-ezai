@@ -72,9 +72,14 @@ evolve, status, report, journal, models, governance queue — no approvals).
 It talks to the control plane at `EZAI_CONTROL_URL_MCPO` (default
 `http://ezaid:8010` = the container overlay; set
 `http://host.docker.internal:8010` when the daemon runs on the host with
-`make control-serve`). Until the first-run pre-registration lands (PR-14),
-add it in OpenWebUI as a tool server: URL `http://<LAN_HOST>:8200/swe`,
-bearer `MCP_API_KEY`. Runs it starts are audited as actor `swe-server`.
+`make control-serve`). It is pre-registered in OpenWebUI at boot (Admin
+Panel → Settings → Tools, "Local-EZAI SWE"); installs whose admin edited
+the tool list in the UI add it by hand (URL `http://<LAN_HOST>:8200/swe`,
+bearer `MCP_API_KEY`). **`make orchestrator`** (after the first admin
+account exists, idempotent) installs the *Local-EZAI Orchestrator* persona
+— `role-orchestrator` + the preset `config/prompts/orchestrator.md` + the
+SWE tools enabled for that persona only; plain chat models are untouched.
+Runs it starts are audited as actor `swe-server`.
 
 **Runs through the control plane** execute the same pipelines as the CLI,
 but only on projects registered with `local-ezai project add`, never with

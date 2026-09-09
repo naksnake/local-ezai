@@ -208,8 +208,17 @@ contract, no agentd import), twelve tools, refusals rendered as answers,
 mcpo `swe` entry + image copy + compose env (`EZAI_CONTROL_URL_MCPO`,
 `host.docker.internal`); `swe_test`/`swe_review`/`model_benchmark` deferred
 to a 1.1 contract slice; OpenWebUI connection left to PR-14.
-**PR-14 · Orchestrator persona** — S: `orchestrator` role entry +
-LiteLLM alias (data), system preset, first-run pre-registration.
+**PR-14 · Orchestrator persona** — S — ✅ **implemented**
+([prs/PR-14-orchestrator-persona.md](prs/PR-14-orchestrator-persona.md);
+8 tests incl. a bootstrapped platform serving `role-orchestrator`, suite
+573 green, goldens intact)
+Scope: `orchestrator` role entry + LiteLLM alias (data), system preset,
+first-run pre-registration.
+As built: role + alias proven (they were data since P1), the preset
+`config/prompts/orchestrator.md`, the SWE tool server pre-registered in
+OpenWebUI's `TOOL_SERVER_CONNECTIONS`, `make orchestrator` installing the
+persona model row (base `role-orchestrator`, preset, tool server bound to
+this persona only) idempotently after the first login.
 **PR-15 · Boundary hardening** — M: negative tests proving governance
 mutations unreachable from chat; prompt-injection drill script in CI;
 regression pass showing chat/RAG byte-identical. **ADR-029 → Accepted.**
