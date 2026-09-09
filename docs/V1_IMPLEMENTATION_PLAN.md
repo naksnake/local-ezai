@@ -157,7 +157,10 @@ N1′ (container hardening) folded into the soak gate.
 > equal response bodies, declarative state and operation audit with the
 > transports' annotations normalised explicitly; `make release-gate` runs
 > the whole gate (lint · chat-stack baseline · boundary drill · F1–F11 ·
-> parity · the full suite). Criteria 2–4 are PR-25/PR-26.
+> parity · agnosticism gates · the full suite). The ADR-026 gates H1–H4 and
+> the third-runtime drill are `agentd/tests/gates/` (`make swe-gates`, PR-25;
+> HARDWARE_AGNOSTIC §6 and RUNTIME_ABSTRACTION §6 as-built). Criteria 2–4
+> are PR-26.
 
 ## Cross-cutting workstreams (every phase)
 

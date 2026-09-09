@@ -18,7 +18,7 @@ Per model (recommended):
 Per chat: open **Chat Controls** (⚙ in the top-right of a chat) and paste
 it into **System Prompt** there instead.
 
-> On small models (N97/CPU profiles), keep this on a dedicated
+> On small models (the low-power / CPU profiles), keep this on a dedicated
 > "research" model preset rather than your default chat model — every
 > search adds retrieval latency and prompt tokens.
 

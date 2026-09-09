@@ -399,6 +399,23 @@ through `local-ezai model …` + the governance queue. Modules:
   `make release-gate`; acceptance + parity steps on the manual CI workflow.
   Fix: `cmd_model_rollback` passes `notify` in text mode only, so `--json`
   is one document.
+- **Agnosticism gates** (PR-25, ADR-026 P6 slice): `agentd/tests/gates/` —
+  `test_third_runtime_drill.py` (`MockEngine`: a `ThreadingHTTPServer`
+  answering the fixture's readiness path and `/v1/chat/completions` with a
+  usage block and the fixture's timing keys; the `drill` fixture copies
+  `tests/fixtures/providers/mockengine.yaml` into a checkout, routes every
+  side-load to the stub through `lifecycle.free_port`, builds the real
+  `SideLoadValidator` over `FakeRunner` with a fake clock, and drives
+  bootstrap → install → benchmark → activate → approve → rollback → pipeline
+  wait-ready → `up --rendered` via `main()`; tripwire: the runtime id is in
+  no shipped file), `test_h1_word_audit.py` (`TOKENS`, `SCOPE`, `SANCTIONED`,
+  `ALLOWED` as data; violations, stale allowances, token edge cases),
+  `test_h2_h3_h4_fixtures.py` (over the acceptance harness: two-class
+  pipeline run with `recommended_set` picks; `fit()` on four fixture vectors
+  + edges; `--profile n97` vs `--class cpu-low` byte-identical artifacts).
+  `make swe-gates`, `release-gate` extended, CI step. Fix:
+  `lifecycle.slot_runtime_for` — `resolve_target` prefers the active slot's
+  runtime for a `gguf:`/`hf:` source when it serves the format.
 - **Installer, steps 1–3 of the first run** (`install.sh` →
   `agentd/src/agentd/installer.py`, PR-21, ADR-031 Proposed): preflight
   (python3 ≥ 3.10, the agentd venv via `make swe-install`, Docker present or

@@ -311,7 +311,8 @@ make control-serve  Run ezaid on this host instead (sees your repos → SWE runs
 make swe-drill   Chat-ops boundary drill (offline): governance unreachable from chat, prompt-injection red-team, chat/RAG byte-identical
 make swe-accept  First-run acceptance suite F1–F11 (offline)
 make swe-parity  Parity harness (release gate): every management operation via CLI-direct, CLI-connected and the API — same result, state, audit (offline)
-make release-gate  The P6 release gate in one command: lint · chat-stack baseline · drill · acceptance · parity · full suite
+make swe-gates   Agnosticism gates: the third-runtime drill (a mock runtime from descriptor data alone), the H1 word audit, the H2–H4 class fixtures (offline)
+make release-gate  The P6 release gate in one command: lint · chat-stack baseline · drill · acceptance · parity · agnosticism gates · full suite
 make update      Pull latest images and restart
 make k8s         Deploy to K3s Kubernetes
 make clean       Remove all containers, images, volumes (destructive)

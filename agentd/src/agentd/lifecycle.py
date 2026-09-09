@@ -410,6 +410,18 @@ class Resolved:
     origin: str  # "registry" | "hf" | "gguf" | "catalog" | "auto"
 
 
+def slot_runtime_for(registry: RegistryV2, fmt: str,
+                     descriptors: dict[str, RuntimeDescriptor]) -> str | None:
+    """The runtime the active set already runs on — when there is exactly one
+    and it serves ``fmt``; otherwise None and the format rule decides."""
+    active = {entry.provider for entry in registry.models.values() if entry.state == "active"}
+    if len(active) != 1:
+        return None
+    (provider,) = active
+    descriptor = descriptors.get(provider)
+    return provider if descriptor and fmt in descriptor.serves_formats else None
+
+
 def resolve_target(registry: RegistryV2, target: str, descriptors: dict[str, RuntimeDescriptor],
                    *, catalog: Catalog | None = None, runtime: str | None = None,
                    group: str | None = None, name: str | None = None,
@@ -433,7 +445,13 @@ def resolve_target(registry: RegistryV2, target: str, descriptors: dict[str, Run
 
     ref = parse_source(target)
     if ref.kind in ("hf", "gguf"):
-        provider = provider_for_format(ref.kind, descriptors, runtime)
+        # No runtime named: the slot's own runtime serves the new source when
+        # it can (PROVIDER_ABSTRACTION §4 — one slot, one runtime); only then
+        # the format rule. Invisible while each format has one server; it is
+        # what keeps `model install <source>` servable once two runtimes share
+        # a format (the PR-25 third-runtime drill found this).
+        provider = provider_for_format(
+            ref.kind, descriptors, runtime or slot_runtime_for(registry, ref.kind, descriptors))
         if provider is None:
             wanted = f"runtime '{runtime}'" if runtime else "no shipped runtime"
             raise LifecycleError(

@@ -31,3 +31,5 @@ jobs:
         run: cd agentd && python -m pytest tests/acceptance -v
       - name: Release gate — parity harness (CLI-direct · CLI-connected · API over the CLI_AND_WEBUI §3 matrix)
         run: cd agentd && python -m pytest tests/parity -v
+      - name: Release gate — agnosticism (third-runtime drill · H1 word audit · H2–H4 class fixtures)
+        run: cd agentd && python -m pytest tests/gates -v

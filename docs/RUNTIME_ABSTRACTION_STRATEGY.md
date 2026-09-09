@@ -146,6 +146,36 @@ fixtures. CI keeps this drill green forever; it is the regression test
 that the seam stays a seam. (It also becomes the template for real future
 runtimes: TGI, ollama, etc. — explicitly out of V1 scope.)
 
+> **As built (PR-25, `agentd/tests/gates/test_third_runtime_drill.py`, `make
+> swe-gates`):** the drill runs in CI, offline. `mockengine` is a descriptor
+> under `agentd/tests/fixtures/providers/` (served format, capabilities with
+> the generic tool handler, a readiness path that is *not* `/health`, its
+> own benchmark timing keys, a prefixed served-id template, its own mount
+> paths, single and multi materialization forms, class tuning, images per
+> accelerator kind) and an OpenAI-API stub server stands in for its image.
+> Copied into a checkout's `config/providers/`, the platform runs it end to
+> end through the CLI: `bootstrap` from `AI_RUNTIME=mockengine` seeds
+> (install → the real side-load validator and benchmark against the stub,
+> docker faked → generation 1 rendered in the multi form with the fixture's
+> image, command, preset, mount and healthcheck; LiteLLM routes to the
+> prefixed served ids), day-2 `model install` (served by the slot's own
+> runtime), `benchmark`, `activate` → approval → `governance approve`,
+> `rollback`, the setup pipeline's wait-ready on the descriptor's readiness
+> path, `up --rendered`. `install.sh --runtime mockengine` validates the
+> seeds against it (F8). A tripwire proves the runtime id appears in no
+> shipped code, data, compose file or script — the seam is a seam. Two
+> findings: the resolver's default runtime for a `gguf:`/`hf:` source was the
+> first descriptor serving the format alphabetically, not the slot's own
+> runtime (fixed in PR-25 — `lifecycle.slot_runtime_for`; invisible while
+> each format has one server); and the control plane's health table probes
+> the engine slot at its own `/health`, not the descriptor's readiness path
+> (recorded as a residual for the release train: the wait-ready step is
+> descriptor-driven, the generic sweep is operator data). Also observed: a
+> day-2 `model install` of an undeclared user source gets no tool-call
+> format (the bootstrap's generic default applies to seeds only), so
+> tool-calling roles refuse it at render time — a negotiation rule, not a
+> runtime coupling.
+
 ## 7. LiteLLM's position (finding CF-10)
 
 LiteLLM remains the uniform API layer (a required component), but the

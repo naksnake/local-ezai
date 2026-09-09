@@ -691,6 +691,36 @@ parsed and every row needs a harness row and a chat-ceiling classification,
 and every mutation the contract offers must be classified by a row. One
 defect found and fixed in the same PR: `model rollback --json` printed its
 ROLLBACK notice before the JSON, so `--json` was not one document.
+**P6 slice (2026-09-09, PR-25) — the agnosticism gates (2) and (3) as
+tests:** `agentd/tests/gates/` (`make swe-gates`, in `make release-gate` and
+the CI workflow). (1) **The third-runtime drill is a fixture, not a
+product runtime**: `mockengine` lives under `tests/fixtures/providers/`,
+its image is an in-test OpenAI-API stub, and the drill copies the descriptor
+into a checkout and runs bootstrap → real side-load validation and
+benchmark → render → day-2 install / benchmark / activate / approve /
+rollback → the pipeline's wait-ready → `up --rendered` through the CLI; a
+grep tripwire proves no shipped code, data, compose file or script names
+the runtime. The fixture is deliberately unlike the shipped descriptors
+wherever the contract allows (readiness path, timing keys, served-id
+template, mount paths), so a silent assumption of a shipped value shows.
+(2) **H1 is a test with its exceptions as data, each with a reason, and a
+stale exception fails** — the scan covers code, packaged data, prompts, the
+console, the tool server and the continuity layer; `config/providers/` is
+the sanctioned home; the frozen chat stack's legacy profile files and
+comments are pinned rather than edited (ADR-002). (3) **What the gates
+found:** the resolver's default runtime for a `gguf:`/`hf:` source was the
+first descriptor serving the format alphabetically — with a third runtime
+present, `model install <source>` would install for another runtime than
+the slot's; fixed (`lifecycle.slot_runtime_for`: the slot's runtime when it
+serves the format, else the format rule — invisible while each format has
+one server). Four brand words in user-facing text were reworded (the
+`up-n97` help, a prompt usage note, a legacy script header, a monitor
+comment). Recorded as a residual for the release train, not fixed here:
+the control plane's health table probes the engine slot at its own
+`/health` rather than the active descriptor's readiness path (the
+pipeline's wait-ready is descriptor-driven; the sweep is operator data);
+and a day-2 `model install` of an undeclared user source carries no
+tool-call format (the bootstrap's generic default applies to seeds only).
 
 ## ADR-027 — Registry v2 · PAL · governed model lifecycle (P1)
 **Date:** 2026-09-01 · **Status:** **Accepted** (2026-09-08, phase P1

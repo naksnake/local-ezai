@@ -180,7 +180,7 @@ setup-n97: ## First run asserting the low-power class: install.sh --profile n97 
 	@bash install.sh --profile n97 $(INSTALL_ARGS)
 	@$(EZAI_SETUP) --profile n97 $(SETUP_ARGS)
 
-up-n97: ## Start all services tuned for Intel N97 / low-power mini PCs (auto-downloads models, auto-resolves ports)
+up-n97: ## Start all services for the low-power CPU profile (the n97 preset = class cpu-low; auto-downloads models, auto-resolves ports)
 	@bash scripts/check-ports.sh
 	@$(MAKE) --no-print-directory up-n97-run
 
@@ -281,8 +281,8 @@ clean: ## Remove all containers, images, and volumes (WARNING: deletes data)
 # ═══════════════════════════════════════════════════════════════════════════
 # Autonomous SWE runtime (agentd) — additive targets, see agentd/README.md
 # ═══════════════════════════════════════════════════════════════════════════
-.PHONY: swe-install swe-browsers swe-test swe-lint swe-drill swe-accept swe-parity release-gate \
-        swe-run swe-plan control-up control-down control-logs control-spec control-serve
+.PHONY: swe-install swe-browsers swe-test swe-lint swe-drill swe-accept swe-parity swe-gates \
+        release-gate swe-run swe-plan control-up control-down control-logs control-spec control-serve
 
 swe-install: ## Install the agentd runtime into ./.venv-agentd (editable, dev + browser + control extras)
 	python3 -m venv .venv-agentd
@@ -331,12 +331,16 @@ swe-accept: ## First-run acceptance suite F1–F11 (docs/FIRST_RUN_EXPERIENCE.md
 swe-parity: ## Parity harness (P6 release gate): every CLI_AND_WEBUI_STRATEGY §3 row via CLI-direct · CLI-connected · API — same bodies, state, audit (offline)
 	cd agentd && ../.venv-agentd/bin/python -m pytest tests/parity -v
 
-release-gate: ## The P6 release gate in one command: lint · chat-stack baseline · boundary drill · F1–F11 acceptance · parity harness · the full suite
+swe-gates: ## Agnosticism gates (P6): the third-runtime drill (a mock runtime from descriptor data alone), the H1 word audit, the H2–H4 class fixtures (offline)
+	cd agentd && ../.venv-agentd/bin/python -m pytest tests/gates -v
+
+release-gate: ## The P6 release gate in one command: lint · chat-stack baseline · boundary drill · F1–F11 acceptance · parity harness · agnosticism gates · the full suite
 	$(MAKE) swe-lint
 	python3 scripts/chat-stack-baseline.py --check
 	$(MAKE) swe-drill
 	$(MAKE) swe-accept
 	$(MAKE) swe-parity
+	$(MAKE) swe-gates
 	$(MAKE) swe-test
 	@echo ""
 	@echo "  release gate: green — see docs/V1_IMPLEMENTATION_PLAN.md §P6 for the remaining human steps (soak, DoD, sign-off)"

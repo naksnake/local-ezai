@@ -1,0 +1,102 @@
+# Runtime descriptor — mockengine (TEST FIXTURE: the third-runtime drill,
+# docs/RUNTIME_ABSTRACTION_STRATEGY.md §6; PR-25, ADR-026).
+#
+# A runtime no platform code has ever heard of: an OpenAI-API stub stands in
+# for its image (agentd/tests/gates/test_third_runtime_drill.py). Everything
+# the installer, the bootstrap, the lifecycle manager, the renderer and the
+# setup pipeline need to run it end to end is DATA below, consumed through
+# the descriptor contract of agentd/runtime_descriptor.py — the drill fails
+# the moment any of them learns a runtime by name. Deliberately different
+# from the shipped descriptors wherever the contract allows (readiness path,
+# served-id template, timing keys, mount paths) so that a code path which
+# silently assumed one of the shipped values would show.
+runtime: mockengine
+version: 1
+display_name: Mock Engine (drill)
+serves_formats: [gguf]
+default_for_classes: []          # never proposed by the installer; chosen explicitly
+
+capabilities:
+  tool_call_parsers: [hermes, generic]
+  json_output: true
+  parallel_models: true
+  hot_swap: true
+
+verbs:
+  control: {kind: compose}
+  ready:
+    path: /healthz               # not /health — readiness is descriptor data
+    timeout_s: 30
+    interval_s: 1
+    start_period_s: 1
+    retries: 2
+    healthcheck: [CMD-SHELL, "wget -qO- http://localhost:{port}{path} || exit 1"]
+  validate_model: {probe: chat_completion, max_tokens: 1}
+  bench:
+    max_tokens: 64
+    timings_field: mock_timings  # the stub's own timing block, named here, never in code
+    rate_key: tokens_per_second
+    prompt_rate_key: prompt_tokens_per_second
+    count_key: generated
+
+weights:
+  host_dir: "${MOCK_WEIGHTS_DIR:-./models/mock}"
+  container_dir: /weights
+  read_only: true
+
+materialize:
+  served_id: "mock/{model_name}"  # a prefixed id: LiteLLM and the probes must follow the template
+  single:
+    command:
+      - serve
+      - "{model_path}"
+      - --name
+      - "{model_name}"
+      - --port
+      - "{port}"
+      - --ctx
+      - "{model_ctx}"
+      - --latency-ms
+      - "{latency_ms}"
+    tool_calling_args: [--tools, "{tool_call_parser}"]
+  multi:
+    command:
+      - serve-many
+      - "{preset_path}"
+      - --port
+      - "{port}"
+      - --max
+      - "{models_max}"
+    preset:
+      container_path: /presets/mock-models.ini
+      common: {latency_ms: "{latency_ms}", threads: "{threads}"}
+      per_model: {path: "{model_path}", ctx: "{model_ctx}", tools: "{tool_call_parser}"}
+
+service:
+  environment: ["MOCK_LOG_LEVEL=info"]
+
+tuning:
+  ctx_size: 8192
+  threads: "{cpu_cores}"
+  latency_ms: 0
+  memory_limit: 1g
+  models_max: "{served_count}"
+
+classes:
+  accel-large:  {ctx_size: 16384}
+  accel-small:  {ctx_size: 8192}
+  cpu-standard: {ctx_size: 8192}
+  cpu-low:      {ctx_size: 8192, threads: 2}
+
+accelerators:
+  none:
+    image: example.invalid/mockengine:cpu
+    compose:
+      deploy: {resources: {limits: {memory: "{memory_limit}"}}}
+  cuda:
+    image: example.invalid/mockengine:accel
+    args: [--accelerate]
+    preset: {accelerate: "true"}
+  igpu:
+    image: example.invalid/mockengine:igpu
+    args: [--accelerate]

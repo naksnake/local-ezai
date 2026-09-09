@@ -390,9 +390,26 @@ ceiling is checked row by row, and the §3 table itself is a tripwire.
 · parity · full suite; the manual-trigger CI workflow gains the acceptance
 and parity steps. The gate found, and this PR fixed, `model rollback
 --json` printing a text notice before its JSON.
-**PR-25 · Agnosticism gates** — M: `mockengine` third-runtime drill
-(RUNTIME_ABSTRACTION §6) green with zero diffs outside descriptors;
-H1 vendor-string CI audit; H2–H4 fixtures.
+**PR-25 · Agnosticism gates** — M — ✅ **implemented**
+([prs/PR-25-agnosticism-gates.md](prs/PR-25-agnosticism-gates.md); 14 tests
+— the drill in three, the H1 audit in four, H2–H4 in seven — suite 738
+green, goldens and the chat-stack baseline intact)
+Scope: `mockengine` third-runtime drill (RUNTIME_ABSTRACTION §6) green with
+zero diffs outside descriptors; H1 vendor-string CI audit; H2–H4 fixtures.
+As built: `agentd/tests/gates/` (`make swe-gates`, in `make release-gate` and
+the manual CI workflow). The drill's descriptor is a test fixture
+(`tests/fixtures/providers/mockengine.yaml`), its image an in-test OpenAI-API
+stub; bootstrap → real side-load validate + benchmark → render (multi form)
+→ day-2 install/benchmark/activate/approve/rollback → the pipeline's
+wait-ready on the descriptor's readiness path → `up --rendered`, all through
+the CLI, with a grep tripwire that no shipped code names the runtime. The
+H1 audit's scope and allowances are data with reasons; stale allowances
+fail. H2 runs the same `auto` seeds on both classes, H3 fits a 7B Q4 entry
+on the four fixture vectors, H4 proves `--profile n97` ≡ `--class cpu-low`
+end to end. Found and fixed: the resolver's default runtime for a source
+ignored the active slot (`lifecycle.slot_runtime_for`). Found and reworded:
+four brand words in help text, a prompt note, a script header, a comment.
+Residual recorded for PR-26: the health table's engine probe path.
 **PR-26 · Release train** — M: docs refresh (USER_GUIDE, OPERATION_MANUAL,
 CLI_REFERENCE, TROUBLESHOOTING, MAINTENANCE_GUIDE absorb new surfaces),
 72 h soak runbook + results, product DoD checklist

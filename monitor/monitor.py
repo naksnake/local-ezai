@@ -197,7 +197,7 @@ RAG_MAX_BYTES  = 20_000_000
 EMBED_BATCH    = 16
 
 # The LLM slot is engine-agnostic: vLLM answers /health with an empty 200 body,
-# llama.cpp (N97 profile) with {"status":"ok"} — so match on status code only
+# llama.cpp (the low-power profile) with {"status":"ok"} — so match on status code only
 # (empty pattern) and let compose overrides relabel the card.
 LLM_NAME = os.getenv("LLM_SERVICE_NAME", "vLLM")
 LLM_DESC = os.getenv("LLM_SERVICE_DESC", "LLM inference (GPU)")

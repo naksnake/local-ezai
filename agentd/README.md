@@ -549,6 +549,7 @@ make swe-lint        # ruff
 make swe-drill       # chat-ops boundary drill (tests/security)
 make swe-accept      # first-run acceptance criteria F1–F11 (tests/acceptance)
 make swe-parity      # parity harness: CLI-direct · CLI-connected · API (tests/parity)
+make swe-gates       # agnosticism gates: third-runtime drill, H1 word audit, H2–H4 (tests/gates)
 make release-gate    # all of the above + the chat-stack baseline + the full suite (P6 gate)
 ezaid --print-spec   # the control plane's OpenAPI contract (agentd[control], PR-8)
 ```

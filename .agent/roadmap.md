@@ -145,9 +145,17 @@ console, equal response bodies, declarative state and operation audit with
 the transports' annotations normalised explicitly; absent cells asserted
 absent; the chat ceiling per row; the §3 table as a tripwire; `make
 release-gate`; acceptance + parity steps on the manual CI workflow; fixed
-`model rollback --json`) implemented. All twenty-four await human merge on
-`claude/next-ready-pr-bnq7r3`. Next ready by plan order: **PR-25**
-(agnosticism gates — the `mockengine` third-runtime drill, H1–H4).
+`model rollback --json`) and PR-25 (agnosticism gates: `agentd/tests/gates/`,
+`make swe-gates` — the `mockengine` third-runtime drill from a fixture
+descriptor and an OpenAI-API stub, end to end through the CLI with no shipped
+code naming the runtime; the H1 word audit with its allowances as data; H2
+same seeds on two classes, H3 the 7B Q4 fit on four vectors, H4 `--profile
+n97` ≡ `--class cpu-low` end to end; fixed the resolver's default runtime
+for a source ignoring the active slot; residual: the health table's engine
+probe path) implemented. All twenty-five await human merge on
+`claude/next-ready-pr-bnq7r3`. Next ready by plan order: **PR-26** (the
+release train — docs refresh, soak runbook, DoD checklist, human sign-off,
+`v1.0.0`).
 
 **Product review (ADR-026, 2026-09-01):** agnosticism audit passed with
 remediations — roles/groups become the only stable names (role aliases

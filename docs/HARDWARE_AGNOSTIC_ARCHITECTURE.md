@@ -138,3 +138,32 @@ new capability-vector fields.
 | H2 | Same `.env` role seeds produce a working platform on `accel-large` and `cpu-low` with only class-appropriate models substituted by the recommender |
 | H3 | Fit verdicts for a 7B Q4 model correct on all four classes (fixture vectors) |
 | H4 | `setup-n97` = `cpu-low` preset equivalence (byte-identical rendered artifacts modulo class name) |
+
+> **As built (PR-25, `agentd/tests/gates/`, `make swe-gates`; part of `make
+> release-gate` and the CI workflow):** **H1** is a test that scans the
+> platform's code, packaged data, prompts, the console, the tool server and
+> the continuity layer (Makefile, compose files, `.env.example`, scripts,
+> `install.sh`) for vendor, brand and SKU tokens — word-bounded, with product
+> context for the vendor name that is also an English word, `amd64` and the
+> `-apple-system` font stack excluded. Accelerator *kinds* are allowed
+> everywhere. `config/providers/*.yaml` is the sanctioned home and is not
+> scanned; every other exception is an entry with a reason: the
+> `ACCELERATOR_PROBES` driver names and `PROFILE_PRESETS` in `capability.py`,
+> the legacy profile names in the installer's and the CLI's `--profile` help,
+> the host-provisioning script that installs the accelerator toolkit, and
+> the frozen chat stack's legacy profile files and comments (ADR-002) —
+> pinned, not edited. A stale allowance fails too. The gate found brand words
+> in a prompt's usage note, a legacy download script's header, a monitor
+> comment and the `up-n97` help text; all four were reworded. **H2** runs the
+> same `AI_RUNTIME` + three `auto` seeds through the first-run pipeline on
+> `accel-large` and on `cpu-low`: both ready, identical roles and groups,
+> each group served by the recommender's pick for that class, the engine
+> materialized from the descriptor's (class × accelerator) row. **H3** is a
+> 7B Q4 entry (declared 4.4 GB) on the four class fixture vectors —
+> accelerator/fast on both accelerator classes, system/moderate on both CPU
+> classes, plus the edges: no SIMD → slow, a small accelerator → spills to
+> system memory with the warning, too little memory → does not fit but stays
+> overridable, unknown size → an honest unknown. **H4** runs `install.sh
+> --profile n97` and `--class cpu-low` on two copies of one checkout, then
+> the pipeline: byte-identical rendered artifacts (manifest included) and the
+> same generation.
