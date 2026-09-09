@@ -345,6 +345,29 @@ through `local-ezai model …` + the governance queue. Modules:
   over an in-process daemon on a scratch platform, seams faked) run under
   `BrowserQAHarness` as a CI test. Compose: four `MONITOR_SSO_*` keys on the
   monitor, additive to the chat-stack baseline.
+- **Setup pipeline, steps 4–8 of the first run + `init`**
+  (`agentd/src/agentd/setup_pipeline.py`, PR-22, ADR-031): `make setup` =
+  `install.sh` → `local-ezai setup` (host-only verb). `SetupPipeline`: the
+  PR-7 bootstrap via `platform_cli.run_bootstrap` when no registry exists →
+  `docker compose pull <image services>` + `build` with `compose_files(…,
+  rendered=True)` → `scripts/download-embed.sh` → `up -d` → wait-ready (the
+  active runtime descriptor's `verbs.ready` path/timeout on the host port,
+  then `control/health.DEFAULT_TARGETS` remapped to host ports through
+  `HOST_PORTS`) → smoke (`chat` on the chat role alias, required; `RAG` via
+  `scripts/embed-documents.sh` + a sample document; `swe_plan` = `plan_only`
+  on the bundled `examples/sample-project` copied, git-initialised and
+  registered; `models` = `evaluate_models`; the last three advisory) →
+  report (`config/first-run/report.{json,md}`, the WebUI banner as
+  `WEBUI_BANNERS` in the optional compose env_file
+  `config/first-run/openwebui.env`, recreate + probe + rollback, the persona
+  attempt). Seams: runner, `Http`, `plan_fn`, `evaluate_fn`, sleep/clock,
+  environ. `run_init`: hardware check → `recommended_set` (catalog
+  recommender per group with role contracts) → accept/override → seeds as
+  catalog ids via `EnvText` → the pipeline. `build_context` also reads an
+  asserted class from the platform's `.env`. Makefile: `setup`,
+  `setup-system`, `setup-*` re-pointed, `up*` → `download-embed.sh`, `embed`
+  → `embed-documents.sh`; baseline treats the openwebui `env_file` as
+  additive.
 - **Installer, steps 1–3 of the first run** (`install.sh` →
   `agentd/src/agentd/installer.py`, PR-21, ADR-031 Proposed): preflight
   (python3 ≥ 3.10, the agentd venv via `make swe-install`, Docker present or

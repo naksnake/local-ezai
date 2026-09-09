@@ -332,9 +332,24 @@ idempotent, nothing else on disk touched); the bootstrap's F8 validation
 with a class-aware hint, nothing downloaded; the one review-edit stop
 (editor on a terminal, exit 3 otherwise, `--yes` skips it, `--check` writes
 nothing); `make install`. The installer never picks models.
-**PR-22 · Setup pipeline + smoke** — M: steps 4–8 of
-FINAL_FIRST_RUN_EXPERIENCE §3 (fetch→render→up→verify→report), the
-"Platform ready" card, `local-ezai init` fallback wizard.
+**PR-22 · Setup pipeline + smoke** — M — ✅ **implemented**
+([prs/PR-22-setup-pipeline.md](prs/PR-22-setup-pipeline.md); 17 tests over
+an offline pipeline — Docker, HTTP, planner and evaluator injected — suite
+684 green, goldens and the chat-stack baseline intact; ADR-031 PR-22 slice)
+Scope: steps 4–8 of FINAL_FIRST_RUN_EXPERIENCE §3
+(fetch→render→up→verify→report), the "Platform ready" card, `local-ezai
+init` fallback wizard.
+As built: `make setup` = `install.sh` + `local-ezai setup` — the bootstrap
+when no registry exists, images with the rendered engine override, the
+embedding model, `up -d`, wait-ready by the runtime descriptor's `ready`
+verb and the health table on host ports, smoke (chat turn required; RAG,
+`plan_only` on the bundled sample project and evaluate-models advisory),
+`config/first-run/report.{json,md}`, the card as an OpenWebUI banner through
+an optional env_file with automatic rollback, the persona attempted;
+`make setup-system` keeps the system-package script; `setup-gpu|cpu|n97`
+assert their profile; `make up*` fetch only the embedding model;
+`local-ezai init` proposes the recommended set from the catalog and writes
+catalog ids to `.env` before running the pipeline.
 **PR-23 · Offline bundle + FRE acceptance suite** — M: bundle
 create/consume, scripted F1–F11 acceptance tests, onboarding Browser-QA'd.
 **ADR-031 → Accepted.**

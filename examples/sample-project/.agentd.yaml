@@ -1,0 +1,6 @@
+# Validation for the Local-EZAI sample project: standard library only, so it
+# runs on any host or sandbox image without installing anything.
+validation:
+  commands:
+    test:
+      - "python3 -m unittest discover -s tests -q"

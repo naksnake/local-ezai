@@ -84,9 +84,11 @@ bash scripts/setup.sh
 #    Problems are printed with their fix before anything is downloaded.
 #    Re-running later repairs .env and never overwrites your values.
 
-# 4. Everything else in one command: pull, build, download models,
-#    start all 8 services, wait until healthy (~15-30 min first time)
-make setup-n97
+# 4. Everything else in one command: the model seeds are downloaded,
+#    validated and benchmarked into generation 1, images pulled and built,
+#    all services started and waited for, a chat turn / RAG / plan smoke
+#    run, and the URLs printed (~15-30 min first time). Re-run any time.
+make setup-n97          # `make setup` detects the class instead of asserting it
 #    Occupied ports are relocated automatically and saved to .env.
 
 # 5. Optional: run inference on the Intel iGPU instead of the CPU
@@ -266,21 +268,23 @@ openssl rand -hex 32
 
 ```
 make help        List all commands
-make setup       First-time system setup (Docker, NVIDIA, Python, Node)
-make install     First run: detect hardware, create/repair .env with minted secrets, validate the model seeds (./install.sh)
+make setup       First run, all steps: ./install.sh (edit .env once) → local-ezai setup (bootstrap, images, up, smoke, report)
+make setup-system  System packages for a fresh Ubuntu host (Docker, NVIDIA toolkit, Python venv, Node)
+make install     First run, steps 1–3 only: detect hardware, create/repair .env with minted secrets, validate the seeds
 make build       Build embed-server, mcpo, and monitor images
 make pull        Pull official Docker images
-make setup-gpu   GPU stack end-to-end: pull, build, download, start, health
-make up          Start all 8 services (GPU mode; auto-downloads models)
-make download-gpu  Download models for the GPU stack (~15 GB default)
-make setup-n97   N97 stack end-to-end: pull, build, download, start, health
-make up-n97      Start CPU-only via llama.cpp (auto-downloads models if missing)
+make setup-gpu   First run asserting an accelerator (install.sh --profile gpu → local-ezai setup --profile gpu)
+make up          Start all 8 services with the rendered engine (GPU profile; fetches the embedding model if missing)
+make download-embed  Download the RAG embedding model (every profile; skipped when present)
+make download-gpu  Legacy: download the .env CHAT_MODEL + embedding model for the GPU stack
+make setup-n97   First run asserting the low-power class (install.sh --profile n97 → local-ezai setup --profile n97)
+make up-n97      Start CPU-only via llama.cpp (fetches the embedding model if missing)
 make up-n97-igpu Same, but llama.cpp runs on the Intel iGPU (Vulkan; faster prefill)
 make pull-n97    Pull images for the N97 stack (llama.cpp)
 make download-n97  Download the small quantized model set (~2.5 GB)
 make update-n97  Pull latest images and restart the N97 stack
-make setup-cpu   vLLM CPU stack end-to-end: pull, build, download, start, health
-make up-cpu      Start CPU-only via vLLM (auto-downloads models if missing)
+make setup-cpu   First run asserting the cpu-standard class (install.sh --profile cpu → local-ezai setup --profile cpu)
+make up-cpu      Start CPU-only via vLLM (fetches the embedding model if missing)
 make pull-cpu    Pull images for the vLLM CPU stack
 make download-cpu  Download models for the vLLM CPU stack (~3.6 GB, runs in Docker)
 make update-cpu  Pull latest images and restart the vLLM CPU stack
@@ -345,50 +349,55 @@ nothing, `--profile n97` asserts the low-power class.
 
 By hand instead: `cp .env.example .env` and change the values marked ⚠️.
 
-### 3. Download models
+### 3. Bring the platform up — one command
 
 ```bash
-bash scripts/download-models.sh
+make setup            # or make setup-gpu / setup-cpu / setup-n97 to assert a class
 ```
 
-Downloads:
-- **Qwen2.5-7B-Instruct** (~15 GB) — main chat model
-- **nomic-embed-text-v1.5** (~500 MB) — embedding model for RAG
+`make setup` runs `./install.sh` again (a no-op once `.env` is complete) and
+then `local-ezai setup`, which:
 
-Models are stored in `./models/hf-cache` (inside the project folder) and mounted read-only into the containers. You only download once; rebuilding images does not re-download.
+1. **bootstraps** the model seeds into generation 1 — download (resumable,
+   checksummed), load-validation, benchmark, the one implicit activation,
+   the rendered LiteLLM + engine configuration (`make bootstrap` on its own);
+2. **pulls and builds** the images with the rendered engine override, and
+   downloads the RAG embedding model (~500 MB) if missing;
+3. **starts** all 8 services and **waits** until the engine answers its
+   readiness probe and every service is healthy (the engine takes 1–5
+   minutes to load a model);
+4. **smoke-tests** the platform: one chat turn (required), a RAG answer over
+   a sample document, a plan against the bundled sample project, the
+   model probes of every role (the last three are advisory);
+5. **prints the URLs**, writes `config/first-run/report.md` and shows the
+   "Platform ready" card in the WebUI.
 
-For **gated models** (Llama, Gemma): get a token at https://huggingface.co/settings/tokens and add `HF_TOKEN=hf_your_token` to `.env`.
+Every step is idempotent — re-run `make setup` after a failure or an
+interruption and it continues where it stopped. Step by step instead:
+`make bootstrap`, then `make up` (or `up-n97` / `up-cpu`), `make wait-ready`,
+`make health`. No model seeds in `.env` yet? `local-ezai init` proposes the
+catalog's recommended set for your hardware and continues with the same
+pipeline.
 
-### 4. Build and start
+Models are stored in `./models` (inside the project folder) and mounted
+read-only into the containers. For **gated models** (Llama, Gemma): get a
+token at https://huggingface.co/settings/tokens and add
+`HF_TOKEN=hf_your_token` to `.env`.
+
+### 4. Check
 
 ```bash
-make build   # builds embed-server, mcpo, and monitor (~5 min)
-make pull    # pulls openwebui, litellm, vllm, qdrant, searxng
-make up      # starts all 8 services in the background
+make health           # all 8 services
+local-ezai status     # generation, models, approvals, health
 ```
 
-### 5. Wait for vLLM
+### 5. First login
 
-vLLM takes 2–5 minutes to load the model into VRAM. Watch it:
-
-```bash
-make logs-vllm
-# Wait until you see: "Application startup complete."
-```
-
-Then verify all services:
-
-```bash
-make health
-```
-
-All 8 checks should pass.
-
-### 6. First login
-
-1. Open **http://localhost:3000**
+1. Open **http://localhost:3000** — the "Platform ready" banner shows the
+   groups, the models that fill them, the smoke results and the links
 2. Click **Sign up** → create your admin account
-3. Select model `qwen2.5-7b` in the chat dropdown
+3. Pick a model in the chat dropdown — the role entries (`role-chat`, …) or
+   the served model name
 4. `make orchestrator` — installs the **Local-EZAI Orchestrator** persona
    (plans and starts autonomous engineering work on projects you registered
    with `local-ezai project add <path>`; needs the control plane:
@@ -409,7 +418,7 @@ All 8 checks should pass.
    the console are its own Browser QA workflows
    (`agentd/examples/browser-qa.admin-center.yaml`).
 
-### 7. Connect MCP agent tools
+### 6. Connect MCP agent tools
 
 The mcpo tool servers are pre-registered at boot (Admin Panel → Settings →
 Tools lists them; set `LAN_HOST` in `.env` when you use the UI from other
@@ -427,7 +436,7 @@ devices). To add them by hand instead:
    - `swe` — the Local-EZAI SWE tools (plan / run / sprint / fix / evolve,
      status, reports; enabled by default for the Orchestrator persona only)
 
-### 8. Add documents to the knowledge base
+### 7. Add documents to the knowledge base
 
 ```bash
 # Put .txt or .md files in ./documents, then:

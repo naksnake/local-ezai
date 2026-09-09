@@ -107,7 +107,14 @@ change unless they pick the Orchestrator.
 > exists — an OpenWebUI model row on `role-orchestrator` with the preset,
 > native tool calling and the tool server enabled for this persona only
 > (the `install-autorag.sh` database pattern; idempotent). The P5 setup
-> pipeline calls it from the "Platform ready" step.
+> pipeline calls it from the "Platform ready" step — as built (PR-22):
+> `local-ezai setup` runs `scripts/register-orchestrator.sh` once the
+> platform is ready; when no account exists yet it reports "after your
+> first login: make orchestrator" and the card carries the same line. The
+> card itself reaches the WebUI as a banner (`WEBUI_BANNERS`) through an
+> optional compose env_file the pipeline writes and removes again if
+> OpenWebUI does not come back with it (S5 notifications, no fork, no DB
+> reach-in).
 
 ### Example conversation flows
 

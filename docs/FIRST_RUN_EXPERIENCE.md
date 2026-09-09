@@ -73,6 +73,20 @@ Step 6  SMOKE             scripted end-to-end: one chat turn · one RAG
 Result: generation 1, an auditable baseline, all roles resolvable
 ([MODEL_ROUTING_DESIGN.md](MODEL_ROUTING_DESIGN.md) §4 fails loudly if not).
 
+> **As-built (PR-22, `local-ezai init`):** the wizard is the CLI fallback
+> FINAL_FIRST_RUN_EXPERIENCE §4 reduced it to. Step 1 prints the detected
+> vector and class; step 2 proposes the **recommended set** — the catalog
+> recommender's first eligible entry per group for this class and runtime,
+> with placement, speed band and size — and lets you accept it (Enter,
+> `--yes`) or type a catalog id / `hf:` / `gguf:` reference per group; the
+> choices are written to `.env` as catalog ids (auditable in the generation-1
+> diff); steps 3–5 are the bootstrap (install → benchmark → the one implicit
+> activation) and step 6 is the pipeline's smoke — all through `local-ezai
+> setup`. Seeds already in `.env` are respected (invalid ones are reported
+> with their fixes), a bootstrapped platform skips straight to setup, and
+> without a terminal `init` prints the set and exits 3 unless `--yes`. The
+> Admin Center's "add model" flow is the PR-17 Models page.
+
 ## 4. First SWE contact (guided, optional)
 
 The final onboarding card offers two paths:
@@ -88,6 +102,16 @@ Both use the bundled sample project so the first experience never risks a
 user repo, and both end by showing the run report + the branch + the
 Admin Center run page — teaching the review-then-merge habit from minute
 one.
+
+> **As-built (PR-22):** the sample project is `examples/sample-project` — a
+> dependency-free HTTP service with a deliberately missing `/health` route
+> and a standard-library test suite. `local-ezai setup` copies it to
+> `<checkout>/sample-project`, makes it a git repository and registers it as
+> project `sample-project`; the smoke already runs `plan_only` against it
+> with the task "add a GET /health endpoint …", and the ✔ block, the banner
+> and `config/first-run/report.md` hand you that task for the Orchestrator
+> (`/?models=local-ezai-orchestrator`) and the CLI (`local-ezai sample-project
+> plan "…"`).
 
 ## 5. Day-2 handoff (what the user is told at the end)
 

@@ -1323,3 +1323,52 @@ as the fallback when seeds are missing, the class assertion passed by `make
 setup-*`; PR-23 — offline bundle, the scripted F1–F11 acceptance suite,
 onboarding under Browser QA → Accepted. Host Python remains a V1
 requirement (PR-7's departure from "no host Python").
+**PR-22 slice (2026-09-09) — the setup pipeline, the smoke, the card,
+`init`:** (1) **`make setup` is the five-step contract now.** It runs
+`install.sh` (steps 1–3; a fresh `.env` stops once for the seeds — the one
+edit) and then `local-ezai setup`, the host-only verb behind steps 4–8: the
+PR-7 bootstrap when no registry exists (models fetched, validated,
+benchmarked, generation 1 rendered), images (`docker compose pull` for the
+image services, `build` for the platform's own, with the rendered engine
+override), the RAG embedding model (one shared script), `up -d` for the
+profile, wait-ready (the active runtime descriptor's `ready` verb on the
+host port, then the daemon's health table addressed on host ports), the
+smoke, the report. Every step is idempotent, so a re-run repairs rather
+than repeats. The system-package script lives on as `make setup-system`;
+`setup-gpu|cpu|n97` pass their profile assertion through both halves. (2)
+**What "ready" means.** Engine and router healthy and one chat turn answered
+on the chat role alias — what a user's first message depends on. The RAG
+answer over a sample document (embedded with the stack's own embed script),
+`plan_only` on the bundled sample project and the evaluate-models probes are
+reported with their detail but advisory: they depend on the model the user
+chose and must not brick a working stack. Any other service down is a
+warning naming the compose logs to read. (3) **The report is a file, the
+card is a banner.** `config/first-run/report.{json,md}` and the ✔ block with
+the WebUI and Admin Center URLs (on `LAN_HOST` when set, on the relocated
+ports). The "Platform ready" card reaches the WebUI as OpenWebUI's own
+`WEBUI_BANNERS` setting through an optional compose `env_file`
+(`config/first-run/openwebui.env` — never `.env`: make exports `.env`
+verbatim and would hand compose a quoted JSON); OpenWebUI is recreated and
+probed, and the file is removed with a second recreate if it does not come
+back, so a banner can never break chat. The Orchestrator persona install is
+attempted and deferred to "after your first login: make orchestrator" when
+no account exists yet. (4) **The sample project is bundled**
+(`examples/sample-project`, a dependency-free HTTP service without
+`/health`), copied to `<checkout>/sample-project`, made a repository and
+registered, so the first autonomous task never touches a user's repository.
+(5) **`local-ezai init` is the wizard of FIRST_RUN_EXPERIENCE §3 in its
+fallback role:** hardware check, the recommended set per group from the
+catalog recommender with fit verdicts, each accepted or overridden (a
+catalog id, `hf:` or `gguf:`), written to `.env` as catalog ids — explicit,
+auditable in the generation-1 diff (F10) — then the pipeline; seeds already
+present are respected, invalid ones reported, a bootstrapped platform goes
+straight to setup. (6) **Engine models come from the registry**, so `make
+up*` no longer forces the legacy chat-model download and fetches only the
+embedding model when missing (the same script); `download-gpu` stays as the
+legacy path. (7) The CLI's platform context reads an asserted class from
+the platform's `.env` when the environment does not carry it (a shell
+instead of make) — the PR-21 decision "installer and CLI agree" completed.
+**Deferred to PR-23 (→ Accepted):** the offline bundle (`install.sh
+--offline`), the scripted F1–F11 acceptance suite, onboarding under Browser
+QA. A first-run card in the Admin Center waits for a contract operation that
+carries the report (parity or absence).

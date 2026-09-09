@@ -239,18 +239,23 @@ def test_a_profile_assertion_is_written_to_env_and_honored_by_the_cli(checkout, 
     again = install(checkout, ACCEL)
     assert again.capability_class == "cpu-low" and again.asserted == f"{CLASS_KEY} in .env"
     assert not again.changed
-    # `make` exports .env → the CLI's platform context sees the same class
+    # the CLI's platform context sees the same class: from the environment
+    # (`make` exports .env) or, in a plain shell, from the platform's .env (PR-22)
     monkeypatch.setattr(platform_cli, "detect_vector", lambda: ACCEL)
     config = AgentdConfig()
     config.platform.config_dir = checkout / "config"
     monkeypatch.delenv(CLASS_KEY, raising=False)
-    assert platform_cli.build_context(config, checkout).platform.klass == "accel-large"
-    monkeypatch.setenv(CLASS_KEY, "cpu-low")
     ctx = platform_cli.build_context(config, checkout)
     assert ctx.platform.klass == "cpu-low" and ctx.platform.accel == "cuda"
+    monkeypatch.setenv(CLASS_KEY, "accel-small")   # the environment wins over .env
+    assert platform_cli.build_context(config, checkout).platform.klass == "accel-small"
     monkeypatch.setenv(CLASS_KEY, "cpu-huge")
     with pytest.raises(PlatformError, match="EZAI_CAPABILITY_CLASS=cpu-huge is not a capability"):
         platform_cli.build_context(config, checkout)
+    # no assertion anywhere → detection
+    monkeypatch.delenv(CLASS_KEY, raising=False)
+    (checkout / ".env").write_text(seeds_for(checkout), encoding="utf-8")
+    assert platform_cli.build_context(config, checkout).platform.klass == "accel-large"
 
 
 # ── F5: repair mode never wipes anything ─────────────────────────────────────

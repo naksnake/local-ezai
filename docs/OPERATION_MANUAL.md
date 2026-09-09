@@ -7,8 +7,11 @@ runtime. Maintenance/repair procedures: [MAINTENANCE_GUIDE.md](MAINTENANCE_GUIDE
 
 | Action | Command |
 |---|---|
-| First run, steps 1–3: detect hardware, create or repair `.env` (secrets minted, model seeds validated before any download), one review edit | `./install.sh` (or `make install`; `--yes` skips the edit stop, `--check` writes nothing, `--profile n97` asserts a class) |
-| First-time setup (per hardware profile) | `make setup-n97` · `make setup-cpu` · `make setup-gpu` |
+| **First run, all steps** (the five-step contract) | `make setup` = `./install.sh` (edit `.env` once when asked) + `local-ezai setup` (bootstrap · images · embedding model · up · wait-ready · smoke · report); `make setup-gpu` / `setup-cpu` / `setup-n97` assert a profile; re-run any time — every step is idempotent |
+| First run, steps 1–3 only: detect hardware, create or repair `.env` (secrets minted, model seeds validated before any download), one review edit | `./install.sh` (or `make install`; `--yes` skips the edit stop, `--check` writes nothing, `--profile n97` asserts a class) |
+| First run, steps 4–8 only | `local-ezai setup [--profile P] [--skip-images] [--skip-smoke] [--skip-banner]`; no seeds in `.env`? `local-ezai init` proposes the catalog's recommended set first |
+| System packages on a fresh Ubuntu host (Docker, NVIDIA toolkit, Python venv, Node) | `make setup-system` |
+| The first-run report and the WebUI card | `config/first-run/report.md` (+ `report.json`); the card is the OpenWebUI banner written to `config/first-run/openwebui.env` — delete the file and `docker compose up -d openwebui` to drop it |
 | Start / stop / restart | `make up-n97` (or `up-cpu`/`up`) · `make down` · `make restart` |
 | Health of all 8 services | `make health` |
 | Wait for the LLM to finish loading | `make wait-ready` |

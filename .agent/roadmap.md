@@ -123,10 +123,19 @@ descriptors' `default_for_classes` data; repair of an existing `.env` —
 backup, user values untouched, only missing or placeholder secrets minted,
 idempotent, nothing else on disk touched; the bootstrap's F8 validation with
 a class-aware hint before any download; the one review-edit stop; `make
-install`) implemented. All twenty-one await human merge on
-`claude/next-ready-pr-bnq7r3`. Next ready by plan order: **PR-22** (setup
-pipeline + smoke: `make setup` = `install.sh` + fetch → render → up → verify
-→ report, the "Platform ready" card, `local-ezai init`).
+install`) and PR-22 (`make setup` = `install.sh` + `local-ezai setup`: the
+bootstrap when no registry exists, images with the rendered engine
+override, the embedding model, `up -d`, wait-ready by the runtime
+descriptor's `ready` verb and the health table on host ports, smoke — chat
+turn required, RAG / `plan_only` on the bundled sample project /
+evaluate-models advisory —, `config/first-run/report.{json,md}`, the
+"Platform ready" card as an OpenWebUI banner with automatic rollback, the
+persona attempted; `make setup-system` for the system packages;
+`setup-gpu|cpu|n97` assert their profile; `local-ezai init` proposes the
+catalog's recommended set when the seeds are missing) implemented. All
+twenty-two await human merge on `claude/next-ready-pr-bnq7r3`. Next ready by
+plan order: **PR-23** (offline bundle + the F1–F11 acceptance suite +
+onboarding under Browser QA → ADR-031 Accepted, P5 closed).
 
 **Product review (ADR-026, 2026-09-01):** agnosticism audit passed with
 remediations — roles/groups become the only stable names (role aliases

@@ -91,9 +91,10 @@ from agentd.runtime_descriptor import CAPABILITY_CLASSES, RuntimeDescriptor, loa
 
 log = get_logger("platform-cli")
 
-PLATFORM_COMMANDS = ("model", "governance", "project", "status", "up", "down", "bootstrap")
+PLATFORM_COMMANDS = ("model", "governance", "project", "status", "up", "down", "bootstrap",
+                     "setup", "init")
 #: Verbs that act on THIS host (compose files, .env) — never sent to a daemon.
-HOST_ONLY_COMMANDS = ("bootstrap", "up", "down")
+HOST_ONLY_COMMANDS = ("bootstrap", "up", "down", "setup", "init")
 #: A capability class ASSERTED by the operator (install.sh --profile/--class
 #: writes it to .env; make exports .env) — the installer and the CLI then
 #: agree on the class instead of each detecting (PR-21). Unset → detect.
@@ -183,6 +184,13 @@ def build_context(config: AgentdConfig, project: Path, actor: str | None = None)
     descriptors = load_descriptors(config_dir)
     vector = detect_vector()
     asserted = (os.environ.get(CLASS_ENV) or "").strip() or None
+    if asserted is None:  # not exported (a shell, not make) → the platform's own .env
+        env_file = config_dir.parent / ".env"
+        if env_file.is_file():
+            from agentd.bootstrap import parse_env
+
+            asserted = (parse_env(env_file.read_text(encoding="utf-8")).get(CLASS_ENV)
+                        or "").strip() or None
     if asserted and asserted not in CAPABILITY_CLASSES:
         raise PlatformError(f"{CLASS_ENV}={asserted} is not a capability class (known: "
                             f"{', '.join(CAPABILITY_CLASSES)}) — fix or remove the line in .env")
@@ -879,15 +887,19 @@ def cmd_down(ctx: PlatformContext, args: argparse.Namespace) -> int:
 # ── bootstrap (PR-7): .env seeds → generation 1 ──────────────────────────────
 
 
-def cmd_bootstrap(ctx: PlatformContext, args: argparse.Namespace) -> int:
+def run_bootstrap(ctx: PlatformContext, env_path: Path, *, dry_run: bool = False,
+                  skip_benchmark: bool = False, force: bool = False, reload: bool = False):
+    """The bootstrap with this host's seams (side-load validator, engine HTTP,
+    docker runner) — shared by ``local-ezai bootstrap`` and the setup
+    pipeline (PR-22). Raises ``PlatformError`` (no .env) or
+    ``bootstrap.BootstrapError`` (the seeds' problems, every fix listed)."""
     from agentd import bootstrap as bs
 
-    env_path = Path(args.env).expanduser() if args.env else ctx.root / ".env"
     if not env_path.is_file():
-        raise PlatformError(f"no {env_path} — copy .env.example to .env and set "
-                            f"{bs.RUNTIME_KEY} + {' / '.join(bs.SEED_GROUPS)}")
+        raise PlatformError(f"no {env_path} — run ./install.sh (or copy .env.example to .env "
+                            f"and set {bs.RUNTIME_KEY} + {' / '.join(bs.SEED_GROUPS)})")
     seeds = bs.read_seeds(bs.parse_env(env_path.read_text(encoding="utf-8")))
-    reloader, health = reload_seams(args.reload)
+    reloader, health = reload_seams(reload)
 
     def benchmark_fn(registry, name):
         updated, _ = lifecycle.benchmark(
@@ -897,15 +909,24 @@ def cmd_bootstrap(ctx: PlatformContext, args: argparse.Namespace) -> int:
             agent_dir=ctx.root / ctx.config.memory.dir)
         return updated
 
+    return bs.bootstrap(seeds, ctx.platform, ctx.queue, ctx.catalog, actor=ctx.actor,
+                        validator=build_validator(ctx), env_path=env_path,
+                        benchmark_fn=benchmark_fn, skip_benchmark=skip_benchmark,
+                        reloader=reloader, health=health, dry_run=dry_run, force=force)
+
+
+def cmd_bootstrap(ctx: PlatformContext, args: argparse.Namespace) -> int:
+    from agentd import bootstrap as bs
+
+    env_path = Path(args.env).expanduser() if args.env else ctx.root / ".env"
     try:
-        result = bs.bootstrap(seeds, ctx.platform, ctx.queue, ctx.catalog, actor=ctx.actor,
-                              validator=build_validator(ctx), env_path=env_path,
-                              benchmark_fn=benchmark_fn, skip_benchmark=args.skip_benchmark,
-                              reloader=reloader, health=health, dry_run=args.dry_run,
-                              force=args.force)
+        result = run_bootstrap(ctx, env_path, dry_run=args.dry_run,
+                               skip_benchmark=args.skip_benchmark, force=args.force,
+                               reload=args.reload)
     except bs.BootstrapError as exc:
         _emit(args, {"ok": False, "error": str(exc)}, [str(exc)])
         return 1
+    seeds = bs.read_seeds(bs.parse_env(env_path.read_text(encoding="utf-8")))
     lines = [result.message, f"  runtime: {result.runtime}"
              + (f" · migrated from legacy .env family {seeds.migrated_from}"
                 if seeds.migrated_from else "")]
@@ -917,6 +938,46 @@ def cmd_bootstrap(ctx: PlatformContext, args: argparse.Namespace) -> int:
                  "diff": result.diff, "stamped": result.stamped,
                  "migrated_from": seeds.migrated_from}, lines)
     return 0
+
+
+# ── setup · init (PR-22): steps 4–8 of the first run, the fallback wizard ────
+
+
+def cmd_setup(ctx: PlatformContext, args: argparse.Namespace) -> int:
+    from agentd.setup_pipeline import SetupOptions, SetupPipeline
+
+    options = SetupOptions(root=ctx.root, profile=args.profile, skip_images=args.skip_images,
+                           skip_smoke=args.skip_smoke, skip_banner=args.skip_banner,
+                           env_path=Path(args.env).expanduser() if args.env else None)
+    quiet = getattr(args, "as_json", False)
+    report = SetupPipeline(ctx, options, say=(lambda text: None) if quiet else print).run()
+    if quiet:
+        _emit(args, report.as_dict(), [])
+    else:
+        print("\n".join([""] + report.card()))
+    return report.exit_code
+
+
+def cmd_init(ctx: PlatformContext, args: argparse.Namespace) -> int:
+    from agentd.setup_pipeline import InitOptions, SetupError, run_init
+
+    options = InitOptions(root=ctx.root, assume_yes=args.assume_yes, profile=args.profile,
+                          env_path=Path(args.env).expanduser() if args.env else None)
+    quiet = getattr(args, "as_json", False)
+    try:
+        outcome = run_init(ctx, options, say=(lambda text: None) if quiet else print)
+    except SetupError as exc:
+        _emit(args, {"ok": False, "error": str(exc)}, [str(exc)])
+        return 2
+    if isinstance(outcome, int):
+        if quiet:
+            _emit(args, {"ok": False, "exit_code": outcome}, [])
+        return outcome
+    if quiet:
+        _emit(args, outcome.as_dict(), [])
+    else:
+        print("\n".join([""] + outcome.card()))
+    return outcome.exit_code
 
 
 # ── argparse wiring + dispatch ───────────────────────────────────────────────
@@ -1021,6 +1082,24 @@ def add_platform_parsers(sub: argparse._SubParsersAction, common: argparse.Argum
     p.add_argument("--reload", action="store_true", help="Reload consumers + health-check")
     p.add_argument("--by", default=None)
 
+    p = leaf(sub, "setup", "First run, steps 4–8: bootstrap → images → up → wait-ready → "
+                           "smoke → report (after ./install.sh; idempotent)")
+    p.add_argument("--profile", default=None, help="gpu · cpu · n97 · n97-igpu (default: "
+                                                   "from the detected or asserted class)")
+    p.add_argument("--env", default=None, help="Path to .env (default: <platform>/.env)")
+    p.add_argument("--skip-images", action="store_true", dest="skip_images",
+                   help="Do not pull/build images (already done)")
+    p.add_argument("--skip-smoke", action="store_true", dest="skip_smoke",
+                   help="Skip the smoke checks (chat · RAG · plan · model probes)")
+    p.add_argument("--skip-banner", action="store_true", dest="skip_banner",
+                   help="Do not show the Platform-ready card in the WebUI")
+    p = leaf(sub, "init", "Fallback wizard when .env has no model seeds: hardware check → "
+                          "recommended model set → seeds → setup")
+    p.add_argument("-y", "--yes", action="store_true", dest="assume_yes",
+                   help="Accept the recommended set without asking")
+    p.add_argument("--profile", default=None)
+    p.add_argument("--env", default=None)
+
 
 HANDLERS: dict[tuple[str, str | None], Callable[[PlatformContext, argparse.Namespace], int]] = {
     ("model", "install"): cmd_model_install, ("model", "benchmark"): cmd_model_benchmark,
@@ -1034,7 +1113,7 @@ HANDLERS: dict[tuple[str, str | None], Callable[[PlatformContext, argparse.Names
     ("project", "add"): cmd_project_add, ("project", "list"): cmd_project_list,
     ("project", "remove"): cmd_project_remove,
     ("status", None): cmd_status, ("up", None): cmd_up, ("down", None): cmd_down,
-    ("bootstrap", None): cmd_bootstrap,
+    ("bootstrap", None): cmd_bootstrap, ("setup", None): cmd_setup, ("init", None): cmd_init,
 }
 
 

@@ -44,6 +44,10 @@ MCPO_CHAT_ENV = ("MCP_API_KEY", "RAG_COLLECTION")
 MONITOR_ADDITIVE_PREFIXES = ("EZAI_CONTROL_", "MONITOR_SSO_")
 #: OpenWebUI tool-server connections that existed before PR-14.
 CHAT_TOOL_CONNECTIONS = ("qdrant-rag", "fetch", "memory", "filesystem")
+#: OpenWebUI service keys added by the first run's "Platform ready" banner
+#: (PR-22): an optional env_file that does not exist until `local-ezai setup`
+#: wrote it — additive to the chat experience.
+OPENWEBUI_ADDITIVE_KEYS = ("env_file",)
 
 
 def sha256(path: Path) -> str:
@@ -73,6 +77,8 @@ def snapshot(root: Path = REPO_ROOT) -> dict[str, Any]:
             connections = json.loads(render_placeholders(env.pop("TOOL_SERVER_CONNECTIONS", "[]")))
             service["tool_server_connections"] = [
                 c for c in connections if c["info"]["id"] in CHAT_TOOL_CONNECTIONS]
+            for key in OPENWEBUI_ADDITIVE_KEYS:
+                service.pop(key, None)
         if name == "mcpo":
             env = {k: v for k, v in env.items() if k in MCPO_CHAT_ENV}
             service.pop("extra_hosts", None)  # PR-13 additive reachability for a host daemon

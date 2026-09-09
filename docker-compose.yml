@@ -47,6 +47,11 @@ services:
       # access the UI from other devices. NOTE: once an admin edits the tool
       # list in the UI, the UI-saved value wins over this env default.
       - 'TOOL_SERVER_CONNECTIONS=[{"url":"http://${LAN_HOST:-localhost}:${MCPO_PORT:-8200}/qdrant-rag","path":"openapi.json","auth_type":"bearer","key":"${MCP_API_KEY:-local-tools-key}","config":{"enable":true},"info":{"id":"qdrant-rag","name":"Knowledge Base Search"}},{"url":"http://${LAN_HOST:-localhost}:${MCPO_PORT:-8200}/fetch","path":"openapi.json","auth_type":"bearer","key":"${MCP_API_KEY:-local-tools-key}","config":{"enable":true},"info":{"id":"fetch","name":"Web Fetch"}},{"url":"http://${LAN_HOST:-localhost}:${MCPO_PORT:-8200}/memory","path":"openapi.json","auth_type":"bearer","key":"${MCP_API_KEY:-local-tools-key}","config":{"enable":true},"info":{"id":"memory","name":"Memory"}},{"url":"http://${LAN_HOST:-localhost}:${MCPO_PORT:-8200}/filesystem","path":"openapi.json","auth_type":"bearer","key":"${MCP_API_KEY:-local-tools-key}","config":{"enable":true},"info":{"id":"filesystem","name":"Filesystem"}},{"url":"http://${LAN_HOST:-localhost}:${MCPO_PORT:-8200}/swe","path":"openapi.json","auth_type":"bearer","key":"${MCP_API_KEY:-local-tools-key}","config":{"enable":true},"info":{"id":"swe","name":"Local-EZAI SWE"}}]'
+    # The first run (`local-ezai setup`, V1 P5) writes the "Platform ready"
+    # banner as WEBUI_BANNERS into this optional file; absent = no banner.
+    env_file:
+      - path: config/first-run/openwebui.env
+        required: false
     volumes:
       - openwebui-data:/app/backend/data
     networks:

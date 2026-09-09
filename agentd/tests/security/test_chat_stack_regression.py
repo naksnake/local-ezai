@@ -75,3 +75,5 @@ def test_drift_is_detected(tmp_path):
     assert not any(k.startswith(("EZAI_CONTROL_", "MONITOR_SSO_"))
                    for k in compose["services"]["monitor"]["environment"])
     assert "extra_hosts" not in compose["services"]["monitor"]
+    # the first run's optional banner env_file (PR-22) is additive too
+    assert "env_file" not in compose["services"]["openwebui"]

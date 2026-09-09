@@ -120,6 +120,28 @@ atomic generation — never a half-configured platform).
 > The installer never picks models. `make install` runs it; steps 4–8 stay
 > `make bootstrap` + `make up-*` until PR-22 folds them into `make setup`.
 
+> **As-built (PR-22, `local-ezai setup`, `agentd/src/agentd/setup_pipeline.py`):**
+> `make setup` is the whole tree now — `install.sh` (steps 1–3) then
+> `local-ezai setup`: **4 fetch** = the PR-7 bootstrap when no registry
+> exists (models fetched, validated, benchmarked; **5 render** happens
+> inside it), then `docker compose pull` / `build` with the rendered engine
+> override, then the RAG embedding model (`scripts/download-embed.sh`,
+> skipped when present); **6 up** = `docker compose up -d` for the profile +
+> wait-ready: the active runtime descriptor's `ready` verb on the host port,
+> then every service of the daemon's health table; **7 verify** = one chat
+> turn on the chat role alias (required), a RAG answer over a sample
+> document embedded with the stack's own embed script, `plan_only` on the
+> bundled sample project, the evaluate-models probes (the last three are
+> advisory — they depend on the model you chose); **8 done** = the ✔ block
+> with the WebUI and Admin Center URLs (`LAN_HOST`, relocated ports),
+> `config/first-run/report.{json,md}`, the "Platform ready" card as an
+> OpenWebUI banner (through an optional compose env_file; rolled back
+> automatically if OpenWebUI does not come back), the Orchestrator persona
+> installed — or deferred to "after your first login: make orchestrator".
+> Every step is idempotent: re-running `make setup` repairs, it never
+> repeats a download. `make setup-gpu|cpu|n97` assert their class through
+> both halves; the system-package script is `make setup-system`.
+
 ## 4. First WebUI contact
 
 - OpenWebUI opens on account creation (existing flow, first user = admin).
@@ -132,6 +154,21 @@ atomic generation — never a half-configured platform).
   confirmation, not configuration. (The interactive Bootstrap wizard from
   FIRST_RUN_EXPERIENCE survives only as the *fallback* when seeds are
   missing/`auto`, and as the Admin Center's "add model" flow.)
+
+> **As-built (PR-22):** the card is OpenWebUI's own banner (`WEBUI_BANNERS`,
+> type *success*, dismissible), written by the pipeline into the optional
+> compose env_file `config/first-run/openwebui.env`: the three groups and
+> the model each got, runtime + capability class, the smoke tally, the Admin
+> Center URL, how to reach the Orchestrator (pick it in the model list; `make
+> orchestrator` after the first login installs it) and the CLI status
+> command. The three "buttons" are URLs in the text — the banner is plain
+> text; the same card is `config/first-run/report.md` and the terminal's
+> ✔ block, with the Orchestrator deep link `/?models=local-ezai-orchestrator`.
+> The fallback wizard is `local-ezai init`: hardware check → the recommended
+> set per group (catalog recommender, fit verdicts) → accept or type a
+> reference → seeds written to `.env` as catalog ids → the pipeline. OpenWebUI
+> keeps a UI-saved banner list over the env default, so the card shows on a
+> fresh install and never overrides an admin's later edits.
 
 ## 5. Day-2 (restated, unchanged)
 
