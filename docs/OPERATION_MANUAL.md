@@ -15,6 +15,7 @@ runtime. Maintenance/repair procedures: [MAINTENANCE_GUIDE.md](MAINTENANCE_GUIDE
 | First-run acceptance suite (F1–F11, offline) | `make swe-accept` |
 | Parity harness — every management operation via CLI-direct · CLI-connected · API, same result, state and audit (release gate, offline) | `make swe-parity`; the whole P6 gate (lint · chat-stack baseline · drill · acceptance · parity · agnosticism gates · full suite): `make release-gate` |
 | Agnosticism gates — the third-runtime drill (a mock runtime runs end to end from descriptor data alone), the H1 word audit (no vendor/brand/SKU strings outside descriptor data), H2–H4 class fixtures (offline) | `make swe-gates` |
+| 72 h soak on this host (release gate, real hardware): health · status · bench · SWE runs · lifecycle churn with rollback · evolution → `config/soak/<stamp>/results.md` | `make soak HOURS=72` (`SOAK_ARGS="--dry-run"` prints the schedule) — [SOAK_RUNBOOK.md](SOAK_RUNBOOK.md) |
 | The first-run report and the WebUI card | `config/first-run/report.md` (+ `report.json`); the card is the OpenWebUI banner written to `config/first-run/openwebui.env` — delete the file and `docker compose up -d openwebui` to drop it |
 | Start / stop / restart | `make up-n97` (or `up-cpu`/`up`) · `make down` · `make restart` |
 | Health of all 8 services | `make health` |
@@ -167,7 +168,7 @@ and open `http://127.0.0.1:8899/overview`.
 |---|---|
 | Install (Linux dev) | `make swe-install` (+ `make swe-browsers` for Browser QA) |
 | Install (pipx / Windows) | see [agentd/INSTALL.md](../agentd/INSTALL.md) |
-| Self-test the runtime | `make swe-test` (offline, 590+ tests) · `make swe-lint` |
+| Self-test the runtime | `make swe-test` (offline, 740+ tests) · `make swe-lint` · the whole release gate: `make release-gate` |
 | Drill the chat-ops boundary | `make swe-drill` (offline: governance unreachable from chat, prompt-injection red-team, chat/RAG byte-identical baseline — `python3 scripts/chat-stack-baseline.py --update` after a deliberate chat-stack change) |
 | Point at the model plane | `AGENTD_LLM__BASE_URL=http://localhost:4000/v1` + `LITELLM_MASTER_KEY` |
 | Show model routing | `local-ezai models` |
@@ -227,5 +228,5 @@ always human ([GOVERNANCE.md](GOVERNANCE.md)).
 |---|---|
 | daily | `make health`; review any red service via `make logs-<svc>` |
 | weekly | `local-ezai evaluate-models` per active repo; prune old runs (`rm -rf ~/.agentd/runs/<old>`) |
-| per release | `make swe-test`, `local-ezai . docs`, review RELEASE_NOTES |
+| per release | `make release-gate`; the 72 h soak on both host classes (`make soak`, [SOAK_RUNBOOK.md](SOAK_RUNBOOK.md)); `local-ezai . docs`; the release report's DoD checklist and sign-off ([V1_RELEASE_REPORT.md](V1_RELEASE_REPORT.md)); [RELEASE_NOTES.md](RELEASE_NOTES.md) |
 | monthly | `make update-<profile>` (image updates), re-run `make health` + `make bench` |

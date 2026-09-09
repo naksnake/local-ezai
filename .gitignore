@@ -89,4 +89,5 @@ temp/
 #    project working copy at the checkout root (the source that IS tracked
 #    lives in examples/sample-project — hence the leading slash)
 config/first-run/
+config/soak/
 /sample-project/

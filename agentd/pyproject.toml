@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agentd"
-version = "0.5.0"
+version = "1.0.0"
 description = "local-ezai — Local Autonomous Software Engineer: plan, code, validate, debug, and commit on your own hardware"
 readme = "README.md"
 license = { text = "MIT" }

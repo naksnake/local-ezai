@@ -282,7 +282,8 @@ clean: ## Remove all containers, images, and volumes (WARNING: deletes data)
 # Autonomous SWE runtime (agentd) — additive targets, see agentd/README.md
 # ═══════════════════════════════════════════════════════════════════════════
 .PHONY: swe-install swe-browsers swe-test swe-lint swe-drill swe-accept swe-parity swe-gates \
-        release-gate swe-run swe-plan control-up control-down control-logs control-spec control-serve
+        release-gate soak swe-run swe-plan control-up control-down control-logs control-spec \
+        control-serve
 
 swe-install: ## Install the agentd runtime into ./.venv-agentd (editable, dev + browser + control extras)
 	python3 -m venv .venv-agentd
@@ -343,8 +344,11 @@ release-gate: ## The P6 release gate in one command: lint · chat-stack baseline
 	$(MAKE) swe-gates
 	$(MAKE) swe-test
 	@echo ""
-	@echo "  release gate: green — see docs/V1_IMPLEMENTATION_PLAN.md §P6 for the remaining human steps (soak, DoD, sign-off)"
+	@echo "  release gate: green — next: make soak (docs/SOAK_RUNBOOK.md), then docs/V1_RELEASE_REPORT.md §7 (sign-off, tag)"
 	@echo ""
+
+soak: ## 72 h soak on this host (docs/SOAK_RUNBOOK.md): health · status · bench · SWE runs · lifecycle churn with rollback · evolution → config/soak/<stamp>/results.md — make soak HOURS=72 [SOAK_ARGS="--dry-run"]
+	@bash scripts/soak.sh --hours $(or $(HOURS),72) $(SOAK_ARGS)
 
 swe-run: ## Autonomous run: make swe-run TASK="fix the bug" REPO=/path/to/repo
 	.venv-agentd/bin/ezai run "$(TASK)" --repo "$(REPO)"

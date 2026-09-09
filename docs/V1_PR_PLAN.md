@@ -410,11 +410,30 @@ end to end. Found and fixed: the resolver's default runtime for a source
 ignored the active slot (`lifecycle.slot_runtime_for`). Found and reworded:
 four brand words in help text, a prompt note, a script header, a comment.
 Residual recorded for PR-26: the health table's engine probe path.
-**PR-26 · Release train** — M: docs refresh (USER_GUIDE, OPERATION_MANUAL,
-CLI_REFERENCE, TROUBLESHOOTING, MAINTENANCE_GUIDE absorb new surfaces),
-72 h soak runbook + results, product DoD checklist
-(TARGET_PRODUCT_V1 §8) item-by-item, human release sign-off, tag
-**v1.0.0**.
+**PR-26 · Release train** — M — ✅ **implemented up to the human steps**
+([prs/PR-26-release-train.md](prs/PR-26-release-train.md); 5 tripwire tests
+— suite 743 green)
+Scope: docs refresh (USER_GUIDE, OPERATION_MANUAL, CLI_REFERENCE,
+TROUBLESHOOTING, MAINTENANCE_GUIDE absorb new surfaces), 72 h soak runbook +
+results, product DoD checklist (TARGET_PRODUCT_V1 §8) item-by-item, human
+release sign-off, tag **v1.0.0**.
+As built: the five guides rewritten or extended for V1 (the five-step first
+run, the Orchestrator, the Admin Center, models and approvals as a user; the
+gates and the soak in operations; contract 1.1.0/1.2.0 rows and the
+resolver rule in the CLI reference; five new troubleshooting sections; the
+V1 layout, generation/rollback operations and the release procedure in
+maintenance); `docs/RELEASE_NOTES.md` created (CLAUDE.md mandate) with the
+v1.0.0 entry and the prior history; `docs/SOAK_RUNBOOK.md` + `scripts/soak.sh`
+(`make soak`: a fixed 72 h schedule of health, status, bench, scripted SWE
+runs, lifecycle churn with rollback under load, evolution and container
+stats, one JSON line per step, a results summary, a dry-run mode; the Day-0
+timing doubles as the F1 measurement); `docs/V1_RELEASE_REPORT.md` with the
+DoD checked item by item against evidence, the P6 criteria status, known
+limitations and the human checklist ending in the sign-off table and the
+tag; version **1.0.0** in `__init__` and `pyproject.toml` (they disagreed
+before). **Human steps remaining, by design:** the soak results on both
+host classes, the sign-off, the merge, the tag — agents propose, humans
+approve.
 
 ## 4. Sizing & sequence summary
 

@@ -416,6 +416,17 @@ through `local-ezai model …` + the governance queue. Modules:
   `make swe-gates`, `release-gate` extended, CI step. Fix:
   `lifecycle.slot_runtime_for` — `resolve_target` prefers the active slot's
   runtime for a `gguf:`/`hf:` source when it serves the format.
+- **Release train** (PR-26, ADR-026 P6 slice): `scripts/soak.sh` (`make
+  soak HOURS=72 [SOAK_ARGS="--dry-run"]`; schedule constants `EVERY_*` in
+  ticks, `actions_at`, `step` records `{ts, tick, action, ok, seconds,
+  detail}` to `config/soak/<stamp>/log.jsonl`, a Python summary writes
+  `results.md`; `do_churn` = `model benchmark <chat primary>` → `model
+  rollback`), `docs/SOAK_RUNBOOK.md`, `docs/RELEASE_NOTES.md`,
+  `docs/V1_RELEASE_REPORT.md`, the five guides refreshed, version 1.0.0 in
+  `agentd/src/agentd/__init__.py` and `agentd/pyproject.toml`;
+  `tests/integration/test_release_train.py` pins the version everywhere, the
+  release-notes order, the DoD coverage of TARGET_PRODUCT_V1 §8, the soak
+  schedule (dry run), the guides' anchors and the absence of a machine tag.
 - **Installer, steps 1–3 of the first run** (`install.sh` →
   `agentd/src/agentd/installer.py`, PR-21, ADR-031 Proposed): preflight
   (python3 ≥ 3.10, the agentd venv via `make swe-install`, Docker present or

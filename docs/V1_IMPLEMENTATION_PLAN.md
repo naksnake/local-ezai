@@ -159,8 +159,11 @@ N1′ (container hardening) folded into the soak gate.
 > the whole gate (lint · chat-stack baseline · boundary drill · F1–F11 ·
 > parity · agnosticism gates · the full suite). The ADR-026 gates H1–H4 and
 > the third-runtime drill are `agentd/tests/gates/` (`make swe-gates`, PR-25;
-> HARDWARE_AGNOSTIC §6 and RUNTIME_ABSTRACTION §6 as-built). Criteria 2–4
-> are PR-26.
+> HARDWARE_AGNOSTIC §6 and RUNTIME_ABSTRACTION §6 as-built). Criterion 3 is
+> [V1_RELEASE_REPORT.md](V1_RELEASE_REPORT.md) §3 (PR-26); criteria 2 and 4
+> are the human steps PR-26 prepared — the 72 h soak per
+> [SOAK_RUNBOOK.md](SOAK_RUNBOOK.md) (`make soak`) with its results in the
+> report's §4, and the sign-off in §7 that tags `v1.0.0`.
 
 ## Cross-cutting workstreams (every phase)
 

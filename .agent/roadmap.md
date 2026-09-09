@@ -22,7 +22,7 @@ tests, self-reviews, and delivers a branch/PR — entirely on local hardware.
 | M5 | Code intelligence & memory | P5 | 🟡 mostly — project memory (ADR-017) + **semantic code intelligence** (ADR-023: ast/Tree-sitter symbol index, import graph, `.agent/code-index/`, planner repo-map injection, `code_symbols` tool). Qdrant-backed similarity retrieval still open (N3′) | hybrid code retrieval live; tokens/run down vs M4; curator memory proposal merged via review |
 | M6 | Interfaces & A3 delivery | P6 | 🟡 mostly — production CLI `local-ezai` (ADR-018), **autonomous sprint execution** (ADR-019), and **PR/forge delivery** (ADR-020: forge none/gh/api, evolution PRs) shipped. Web console + chat-ops MCP tools still open | console gate approvals; chat-ops tools; PR opened on LAN forge at A3 |
 | M6.5 | Self-sustainability & governance | P7 | ✅ done (2026-08-17) — ADR-020: model registry + fallback routing + `evaluate-models` benchmarking; Documentation Agent; Evolution Agent + `evolve` pipeline (human-approval terminal); root `.agentd.yaml` self-hosting; 8 production guides; 267 offline tests. Final readiness review: [docs/FINAL_RELEASE_REPORT.md](../docs/FINAL_RELEASE_REPORT.md) | bootstrap exit viable: Human → Roadmap → Local-EZAI loop runs end-to-end |
-| M7 | v1.0 hardened release | P7 | ⬜ not started | security sign-off; 72 h soak on N97 + GPU; `v1.0.0` |
+| M7 | v1.0 hardened release | P7 | 🟡 release train delivered (PR-26, 2026-09-09): gates green (`make release-gate`), version 1.0.0, DoD checked in [docs/V1_RELEASE_REPORT.md](../docs/V1_RELEASE_REPORT.md); awaiting the 72 h soak on both host classes ([docs/SOAK_RUNBOOK.md](../docs/SOAK_RUNBOOK.md)) and the human sign-off → tag | security sign-off; 72 h soak on the low-power + accelerator classes; `v1.0.0` |
 
 ## Sequencing rules
 
@@ -152,10 +152,16 @@ code naming the runtime; the H1 word audit with its allowances as data; H2
 same seeds on two classes, H3 the 7B Q4 fit on four vectors, H4 `--profile
 n97` ≡ `--class cpu-low` end to end; fixed the resolver's default runtime
 for a source ignoring the active slot; residual: the health table's engine
-probe path) implemented. All twenty-five await human merge on
-`claude/next-ready-pr-bnq7r3`. Next ready by plan order: **PR-26** (the
-release train — docs refresh, soak runbook, DoD checklist, human sign-off,
-`v1.0.0`).
+probe path) and PR-26 (the release train: the five guides refreshed for V1,
+`docs/RELEASE_NOTES.md` with the v1.0.0 entry, `docs/SOAK_RUNBOOK.md` +
+`scripts/soak.sh` / `make soak`, `docs/V1_RELEASE_REPORT.md` with the DoD
+checked item by item, version 1.0.0) implemented. **The V1 plan's
+twenty-six PRs are delivered** and await human merge on
+`claude/next-ready-pr-bnq7r3`. No PR is next ready by plan order; what
+remains is human: the 72 h soak on both host classes (SOAK_RUNBOOK), the
+sign-off (V1_RELEASE_REPORT §7), the merge, the `v1.0.0` tag. Post-V1
+candidates: N1′, N3′, N5′, N6′ below and the two PR-25 residuals (the health
+table's engine probe path; a tool-call format for day-2 installs).
 
 **Product review (ADR-026, 2026-09-01):** agnosticism audit passed with
 remediations — roles/groups become the only stable names (role aliases

@@ -313,6 +313,7 @@ make swe-accept  First-run acceptance suite F1–F11 (offline)
 make swe-parity  Parity harness (release gate): every management operation via CLI-direct, CLI-connected and the API — same result, state, audit (offline)
 make swe-gates   Agnosticism gates: the third-runtime drill (a mock runtime from descriptor data alone), the H1 word audit, the H2–H4 class fixtures (offline)
 make release-gate  The P6 release gate in one command: lint · chat-stack baseline · drill · acceptance · parity · agnosticism gates · full suite
+make soak        72 h soak on this host (docs/SOAK_RUNBOOK.md): health · bench · SWE runs · lifecycle churn with rollback · evolution — make soak HOURS=72
 make update      Pull latest images and restart
 make k8s         Deploy to K3s Kubernetes
 make clean       Remove all containers, images, volumes (destructive)

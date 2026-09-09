@@ -721,6 +721,27 @@ the control plane's health table probes the engine slot at its own
 pipeline's wait-ready is descriptor-driven; the sweep is operator data);
 and a day-2 `model install` of an undeclared user source carries no
 tool-call format (the bootstrap's generic default applies to seeds only).
+**P6 slice (2026-09-09, PR-26) — the release train, up to the human
+steps:** the five guides absorb the V1 surfaces; `docs/RELEASE_NOTES.md`
+exists with the v1.0.0 entry (CLAUDE.md's mandated fourth guide);
+`docs/SOAK_RUNBOOK.md` + `scripts/soak.sh` (`make soak`) make P6 exit
+criterion 2 a fixed, logged schedule — health and status every 15 min,
+bench hourly, a scripted SWE run every 2 h, lifecycle churn (benchmark → a
+new generation → rollback) every 6 h as the rollback-under-load exercise,
+an evolution cycle and container stats daily, one JSON line per step and a
+summary the release report quotes; `docs/V1_RELEASE_REPORT.md` checks the
+product DoD item by item against tests and PR artifacts and ends in the
+sign-off table. Decisions: (1) **the version is bumped in the release PR**
+(`__version__` and `pyproject.toml` both 1.0.0 — they disagreed before) as
+MAINTENANCE_GUIDE §6 prescribes, **the tag is not**: a test asserts no
+`v1.0.0` tag exists in the repository, because production releases are a
+human act (CLAUDE.md, GOVERNANCE.md); (2) **soak results are a hardware
+measurement** — the PR delivers the runbook, the driver and the results
+template with the offline evidence filled in and marks the host rows
+pending, rather than claiming a soak that did not run; (3) the two PR-25
+residuals are **known limitations in the release notes**, not fixed in the
+train. With PR-26 the V1 plan's twenty-six PRs are delivered; ADR-025..031
+stand as built.
 
 ## ADR-027 — Registry v2 · PAL · governed model lifecycle (P1)
 **Date:** 2026-09-01 · **Status:** **Accepted** (2026-09-08, phase P1
