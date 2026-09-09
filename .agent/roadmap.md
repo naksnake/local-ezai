@@ -138,9 +138,16 @@ bundle: `local-ezai bundle create` on a connected host, `install.sh
 the network; the F1–F11 acceptance suite, `make swe-accept`, which surfaced
 and fixed the bootstrap's `auto` dedupe; contract 1.2.0 `first_run_report`
 and the Platform-ready card on the Overview under Browser QA) implemented.
-All twenty-three await human merge on `claude/next-ready-pr-bnq7r3`. Next
-ready by plan order: **PR-24** (parity harness — opens P6, the release
-train).
+🟡 **P6 open (the release train)** — PR-24 (parity harness as the release
+gate: `agentd/tests/parity/`, `make swe-parity` — every CLI_AND_WEBUI §3
+row on three identical worlds, CLI-direct · CLI-connected · the API as the
+console, equal response bodies, declarative state and operation audit with
+the transports' annotations normalised explicitly; absent cells asserted
+absent; the chat ceiling per row; the §3 table as a tripwire; `make
+release-gate`; acceptance + parity steps on the manual CI workflow; fixed
+`model rollback --json`) implemented. All twenty-four await human merge on
+`claude/next-ready-pr-bnq7r3`. Next ready by plan order: **PR-25**
+(agnosticism gates — the `mockengine` third-runtime drill, H1–H4).
 
 **Product review (ADR-026, 2026-09-01):** agnosticism audit passed with
 remediations — roles/groups become the only stable names (role aliases

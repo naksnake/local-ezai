@@ -221,3 +221,28 @@ dog-foods its own Browser QA agent
 > `1.0.0` (`docs/api/ezaid-openapi.json`, 29 operations, inventory-pinned).
 > The three-surface harness with audit-record equivalence becomes the
 > release gate in PR-24.
+
+> **As built (PR-24, P6 — the gate):** `agentd/tests/parity/` (`make
+> swe-parity`; part of `make release-gate` and of the CI workflow). Every
+> row of the §3 table is a test — a tripwire parses the table — and each
+> row's scenario runs on **three identical worlds**: CLI-direct,
+> CLI-connected, and the API called exactly as the Admin Center calls it
+> (`X-EZAI-Client: admin-center`). The harness asserts equal **response
+> bodies** (the CLI's `--json` is the API body), equal **declarative state**
+> afterwards (registry, generations, queue, projects, a repository's memory)
+> and equal **operation audit**. What a transport adds is normalised
+> explicitly, as data: the `via <client>` suffix of the forwarded identity,
+> the daemon's `api.<operation>` / `run.*` / `control.*` / `auth.*` events
+> (present on both daemon surfaces and identical to each other, absent
+> in-process), timestamps, run ids, hashes, durations, each world's paths.
+> Cells the matrix leaves empty are asserted absent: the repo-work verbs
+> (`run`, `plan`, `memory`) never probe a daemon and their in-process result
+> equals the API's — run report for run report, journal for journal, plan
+> for plan; `up`/`down` are direct even when connected is requested and no
+> contract operation exists; the memory verb is repository work whose record
+> is the store itself, while the daemon's curated add is also
+> platform-audited (PR-19's decision, pinned). The chat client's ceiling is
+> checked row by row against the daemon's policy table, and every mutation
+> the contract offers must be classified by a row. The gate found one
+> defect, fixed in PR-24: `model rollback --json` printed its ROLLBACK
+> notice before the JSON.

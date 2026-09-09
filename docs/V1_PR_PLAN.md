@@ -370,9 +370,26 @@ PR fixed, the bootstrap's `auto` dedupe (one model for every group).
 
 ### Phase P6 — Parity, agnosticism proof, release
 
-**PR-24 · Parity harness** — M: CLI-direct vs CLI-connected vs API
-state/audit equivalence across the CLI_AND_WEBUI_STRATEGY §3 matrix;
-release-gate wiring in CI.
+**PR-24 · Parity harness** — M — ✅ **implemented**
+([prs/PR-24-parity-harness.md](prs/PR-24-parity-harness.md); 15 tests —
+eleven row tests over the twelve §3 rows, the chat ceiling per row, the
+doc-table and gate-wiring tripwires, the normaliser's own test — suite 724
+green, goldens and the chat-stack baseline intact; **P6 opened**)
+Scope: CLI-direct vs CLI-connected vs API state/audit equivalence across
+the CLI_AND_WEBUI_STRATEGY §3 matrix; release-gate wiring in CI.
+As built: `agentd/tests/parity/` (`make swe-parity`) runs every matrix row
+on three identical worlds — one per surface, the API called as the console
+(`X-EZAI-Client: admin-center`) — and asserts equal response bodies, equal
+declarative state and equal operation audit, the transports' annotations
+normalised explicitly as data (`via <client>`, `api.*` / `run.*` events,
+timestamps, run ids, hashes, paths); deliberately absent cells are asserted
+absent (repo-work verbs never probe the daemon, `up`/`down` have no
+operation, the memory verb's record is the store), the chat client's
+ceiling is checked row by row, and the §3 table itself is a tripwire.
+`make release-gate` chains lint · chat-stack baseline · drill · acceptance
+· parity · full suite; the manual-trigger CI workflow gains the acceptance
+and parity steps. The gate found, and this PR fixed, `model rollback
+--json` printing a text notice before its JSON.
 **PR-25 · Agnosticism gates** — M: `mockengine` third-runtime drill
 (RUNTIME_ABSTRACTION §6) green with zero diffs outside descriptors;
 H1 vendor-string CI audit; H2–H4 fixtures.

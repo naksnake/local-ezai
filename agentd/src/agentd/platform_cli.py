@@ -618,9 +618,11 @@ def cmd_model_upgrade(ctx: Surface, args: argparse.Namespace) -> int:
 
 
 def cmd_model_rollback(ctx: Surface, args: argparse.Namespace) -> int:
+    # `--json` must stay one JSON document (PR-24 parity gate): the ROLLBACK
+    # notice is text-mode only — the JSON carries the same message.
     data = ctx.ops.rollback_generation(to_generation=args.to_generation,
                                        reason=args.reason or "", reload=args.reload,
-                                       notify=print)
+                                       notify=None if getattr(args, "as_json", False) else print)
     _emit(args, data, [data["message"]])
     return 0 if data["ok"] else 1
 

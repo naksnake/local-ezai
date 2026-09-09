@@ -27,3 +27,7 @@ jobs:
         run: cd agentd && python -m pytest tests -v
       - name: Chat-ops boundary drill (governance unreachable from chat, prompt injection, chat/RAG byte-identical)
         run: cd agentd && python -m pytest tests/security -v
+      - name: First-run acceptance suite (F1–F11, offline)
+        run: cd agentd && python -m pytest tests/acceptance -v
+      - name: Release gate — parity harness (CLI-direct · CLI-connected · API over the CLI_AND_WEBUI §3 matrix)
+        run: cd agentd && python -m pytest tests/parity -v

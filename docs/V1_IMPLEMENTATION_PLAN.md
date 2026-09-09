@@ -152,6 +152,13 @@ N1′ (container hardening) folded into the soak gate.
 4. human release sign-off (governance: production releases require
    approval) → tag **v1.0.0**.
 
+> **As built (PR-24):** criterion 1 is `agentd/tests/parity/` (`make
+> swe-parity`) — every CLI_AND_WEBUI §3 row on three identical worlds,
+> equal response bodies, declarative state and operation audit with the
+> transports' annotations normalised explicitly; `make release-gate` runs
+> the whole gate (lint · chat-stack baseline · boundary drill · F1–F11 ·
+> parity · the full suite). Criteria 2–4 are PR-25/PR-26.
+
 ## Cross-cutting workstreams (every phase)
 
 - **Preservation proof:** the full pre-existing suite runs unmodified in

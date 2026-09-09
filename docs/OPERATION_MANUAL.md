@@ -13,6 +13,7 @@ runtime. Maintenance/repair procedures: [MAINTENANCE_GUIDE.md](MAINTENANCE_GUIDE
 | System packages on a fresh Ubuntu host (Docker, NVIDIA toolkit, Python venv, Node) | `make setup-system` |
 | Air-gapped host (no egress) | on a connected host that ran `make setup`: `make bundle BUNDLE=/media/usb/local-ezai-bundle` (images + weights + seeds of its generation); on the air-gapped host: `./install.sh --offline /media/usb/local-ezai-bundle && make setup-offline BUNDLE=/media/usb/local-ezai-bundle` — the same steps, nothing downloaded; remove `EZAI_OFFLINE` from `.env` to go online later |
 | First-run acceptance suite (F1–F11, offline) | `make swe-accept` |
+| Parity harness — every management operation via CLI-direct · CLI-connected · API, same result, state and audit (release gate, offline) | `make swe-parity`; the whole P6 gate (lint · chat-stack baseline · drill · acceptance · parity · full suite): `make release-gate` |
 | The first-run report and the WebUI card | `config/first-run/report.md` (+ `report.json`); the card is the OpenWebUI banner written to `config/first-run/openwebui.env` — delete the file and `docker compose up -d openwebui` to drop it |
 | Start / stop / restart | `make up-n97` (or `up-cpu`/`up`) · `make down` · `make restart` |
 | Health of all 8 services | `make health` |

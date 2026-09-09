@@ -281,8 +281,8 @@ clean: ## Remove all containers, images, and volumes (WARNING: deletes data)
 # ═══════════════════════════════════════════════════════════════════════════
 # Autonomous SWE runtime (agentd) — additive targets, see agentd/README.md
 # ═══════════════════════════════════════════════════════════════════════════
-.PHONY: swe-install swe-browsers swe-test swe-lint swe-drill swe-accept swe-run swe-plan \
-        control-up control-down control-logs control-spec control-serve
+.PHONY: swe-install swe-browsers swe-test swe-lint swe-drill swe-accept swe-parity release-gate \
+        swe-run swe-plan control-up control-down control-logs control-spec control-serve
 
 swe-install: ## Install the agentd runtime into ./.venv-agentd (editable, dev + browser + control extras)
 	python3 -m venv .venv-agentd
@@ -327,6 +327,20 @@ swe-drill: ## Chat-ops boundary drill: governance unreachable from chat, prompt-
 
 swe-accept: ## First-run acceptance suite F1–F11 (docs/FIRST_RUN_EXPERIENCE.md §6, FINAL_FIRST_RUN_EXPERIENCE §6), offline
 	cd agentd && ../.venv-agentd/bin/python -m pytest tests/acceptance -v
+
+swe-parity: ## Parity harness (P6 release gate): every CLI_AND_WEBUI_STRATEGY §3 row via CLI-direct · CLI-connected · API — same bodies, state, audit (offline)
+	cd agentd && ../.venv-agentd/bin/python -m pytest tests/parity -v
+
+release-gate: ## The P6 release gate in one command: lint · chat-stack baseline · boundary drill · F1–F11 acceptance · parity harness · the full suite
+	$(MAKE) swe-lint
+	python3 scripts/chat-stack-baseline.py --check
+	$(MAKE) swe-drill
+	$(MAKE) swe-accept
+	$(MAKE) swe-parity
+	$(MAKE) swe-test
+	@echo ""
+	@echo "  release gate: green — see docs/V1_IMPLEMENTATION_PLAN.md §P6 for the remaining human steps (soak, DoD, sign-off)"
+	@echo ""
 
 swe-run: ## Autonomous run: make swe-run TASK="fix the bug" REPO=/path/to/repo
 	.venv-agentd/bin/ezai run "$(TASK)" --repo "$(REPO)"

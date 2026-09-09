@@ -668,6 +668,29 @@ plan P1 absorbs remediations R-1..R-5, P5 implements the final FRE,
 P6 gains gates H1–H4 + the third-runtime drill; the platform can adopt a
 new GPU vendor, runtime, or model family as pure data — which is the
 definition of done for agnosticism.
+**P6 slice (2026-09-09, PR-24) — the parity harness as the release gate:**
+CLI_AND_WEBUI §7's consistency test exists as `agentd/tests/parity/`
+(`make swe-parity`; part of `make release-gate` and of the manual CI
+workflow). Decisions taken in it: (1) **identical worlds, not shared
+state** — each surface acts on its own copy of the platform, so what is
+compared is *results*, never one surface reading what another wrote; (2)
+**the API is called as the console** (`X-EZAI-Client: admin-center`), so
+the matrix's third column exercises its own identity path; (3)
+**equivalence is defined on three planes** — response bodies, declarative
+state, operation audit — and **the transport's annotation is normalised
+explicitly, as data**: the `via <client>` suffix, the daemon's `api.*` /
+`run.*` / `control.*` / `auth.*` events (equal between the two daemon
+surfaces, absent in-process), timestamps, run ids, hashes, durations and
+each world's paths; (4) **absence is asserted, never skipped** — repo-work
+verbs (`run`, `plan`, `memory`) never probe a daemon and equal the API's
+runs report for report and journal for journal, `up`/`down` stay direct
+even when connected is requested and no contract operation exists, the
+memory verb's record is the store itself while the daemon's curated add is
+also platform-audited (PR-19's decision, pinned); (5) the §3 table is
+parsed and every row needs a harness row and a chat-ceiling classification,
+and every mutation the contract offers must be classified by a row. One
+defect found and fixed in the same PR: `model rollback --json` printed its
+ROLLBACK notice before the JSON, so `--json` was not one document.
 
 ## ADR-027 — Registry v2 · PAL · governed model lifecycle (P1)
 **Date:** 2026-09-01 · **Status:** **Accepted** (2026-09-08, phase P1
@@ -955,7 +978,8 @@ always direct. `status` shows its `transport:`. Decision recorded: direct
 mode keeps P1's in-process management (the strategy's "fail fast" applies
 to a requested connected transport and to the no-platform case) — both
 modes write one declarative store. Deferred: freeze + kill-the-daemon +
-two-concurrent-runs tests (PR-12), the release-gate parity harness (PR-24).
+two-concurrent-runs tests (PR-12), the release-gate parity harness (PR-24 —
+delivered as `agentd/tests/parity/`; see the ADR-026 P6 slice).
 **PR-12 slice (2026-09-09) — phase close, ADR-028 → Accepted:** the P2
 exit criteria as tests — (2) two real scripted runs on two repositories
 started through `POST /v1/runs`, active together, both completed with

@@ -384,6 +384,21 @@ through `local-ezai model …` + the governance queue. Modules:
   `config/first-run/report.json`); the Overview's `first_run` → the
   `#first-run` card; journey `j0-first-run-card`; the launcher writes a
   report. Bootstrap fix: `auto` seeds dedupe per group (`_recommended_for`).
+- **Parity harness, the P6 release gate** (PR-24, ADR-026 P6 slice):
+  `agentd/tests/parity/` — `harness.py` (`Arena` wires the seams once and
+  routes every connected call to the world its URL names; `make_world`
+  builds one identical bootstrapped world per surface: platform + sample
+  repository + local weights + the daemon in-process behind the CLI's
+  `client_factory` seam; `Step` = CLI argv ↔ API call; `scrub` normalises
+  `DROP_KEYS` / `PATTERNS` and each world's paths; `state()` = registry ·
+  rendered generation · generations · queue · projects · memory; `audit()`
+  splits operation events from the daemon-side `api.*` / `run.*` /
+  `control.*` / `auth.*`) and `test_parity_matrix.py` (one test per
+  CLI_AND_WEBUI §3 row, `CHAT_CEILING` and `ROW_TESTS` as data, tripwires on
+  the doc table, the Make/CI wiring and the normaliser). `make swe-parity`,
+  `make release-gate`; acceptance + parity steps on the manual CI workflow.
+  Fix: `cmd_model_rollback` passes `notify` in text mode only, so `--json`
+  is one document.
 - **Installer, steps 1–3 of the first run** (`install.sh` →
   `agentd/src/agentd/installer.py`, PR-21, ADR-031 Proposed): preflight
   (python3 ≥ 3.10, the agentd venv via `make swe-install`, Docker present or
