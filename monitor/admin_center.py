@@ -14,7 +14,8 @@ the token and forwards the monitor login as the human identity (audit actor
 the pages show, `local-ezai` shows too (parity, not dependence); every
 mutation is the CLI's verb, admin only, same-origin guarded.
 
-  GET  /overview · /models · /routing · /runtime · /runs · /runs/{run_id}   pages
+  GET  /overview · /models · /routing · /runtime · /runs · /runs/{run_id}
+       · /governance · /governance/{request_id}                                    pages
   GET  /api/ezai/overview               health · platform · roles · queue · recent runs
   GET  /api/ezai/runs                   run list (kind / status / project / limit)
   GET  /api/ezai/runs/{run_id}          record + report (once written) + journal tail
@@ -28,6 +29,9 @@ mutation is the CLI's verb, admin only, same-origin guarded.
   POST /api/ezai/generations/rollback                                            admin
   GET  /api/ezai/routing                the explain view (every defined role)
   GET  /api/ezai/runtime                engine slot + per-runtime switch pre-check
+  GET  /api/ezai/governance[?status=]   the queue + history with counts
+  GET  /api/ezai/governance/{id}        one request: diff · affected roles · evidence · decision
+  POST /api/ezai/governance/{id}/approve | reject                                admin
 """
 # ruff: noqa: E501  — the embedded page template carries long markup lines
 from __future__ import annotations
@@ -54,6 +58,13 @@ ROUTING_ROLES = ("orchestrator", "planner", "coder", "debugger", "reviewer", "me
                  "documentation", "evolution", "sprint")
 SAME_ORIGIN_MESSAGE = ("mutations need the X-Requested-With header the Admin Center's own page "
                        "sends")
+#: The queue's statuses (governance.RequestStatus), in the order the page counts them.
+GOVERNANCE_STATUSES = ("pending", "approved", "applied", "rejected", "failed", "superseded")
+#: Change-request fields the queue listing shows; the detail view adds diff,
+#: affected roles and evidence (the full proposed registry stays server-side).
+REQUEST_SUMMARY_FIELDS = ("id", "kind", "title", "status", "requested_by", "proposed_by",
+                          "created_at", "base_generation", "requires_approval", "decision",
+                          "result")
 UNREACHABLE_FIX = ("start it with `make control-up` (container) or `make control-serve` (host); "
                    "when it runs elsewhere set EZAI_CONTROL_URL_MONITOR in .env")
 TOKEN_FIX = ("set EZAI_CONTROL_TOKEN in .env (the value the control plane uses) and "
@@ -351,6 +362,39 @@ async def runtime_page(plane: ControlPlane, user: str) -> dict[str, Any]:
             "prechecks": prechecks, "generation": platform.get("generation")}
 
 
+# ── governance (PR-18) ───────────────────────────────────────────────────────
+
+
+def request_summary(request: dict[str, Any]) -> dict[str, Any]:
+    evidence = request.get("evidence") or {}
+    return {**{k: request.get(k) for k in REQUEST_SUMMARY_FIELDS},
+            "affected_roles": sorted(request.get("affected_roles") or {}),
+            "runtime_switch": bool((evidence.get("runtime") or {}).get("switch"))}
+
+
+async def governance_page(plane: ControlPlane, user: str,
+                          status: str | None = None) -> dict[str, Any]:
+    """The queue (pending first) and the history, with counts per status."""
+    listing = await plane.get("/models", user)
+    everything = (await plane.get("/governance", user)).get("requests") or []
+    requests = [r for r in everything if status is None or r.get("status") == status]
+    counts = {s: sum(1 for r in everything if r.get("status") == s) for s in GOVERNANCE_STATUSES}
+    return {"generation": listing.get("generation"), "status": status,
+            "requests": [request_summary(r) for r in requests], "counts": counts,
+            "pending": counts["pending"]}
+
+
+async def governance_detail(plane: ControlPlane, user: str, request_id: str) -> dict[str, Any]:
+    """One change request with everything the approval view shows. The
+    proposed registry dump is not human evidence — the diff, the affected
+    roles and the evidence block are — so it stays on the daemon."""
+    listing = await plane.get("/models", user)
+    request = dict((await plane.get(f"/governance/{request_id}", user)).get("request") or {})
+    request.pop("proposed", None)
+    return {"generation": listing.get("generation"), "request": request,
+            "reversible_to": request.get("base_generation")}
+
+
 #: A JSON object body, optional (module scope: annotations are postponed and
 #: FastAPI resolves them against the module's globals).
 Payload = Annotated[dict[str, Any] | None, Body()]
@@ -488,15 +532,49 @@ def install(app: FastAPI, plane: ControlPlane, *, viewer: Callable[..., Any],
             "/generations/rollback", role, to_generation=data.get("to_generation"),
             reason=data.get("reason") or ""))
 
+    # ── governance (PR-18): the queue, the approval view, the two decisions ──
+
+    @app.get("/api/ezai/governance")
+    async def ezai_governance(status: str | None = None, role: str = Depends(viewer)):
+        try:
+            return {**await governance_page(plane, role, status), "role": role}
+        except ControlPlaneError as exc:
+            return exc.response()
+
+    @app.get("/api/ezai/governance/{request_id}")
+    async def ezai_governance_detail(request_id: str, role: str = Depends(viewer)):
+        try:
+            return {**await governance_detail(plane, role, request_id), "role": role}
+        except ControlPlaneError as exc:
+            return exc.response()
+
+    @app.post("/api/ezai/governance/{request_id}/approve")
+    async def ezai_approve(request_id: str, body: Payload = None, role: str = Depends(admin),
+                           x_requested_with: str | None = Header(None)):
+        data = body or {}
+        return await mutate(x_requested_with, lambda: plane.post(
+            f"/governance/{request_id}/approve", role, reason=data.get("reason") or ""))
+
+    @app.post("/api/ezai/governance/{request_id}/reject")
+    async def ezai_reject(request_id: str, body: Payload = None, role: str = Depends(admin),
+                          x_requested_with: str | None = Header(None)):
+        data = body or {}
+        return await mutate(x_requested_with, lambda: plane.post(
+            f"/governance/{request_id}/reject", role, reason=data.get("reason") or ""))
+
     # ── pages: one template, the path picks the view ─────────────────────
 
-    for path in ("/overview", "/models", "/routing", "/runtime", "/runs"):
+    for path in ("/overview", "/models", "/routing", "/runtime", "/runs", "/governance"):
         @app.get(path, response_class=HTMLResponse, name=f"page_{path.strip('/')}")
         async def admin_page(role: str = Depends(viewer)) -> str:
             return ADMIN_HTML
 
     @app.get("/runs/{run_id}", response_class=HTMLResponse)
     async def run_page(run_id: str, role: str = Depends(viewer)) -> str:
+        return ADMIN_HTML
+
+    @app.get("/governance/{request_id}", response_class=HTMLResponse)
+    async def request_page(request_id: str, role: str = Depends(viewer)) -> str:
         return ADMIN_HTML
 
 
@@ -601,6 +679,7 @@ ADMIN_HTML = """<!doctype html>
     <a href="/routing" data-nav="routing">Routing</a>
     <a href="/runtime" data-nav="runtime">Runtime</a>
     <a href="/runs" data-nav="runs">Runs</a>
+    <a href="/governance" data-nav="governance">Governance</a>
     <a href="/" data-nav="health">Health &amp; Knowledge</a>
   </nav>
 </header>
@@ -623,12 +702,15 @@ const route = (() => {
   const p = location.pathname.replace(/\\/+$/, '');
   const m = p.match(/^\\/runs\\/([^/]+)$/);
   if (m) return { view: 'run', id: decodeURIComponent(m[1]) };
+  const g = p.match(/^\\/governance\\/([^/]+)$/);
+  if (g) return { view: 'request', id: decodeURIComponent(g[1]) };
   if (p === '/runs') return { view: 'runs' };
-  if (p === '/models' || p === '/routing' || p === '/runtime') return { view: p.slice(1) };
+  if (['/models', '/routing', '/runtime', '/governance'].includes(p)) return { view: p.slice(1) };
   return { view: 'overview' };
 })();
+const NAV_OF = { run: 'runs', request: 'governance' };
 document.querySelectorAll('#nav a').forEach(a => {
-  if (a.dataset.nav === (route.view === 'run' ? 'runs' : route.view)) a.classList.add('active');
+  if (a.dataset.nav === (NAV_OF[route.view] || route.view)) a.classList.add('active');
 });
 
 async function api(path, opts) {
@@ -677,11 +759,11 @@ async function renderOverview() {
       ': ' + esc(r.fallbacks.join(', ')) : 'no fallback'}</div></div>`).join('');
   const pending = d.pending || [];
   const gov = pending.length
-    ? `<div class="banner warn"><strong>⚠ ${pending.length} item${pending.length > 1 ? 's' : ''} await your approval</strong>` +
-      `<table style="margin-top:8px">${pending.map(q => `<tr><td><code>${esc(q.id)}</code></td><td>${esc(q.kind)}</td>` +
+    ? `<div class="banner warn"><strong>⚠ ${pending.length} item${pending.length > 1 ? 's' : ''} await your approval</strong> <a href="/governance">Open Governance</a>` +
+      `<table style="margin-top:8px">${pending.map(q => `<tr><td><a href="/governance/${encodeURIComponent(q.id)}"><code>${esc(q.id)}</code></a></td><td>${esc(q.kind)}</td>` +
       `<td>${esc(q.title)}</td><td class="muted">${esc(q.requested_by)} · ${when(q.created_at)}</td></tr>`).join('')}</table>` +
-      `<div class="muted">Decide with <code>local-ezai governance approve|reject &lt;id&gt;</code> — the Governance page arrives in the next Admin Center slice.</div></div>`
-    : `<div class="banner"><strong>Governance queue empty</strong> <span class="muted">— nothing awaits approval</span></div>`;
+      `<div class="muted">Every item shows its evidence next to the decision · CLI twin: <code>local-ezai governance approve|reject &lt;id&gt;</code></div></div>`
+    : `<div class="banner"><strong>Governance queue empty</strong> <span class="muted">— nothing awaits approval · <a href="/governance">history</a></span></div>`;
   const runs = d.runs || [];
   const rows = runs.length ? runs.map(runRow).join('')
     : `<tr><td colspan="7" class="muted">no runs yet — start one with <code>local-ezai run</code>, the Orchestrator persona in chat, or the SWE tools</td></tr>`;
@@ -862,7 +944,7 @@ async function run(label, call, render, okOf) {
 const proposalText = r => { const q = r.request || {};
   if (r.applied) return `${q.id}: applied — ${r.applied.message}`;
   const affected = Object.keys(q.affected_roles || {});
-  return `${q.id} queued for approval (${affected.length ? 'affects ' + affected.join(', ') : 'runtime switch'}) — decide with: local-ezai governance approve ${q.id}`; };
+  return `${q.id} queued for approval (${affected.length ? 'affects ' + affected.join(', ') : 'runtime switch'}) — review it at /governance/${q.id}`; };
 
 async function modelAction(ds, d) {
   const n = ds.name, groups = d.groups.map(g => g.group), path = `/api/ezai/models/${encodeURIComponent(n || '')}`;
@@ -905,8 +987,8 @@ async function renderModels() {
   const orphans = d.orphans.length ? card('Not in any group', `<table><thead>${head}</thead><tbody>${d.orphans.map(m => row(m, null)).join('')}</tbody></table>`) : '';
   const pending = d.pending || [];
   const gov = pending.length ? `<div class="banner warn"><strong>⚠ ${pending.length} change request${pending.length > 1 ? 's' : ''} await approval:</strong> ` +
-    pending.map(q => `<code>${esc(q.id)}</code> ${esc(q.title)}`).join(' · ') +
-    `<div class="muted">Decide with <code>local-ezai governance approve|reject &lt;id&gt;</code> — the Governance page arrives in the next Admin Center slice.</div></div>` : '';
+    pending.map(q => `<a href="/governance/${encodeURIComponent(q.id)}"><code>${esc(q.id)}</code></a> ${esc(q.title)}`).join(' · ') +
+    `<div class="muted"><a href="/governance">Open Governance</a> — evidence next to every decision · CLI twin: <code>local-ezai governance approve|reject &lt;id&gt;</code></div></div>` : '';
   const add = admin ? card('Add model <span class="muted">· a catalog id, or any hf:&lt;org/repo&gt; / gguf:&lt;url | path&gt; source (equal citizens)</span>',
     `<form id="install-form" class="toolbar"><input name="ref" placeholder="hf:Org/Repo · gguf:… · catalog id" required size="42">` +
     `<input name="name" placeholder="name (optional)" size="16"><select name="group"><option value="">group (optional)</option>${d.groups.map(g => `<option>${esc(g.group)}</option>`).join('')}</select>` +
@@ -977,11 +1059,96 @@ async function renderRuntime() {
   footer(`runtimes known to this host: ${esc(d.runtimes.join(', '))} · CLI: <code>local-ezai model catalog --group &lt;g&gt; --runtime &lt;r&gt;</code> · <code>local-ezai status</code>`);
 }
 
+// ── Governance (PR-18): the queue, the approval view, the two decisions ───
+const chainText = c => c ? `<strong>${esc(c.primary)}</strong>${(c.fallbacks || []).length ? ' <span class="muted">→ ' + esc(c.fallbacks.join(' → ')) + '</span>' : ''}` : '<span class="muted">—</span>';
+const REQ_HEAD = `<tr><th>request</th><th>status</th><th>kind</th><th>what</th><th>by</th><th>affects</th><th>created</th><th>decision</th></tr>`;
+const reqRow = r => `<tr><td><a href="/governance/${encodeURIComponent(r.id)}"><code>${esc(r.id)}</code></a></td><td>${badge(r.status)}</td><td>${esc(r.kind)}</td>` +
+  `<td>${esc(r.title)}</td><td class="muted">${esc(r.requested_by)}${r.proposed_by && r.proposed_by !== 'human' ? ' · proposed by ' + esc(r.proposed_by) : ''}</td>` +
+  `<td class="muted">${esc((r.affected_roles || []).join(', ')) || (r.runtime_switch ? 'runtime switch' : (r.requires_approval ? '—' : 'policy'))}</td>` +
+  `<td class="muted">${when(r.created_at)}</td><td class="muted">${r.decision ? esc(r.decision.by) + (r.decision.reason ? ' — “' + esc(r.decision.reason) + '”' : '') : ''}` +
+  `${r.result && r.result.generation ? ` → gen ${r.result.generation}` : ''}</td></tr>`;
+
+async function renderGovernance() {
+  document.title = 'Governance · Local-EZAI Admin Center';
+  const status = new URLSearchParams(location.search).get('status') || '';
+  let d; try { d = await api('/api/ezai/governance' + (status ? '?status=' + encodeURIComponent(status) : '')); } catch (e) { fail(e); return; }
+  $('subtitle').textContent = `Governance · ${d.counts.pending} pending · generation ${d.generation ?? '—'}`;
+  const pending = d.requests.filter(r => r.status === 'pending'), decided = d.requests.filter(r => r.status !== 'pending');
+  const queue = (!status || status === 'pending') ? card(`Awaiting approval <span class="muted">· ${pending.length} · agents propose, humans approve</span>`,
+    pending.length ? `<table><thead>${REQ_HEAD}</thead><tbody>${pending.map(reqRow).join('')}</tbody></table>`
+                   : '<div class="muted">nothing awaits approval</div>') : '';
+  const filter = `<div class="toolbar"><select data-filter="status"><option value="">all statuses</option>` +
+    ['pending', 'approved', 'applied', 'rejected', 'failed', 'superseded'].map(s => `<option value="${s}"${s === status ? ' selected' : ''}>${s} (${d.counts[s]})</option>`).join('') + `</select></div>`;
+  const history = card('History <span class="muted">· every decision is an immutable audit record · <code>local-ezai governance list</code></span>',
+    filter + (decided.length ? `<table><thead>${REQ_HEAD}</thead><tbody>${decided.map(reqRow).join('')}</tbody></table>` : '<div class="muted">no decided request' + (status ? ' with this status' : ' yet') + '</div>'));
+  const note = `<div class="banner"><strong>One queue, three item types.</strong> <span class="muted">Model activations and upgrades enter it today (a request that changes the engine runtime is flagged as a runtime switch). ` +
+    `Evolution proposals and release candidates join when their pipelines submit change requests — until then evolution runs end on the <a href="/runs?kind=evolve">Runs page</a> awaiting human review.</span></div>`;
+  $('app').innerHTML = queue + history + note;
+  document.querySelectorAll('select[data-filter]').forEach(s => s.onchange = () => { location.search = s.value ? 'status=' + encodeURIComponent(s.value) : ''; });
+  footer(`generation ${d.generation ?? '—'} · CLI: <code>local-ezai governance list|show|approve|reject</code>`);
+}
+
+async function decide(kind, r) {
+  const reason = prompt(kind === 'approve' ? `Approve ${r.id} and apply it now? Reason (optional):` : `Reject ${r.id}? A reason is required — it is recorded (and, for evolution proposals, remembered):`, '');
+  if (reason === null) return;
+  if (kind === 'reject' && !reason.trim()) { report('✗ a rejection needs a reason', false); return; }
+  report(`${kind} ${r.id}…`, true);
+  try {
+    const out = await act(`/api/ezai/governance/${encodeURIComponent(r.id)}/${kind}`, 'POST', { reason });
+    const q = out.request || {};
+    report(out.applied ? `${q.id} approved — ${out.applied.message}` : `${q.id} ${q.status}`, out.applied ? out.applied.ok : true);
+    setTimeout(() => renderRequest(r.id), 800);
+  } catch (e) { report(`✗ ${kind} ${r.id}: ${e.message}${e.fix ? ' — fix: ' + e.fix : ''}`, false); }
+}
+
+async function renderRequest(id) {
+  let d; try { d = await api('/api/ezai/governance/' + encodeURIComponent(id)); }
+  catch (e) { $('subtitle').textContent = 'Request not found'; fail(e); return; }
+  const r = d.request, ev = r.evidence || {}, rt = ev.runtime || {}, admin = isAdmin(d), pending = r.status === 'pending';
+  document.title = `${r.id} · Governance · Local-EZAI Admin Center`;
+  $('subtitle').textContent = `${r.kind} ${r.id} — ${r.status} · base generation ${r.base_generation}`;
+  const roles = Object.entries(r.affected_roles || {});
+  const what = card('What changes', `<ul class="checks">${(r.diff || []).map(x => `<li>${esc(x)}</li>`).join('') || '<li class="muted">no diff recorded</li>'}</ul>` +
+    (roles.length ? `<table style="margin-top:8px"><thead><tr><th>role</th><th>before</th><th>after</th></tr></thead><tbody>${roles.map(([role, c]) =>
+        `<tr><td><strong>${esc(role)}</strong></td><td>${chainText(c.before)}</td><td>${chainText(c.after)}</td></tr>`).join('')}</tbody></table>`
+      : `<div class="muted" style="margin-top:8px">no serving role changes${rt.switch ? ' — but the engine runtime switches' : ''}</div>`));
+  const bench = Object.entries(ev.benchmarks || {}).map(([m, b]) => `<tr><td><strong>${esc(m)}</strong></td><td>${b.tokens_per_s != null ? b.tokens_per_s + ' tok/s' : '—'}</td>` +
+    `<td class="muted">${when(b.last)}${b.via ? ' · ' + esc(b.via) : ''}</td></tr>`).join('');
+  const fits = Object.entries(ev.fit || {}).map(([m, v]) => `<li><strong>${esc(m)}</strong> ${fitBadge(v)}${(v.warnings || []).length ? ' <span class="muted">' + esc(v.warnings.join(' · ')) + '</span>' : ''}</li>`).join('');
+  const cap = (ev.capability_report || []).map(c => `<li>${c.ok ? '✅' : '❌'} ${esc(c.role)} → <strong>${esc(c.model)}</strong> <span class="muted">(${esc(c.position)}, ${esc(c.runtime)}) ` +
+    `${c.failures && c.failures.length ? esc(c.failures.join('; ')) : esc(Object.keys(c.checks || {}).filter(k => c.checks[k]).join(', '))}</span></li>`).join('');
+  const evidence = card('Evidence <span class="muted">· measured on this host, never vendor claims</span>',
+    `<div><strong>Benchmarks</strong></div>${bench ? `<table><thead><tr><th>model</th><th>measured</th><th>when</th></tr></thead><tbody>${bench}</tbody></table>` : '<div class="muted">none recorded</div>'}` +
+    `<div style="margin-top:8px"><strong>Fit of newly active models</strong></div><ul class="checks">${fits || '<li class="muted">no newly active model</li>'}</ul>` +
+    `<div style="margin-top:8px"><strong>Capability report</strong> <span class="muted">· render-time negotiation of the proposed generation on class ${esc(ev.capability_class || '?')}</span></div><ul class="checks">${cap || '<li class="muted">none</li>'}</ul>` +
+    `<div style="margin-top:8px"><strong>Runtime</strong> ${esc(rt.before || '—')} → ${esc(rt.after || '—')} ${rt.switch ? '<span class="badge queued">runtime switch</span>' : '<span class="muted">(no switch)</span>'}</div>`);
+  const proposer = card('Proposed by', `<div>requested by <strong>${esc(r.requested_by)}</strong> · proposed by <strong>${esc(r.proposed_by)}</strong>` +
+    `${r.proposed_by === 'evolution' ? ' <span class="muted">— advisory: self-evolution proposes, never operates</span>' : ''} · ${when(r.created_at)}</div>` +
+    (r.requires_approval ? '' : '<div class="muted">no serving role changed — approved by policy on submission</div>'));
+  const nextGen = (d.generation ?? r.base_generation) + 1;
+  const reversibility = card('Reversibility', pending
+    ? `<div>On approval the platform renders generation ${nextGen} from this proposal, reloads and health-checks (a failed reload self-rolls back). Afterwards one rollback restores generation ${d.generation ?? r.base_generation} — <a href="/models">Models page</a> or <code>local-ezai model rollback --to-generation ${d.generation ?? r.base_generation}</code>.</div>`
+    : r.status === 'applied' ? `<div>Applied as generation ${r.result && r.result.generation ? r.result.generation : '?'}; one rollback restores generation ${r.base_generation} (<a href="/models">Models page</a>).</div>`
+    : '<div class="muted">Nothing changed on the platform for this request.</div>');
+  const decision = (r.decision
+    ? `<div>${badge(r.status)} by <strong>${esc(r.decision.by)}</strong> · ${when(r.decision.at)}${r.decision.reason ? ` — “${esc(r.decision.reason)}”` : ''}</div>` +
+      (r.result && Object.keys(r.result).length ? `<div class="muted" style="margin-top:6px">${esc(r.result.message || '')}${r.result.generation ? ` · now generation ${r.result.generation}` : ''}</div>` : '')
+    : '<div class="muted">pending — no decision yet</div>') +
+    (pending && admin ? `<div style="margin-top:12px"><button class="btn danger" data-decide="reject">Reject (reason…)</button> <button class="btn" data-decide="approve">Approve &amp; apply</button></div>`
+      : pending ? '<div class="muted" style="margin-top:8px">the admin role decides — viewer is read-only</div>' : '');
+  $('app').innerHTML = `<section class="card"><div class="card-header"><span class="name">${esc(r.kind)} <code>${esc(r.id)}</code> — ${esc(r.title)}</span>${badge(r.status)}</div></section>` +
+    what + evidence + proposer + reversibility + card('Decision', decision);
+  document.querySelectorAll('button[data-decide]').forEach(b => b.onclick = () => decide(b.dataset.decide, r));
+  footer(`request <code>${esc(r.id)}</code> · base generation ${r.base_generation} · <a href="/governance">queue</a> · CLI: <code>local-ezai governance show ${esc(r.id)}</code> · <code>local-ezai governance approve|reject ${esc(r.id)}</code>`);
+}
+
 if (route.view === 'run') renderRun(route.id);
 else if (route.view === 'runs') renderRuns();
 else if (route.view === 'models') renderModels();
 else if (route.view === 'routing') renderRouting();
 else if (route.view === 'runtime') renderRuntime();
+else if (route.view === 'governance') renderGovernance();
+else if (route.view === 'request') renderRequest(route.id);
 else renderOverview();
 </script>
 </body>

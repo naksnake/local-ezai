@@ -96,11 +96,15 @@ catalog verdicts, generations, admin mutations install / benchmark /
 activate / upgrade / retire / uninstall / rollback through the daemon with
 approvals where a serving role changes; Routing page: the explain view;
 Runtime page: engine slot + per-runtime switch pre-check, no switch button
-because the contract has no runtime verb) implemented. All seventeen await
-human merge on `claude/next-ready-pr-bnq7r3`. P4 / P5 run in parallel; next
-ready by plan order: **PR-18** (Governance queue + approval modal: evidence
-panels, approve/reject, deep links), with PR-21 (`install.sh`, P5) also
-unblocked.
+because the contract has no runtime verb) and PR-18 (Governance page:
+pending queue + history with decisions; the approval view at
+`/governance/<id>` — diff and affected roles, host benchmarks, fit,
+capability report, runtime flag, proposer, reversibility, Reject with
+required reason / Approve & apply through the daemon as the monitor login;
+Overview/Models link to it) implemented. All eighteen await human merge on
+`claude/next-ready-pr-bnq7r3`. P4 / P5 run in parallel; next ready by plan
+order: **PR-19** (Sprints / Evolution / Memory / Projects pages), with PR-21
+(`install.sh`, P5) also unblocked.
 
 **Product review (ADR-026, 2026-09-01):** agnosticism audit passed with
 remediations — roles/groups become the only stable names (role aliases

@@ -1144,3 +1144,29 @@ page carries the recommender's sentence). A switch is described as what it
 is in P1: activating a model served by the other runtime, a change request
 flagged `runtime.switch` that needs approval; **no switch button**, since
 the contract has no runtime verb (a 1.1 candidate, not this slice).
+**PR-18 slice (2026-09-09) — the Governance queue and the approval view:**
+(1) **Evidence next to every button** (WEBUI_ADMIN_CENTER §5.1): the approval
+view at `/governance/<id>` — the deep link the SWE tools and the CLI print —
+lays out *what changes* (the diff lines, each affected role before → after),
+*evidence* (benchmarks measured on this host, fit verdicts of newly active
+models, the render-time capability report per role × model × runtime, the
+runtime before/after with the switch flag, the capability class), *proposed
+by* (human or evolution, with the "advisory, never operator" note), and
+*reversibility* (the generation one rollback restores), then the decision:
+Reject with a required reason, Approve & apply. (2) **The queue is one
+list** with the history behind a status filter; every row carries who
+decided, when, why and the resulting generation — the audit record, read
+back from the request itself. (3) **The daemon rules, not the page:** both
+decisions go through `POST /v1/governance/{id}/approve|reject` as the
+monitor login (`admin via admin-center`), admin role only, same-origin
+guarded; "a rejection needs a reason" and "decisions are made once" are the
+daemon's own refusals (`governance_rule`, 409) shown verbatim; a viewer
+reads everything and decides nothing. (4) **The proposed registry dump
+stays server-side** — the human evidence is the diff and the evidence block,
+not a YAML tree. (5) **Honest about item types:** only the activation
+module submits change requests today (activation, upgrade; a runtime switch
+is a flag on them), so evolution proposals and release candidates are
+described as joining when their pipelines submit requests, with evolution
+runs pointed to on the Runs page meanwhile — no synthetic rows. Behavior
+note: two unmerged tests (PR-16, PR-17) that asserted the monitor had no
+approve route flip to the guard the route now enforces.

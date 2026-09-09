@@ -122,6 +122,13 @@ Legend: ✅ full · 🔍 read-only · ❌ deliberately absent.
 > the page footer; a mutation the CLI lacks (role/group editing, a runtime
 > switch verb) is absent here too.
 
+> **As built (PR-18):** the governance rows are live — "Model activate /
+> upgrade (approval flow) — ✅ request + approve" and "Governance queue —
+> ✅ full": `/governance` and `/governance/<id>` decide through
+> `POST /v1/governance/{id}/approve|reject` exactly as `local-ezai governance
+> approve|reject` does, with the evidence the CLI's `governance show` prints
+> laid out next to the buttons. One queue, one audit trail, two surfaces.
+
 ## 4. Deliberate asymmetries (and why)
 
 1. **Chat can start work but never govern** — approval/activation/rollback

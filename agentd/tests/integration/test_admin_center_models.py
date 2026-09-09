@@ -177,9 +177,8 @@ def test_lifecycle_through_the_monitor_as_admin(center):
     page = center.web.get("/api/ezai/models", auth=ADMIN).json()
     assert [q["id"] for q in page["pending"]] == [request["id"]]
     assert page["generation"] == before  # nothing applied yet
-    # the monitor offers no approve route (PR-18); the human decides on the CLI/API
-    assert center.web.post(f"/api/ezai/governance/{request['id']}/approve", auth=ADMIN,
-                           headers=PAGE).status_code == 404
+    # the decision is a separate human act (Governance page, PR-18, or the CLI):
+    # here the CLI approves, so the audit shows two different humans
     approved = center.control.post(f"{V1}/governance/{request['id']}/approve", headers=AUTH,
                                    json={"reason": "reviewed"})
     assert approved.status_code == 200 and approved.json()["applied"]["ok"]

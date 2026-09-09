@@ -306,6 +306,17 @@ through `local-ezai model …` + the governance queue. Modules:
   activation flagged `runtime.switch`, no runtime verb exists. Snapshot
   enrichment: per-model `groups` / `context` / `format` / `license`
   (contract artifact unchanged).
+- **Governance page** (PR-18): `/governance` — pending queue + history with
+  a status filter, every row carrying the decision (by / when / reason /
+  resulting generation); `/governance/{id}` — the approval view: diff +
+  affected roles before → after, evidence (host benchmarks, fit of newly
+  active models, capability report, runtime before → after + switch flag,
+  class), proposed by, reversibility (the generation a rollback restores),
+  Reject (reason required) / Approve & apply → `POST /v1/governance/{id}/
+  approve|reject` as `admin via admin-center` (same-origin header; daemon
+  refusals verbatim: reason required, decisions made once). The proposed
+  registry dump stays on the daemon. Only activation/upgrade requests
+  enter the queue today — the page says so.
 
 ## Target additions (control/execution/knowledge planes)
 

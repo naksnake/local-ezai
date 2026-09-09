@@ -111,6 +111,12 @@ refusals as `local-ezai model …`; fit badges are the platform's own
 verdicts. `/routing` explains what serves each role and why; `/runtime`
 shows the engine slot and a pre-check for switching to another runtime
 (a switch is an approval-gated activation of a model that runtime serves).
+**Governance (PR-18):** `/governance` is the approval queue — open a request
+(`/governance/<id>`, the link the CLI and the chat tools print) to see what
+changes, the evidence measured on this host, who proposed it and what a
+rollback would restore, then *Reject* (a reason is required and recorded)
+or *Approve & apply* as an admin; the same audit trail as
+`local-ezai governance approve|reject`.
 
 ## 2. The Autonomous SWE runtime
 

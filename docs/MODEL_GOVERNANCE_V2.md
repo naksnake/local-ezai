@@ -61,6 +61,15 @@ Consequences (remediation R-1/R-6, [V1_PRODUCT_REVIEW.md](V1_PRODUCT_REVIEW.md))
 > `config/governance/log.jsonl` (who, when, what, evidence keys). Rollback
 > bypasses the queue, is audited (`generation.rolled_back`) and notifies.
 
+> **As built (PR-18, Admin Center `/governance`):** the approval matrix is
+> what the human sees on the approval view — a request's `affected_roles`
+> (before → after per role) and its `evidence.runtime.switch` flag explain
+> *why* it waits, the evidence block (benchmarks, fit, capability report)
+> explains *whether* to approve, and a policy-approved request is shown as
+> such. The two decisions are the same daemon operations the CLI calls; a
+> rejection needs a reason, decisions are made once — the daemon's rules,
+> shown verbatim.
+
 ## 3. Role contracts (new, closes the loop with agnosticism)
 
 Each role carries a declarative **contract** — requirements a resolved

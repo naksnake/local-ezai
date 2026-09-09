@@ -153,8 +153,10 @@ def test_overview_shows_the_governance_queue_it_may_not_decide(center):
     assert [q["id"] for q in data["pending"]] == ["cr-0001"]
     assert data["pending"][0]["kind"] and "beta" in data["pending"][0]["title"]
     assert data["platform"]["pending_approvals"] == 1
-    # PR-16 offers no approve/reject route — the queue is shown, decided elsewhere (PR-18)
-    assert center.web.post("/api/ezai/governance/cr-0001/approve", auth=ADMIN).status_code == 404
+    # the queue is shown here; deciding is the Governance page's (PR-18): a post that
+    # is not the page's own (no same-origin header) never reaches the daemon
+    forged = center.web.post("/api/ezai/governance/cr-0001/approve", auth=ADMIN)
+    assert forged.status_code == 400 and forged.json()["error"]["code"] == "same_origin_required"
     assert center.daemon.ctx.queue.get("cr-0001").status == "pending"
 
 

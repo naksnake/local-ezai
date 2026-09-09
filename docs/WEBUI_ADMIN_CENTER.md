@@ -95,6 +95,25 @@ approve** (CLAUDE.md).
 Every decision writes an immutable audit record (who, when, what,
 evidence snapshot) to the control plane's governance log.
 
+> **As built (PR-18):** `/governance` lists the pending requests and the
+> history (status filter; each row shows who decided, when, why, and the
+> resulting generation). The approval view `/governance/<id>` — the deep
+> link the SWE tools and the CLI print — shows **what changes** (diff lines,
+> affected roles before → after), **evidence** (benchmarks measured on this
+> host, fit verdicts of newly active models, the render-time capability
+> report per role × model × runtime, runtime before → after with the switch
+> flag, the capability class), **proposed by** (human or evolution, marked
+> advisory), **reversibility** (the generation one rollback restores) and
+> the **decision**: Reject with a required reason, Approve & apply — both
+> `POST /v1/governance/{id}/…` through the daemon as the monitor login
+> (`admin via admin-center`), admin role only, same-origin guarded, the
+> daemon's refusals verbatim ("a rejection needs a reason", "decisions are
+> made once"). A viewer reads everything and decides nothing. Of the three
+> item types only model activations/upgrades enter the queue today (a
+> runtime switch is a flag on them); evolution proposals and release
+> candidates join when their pipelines submit change requests — the page
+> states this and points at the Runs page meanwhile.
+
 ## 4. AuthN/AuthZ
 
 - Reuses the monitor's existing RBAC: `admin` (mutations + governance) and

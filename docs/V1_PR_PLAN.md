@@ -265,8 +265,19 @@ checks, generation), Runtime page (engine slot + per-runtime switch
 pre-check naming blockers and candidates; no switch button — the contract
 has no runtime verb). One additive snapshot enrichment (per-model groups /
 context / format / license); the 1.0.0 artifact is byte-identical.
-**PR-18 · Governance queue + approval modal** — M: evidence panels,
-approve/reject, deep links.
+**PR-18 · Governance queue + approval modal** — M — ✅ **implemented**
+([prs/PR-18-admin-center-governance.md](prs/PR-18-admin-center-governance.md);
+8 tests incl. a real-Chromium smoke approving and rejecting from the page,
+suite 627 green, goldens intact; ADR-030 PR-18 slice)
+Scope: evidence panels, approve/reject, deep links.
+As built: `/governance` (pending queue + history with status filter and
+decision records) and the approval view `/governance/<id>` — what changes
+(diff, affected roles before → after), evidence (host benchmarks, fit,
+capability report, runtime switch flag, class), proposed by, reversibility
+(the generation a rollback restores), decision (Reject with required
+reason, Approve & apply) — through the daemon as the monitor login, admin
+only, same-origin guarded, refusals verbatim; Overview/Models link to it;
+honest note that only activation/upgrade requests enter the queue today.
 **PR-19 · Sprints/Evolution/Memory/Projects pages** — M.
 **PR-20 · SSO handoff + Browser-QA suite** — M: trusted-header handoff
 (Basic fallback), the five zero-CLI journeys of WEBUI_PRODUCT_STRATEGY §5
