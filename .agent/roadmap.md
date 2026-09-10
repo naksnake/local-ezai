@@ -156,12 +156,17 @@ probe path) and PR-26 (the release train: the five guides refreshed for V1,
 `docs/RELEASE_NOTES.md` with the v1.0.0 entry, `docs/SOAK_RUNBOOK.md` +
 `scripts/soak.sh` / `make soak`, `docs/V1_RELEASE_REPORT.md` with the DoD
 checked item by item, version 1.0.0) implemented. **The V1 plan's
-twenty-six PRs are delivered** and await human merge on
-`claude/next-ready-pr-bnq7r3`. No PR is next ready by plan order; what
-remains is human: the 72 h soak on both host classes (SOAK_RUNBOOK), the
-sign-off (V1_RELEASE_REPORT §7), the merge, the `v1.0.0` tag. Post-V1
-candidates: N1′, N3′, N5′, N6′ below and the two PR-25 residuals (the health
-table's engine probe path; a tool-call format for day-2 installs).
+twenty-six PRs are delivered and merged to `main`** (PR #5, 2026-09-10).
+No PR is next ready by plan order; what remains is human: the 72 h soak on
+both host classes (SOAK_RUNBOOK), the sign-off (V1_RELEASE_REPORT §7), the
+release tag — whose **name is open**: `v1.0.0` already exists in this
+repository (2026-08-14, the chat platform's "1.0.0_WebChat" release), so
+the version strings and the RELEASE_NOTES entry move with the name the
+release manager picks (§7 step 5) before tagging. Follow-up 2026-09-10: the
+release-train test no longer asserts the repository's tag state — it failed
+on every fresh clone, which fetches that tag. Post-V1 candidates: N1′, N3′,
+N5′, N6′ below and the two PR-25 residuals (the health table's engine probe
+path; a tool-call format for day-2 installs).
 
 **Product review (ADR-026, 2026-09-01):** agnosticism audit passed with
 remediations — roles/groups become the only stable names (role aliases

@@ -7,7 +7,9 @@ tests) · **Plan entry:** [V1_PR_PLAN.md](../V1_PR_PLAN.md) §3/PR-26 ·
 **Depends on:** PR-1..25 (everything the guides describe and the gates the
 release checklist runs) · **Status:** implemented on
 `claude/next-ready-pr-bnq7r3` as the twenty-fourth stacked commit (PR-3..25
-unmerged; each commit reverts independently)
+unmerged; each commit reverts independently) · **Merged:** PR #5 → `main`,
+2026-09-10 · **Follow-up (2026-09-10):** the tag tripwire is corrected — see
+"Follow-up" below
 
 ## Scope (as delivered)
 
@@ -95,7 +97,8 @@ request merges require approval") and GOVERNANCE.md.
   evolutions, 3 stats), the rehearsal window, the unknown-argument exit, the
   runbook's phrases, the Make target; each guide carries its V1 anchors and
   the four mandated guides exist; the report names the tag as a human step
-  and **no `v1.0.0` tag exists in the repository**.
+  and records that the plan's tag name is already taken (follow-up below;
+  originally: "no `v1.0.0` tag exists in the repository").
 - **Excluded by design:** the tag, the sign-off and the merge (human); soak
   *results* (a 72 h hardware measurement — the report's host rows are
   pending, not fabricated); any code change beyond the version strings and
@@ -109,8 +112,9 @@ request merges require approval") and GOVERNANCE.md.
 1. **Bump the version, never tag.** MAINTENANCE_GUIDE §6 (and the previous
    release procedure) put the version bump in the release PR so the merged
    tree is what gets tagged; the tag itself is the human's act after the
-   sign-off table reads "approve" in every row. A test asserts the tag is
-   absent, so no automation can quietly cut a release.
+   sign-off table reads "approve" in every row. (The PR shipped with a test
+   asserting the tag is absent; the follow-up below removed that assertion —
+   see why.)
 2. **Soak = a fixed, logged schedule, not a checklist of vibes.** The driver
    fixes the cadence, records every step with its output tail, and never
    aborts on a failure (a failure is a data point to explain); the runbook
@@ -159,6 +163,29 @@ branch; the 30-minute first-run number and the soak rows are host
 measurements the release manager fills in. The Documentation Agent was not
 run (model plane unavailable); the refresh is hand-written from the code
 and the PR artifacts.
+
+## Follow-up (2026-09-10, after the merge)
+
+`test_the_tag_is_the_humans_act` asserted `git tag --list v1.0.0` is empty.
+The repository **already has** a `v1.0.0` tag (2026-08-14, "Release version
+1.0.0_WebChat", the chat platform's release at `fab97ec`, an ancestor of
+`main`). This checkout had been cloned without tags, so the suite was green
+here; every ordinary clone fetches the tag, so `make swe-test` and `make
+release-gate` failed off a fresh clone. Two consequences, both recorded:
+
+- the test keeps its documentation assertions (the report names the tag as
+  the human's act, the sign-off rows are open) and now asserts the report
+  records the collision; it no longer reads the repository's tag state — a
+  tag-state assertion also fails forever on the tagged commit once the
+  release *is* cut, which was a design error of the original test;
+- the tag name is an open human decision: `v1.0.0` must not be moved;
+  V1_RELEASE_REPORT §7 step 5 lays out the choice (`1.1.0` per semver, or
+  `2.0.0`) and the files that move with it (version strings, the newest
+  RELEASE_NOTES entry, the report heading, the release-train test pins).
+
+Lesson for the Memory Agent: before naming a release in a plan or a test,
+list the repository's tags (`git ls-remote --tags origin`); never assert
+git tag state in the suite.
 
 ## Rollback note
 

@@ -13,8 +13,15 @@ drill, the F1–F11 acceptance suite, the parity harness and the agnosticism
 gates (`make release-gate`). Two steps remain that only a human on real
 hardware can take, and they are listed in §7: the 72-hour soak on the two
 host classes ([SOAK_RUNBOOK.md](SOAK_RUNBOOK.md)) and the release sign-off
-that tags `v1.0.0`. Agents propose; humans approve
+that tags the release. Agents propose; humans approve
 ([GOVERNANCE.md](GOVERNANCE.md)).
+
+> **2026-09-10:** the release PR is merged
+> ([#5](https://github.com/naksnake/local-ezai/pull/5) → `main`). The tag
+> name the plan chose, `v1.0.0`, **already exists in this repository**
+> (2026-08-14, "Release version 1.0.0_WebChat", the chat platform's release
+> at `fab97ec`) — the release manager decides the V1 tag name in §7 before
+> tagging; the sign-off rows and the soak are still open.
 
 ## 1. What V1 delivered
 
@@ -72,7 +79,7 @@ artifact (PR-3/5, drift detection).
 | 1 | Parity harness green across the matrix | ✅ PR-24 (`make swe-parity`) |
 | 2 | Soak: zero unexplained failures, rollback exercised under load | ⏳ **pending the hardware run** — runbook and driver delivered (SOAK_RUNBOOK.md, `make soak`); results to be pasted below |
 | 3 | Product DoD checked item by item | ✅ §3 |
-| 4 | Human release sign-off → tag `v1.0.0` | ⏳ §7 |
+| 4 | Human release sign-off → the release tag | ⏳ §7 — the release PR is merged (#5, 2026-09-10); the sign-off rows are open; the tag name is to be decided (`v1.0.0` already exists) |
 
 ### Soak results (filled in by the release manager)
 
@@ -114,9 +121,20 @@ rollback operations, the release procedure) · [RELEASE_NOTES.md](RELEASE_NOTES.
    in; every failure explained or fixed and re-soaked.
 3. Review this report and [RELEASE_NOTES.md](RELEASE_NOTES.md); the version
    is `1.0.0` in `agentd/src/agentd/__init__.py` and `agentd/pyproject.toml`.
-4. Sign below; merge the release PR (human merge authority, V1_PR_PLAN §1).
-5. Tag after merge: `git tag v1.0.0 && git push --tags`; build the wheel
-   (`python -m build agentd/`).
+4. Sign below. The release PR is merged (human merge authority, V1_PR_PLAN
+   §1): [#5](https://github.com/naksnake/local-ezai/pull/5) → `main`,
+   2026-09-10.
+5. **Decide the tag name.** `v1.0.0` already exists in this repository
+   (2026-08-14, "Release version 1.0.0_WebChat", the chat platform's release
+   at `fab97ec`, 46 commits behind the merge). Do not move it. Pick the V1
+   version — `1.1.0` fits semver (V1 is additive and backward compatible,
+   CLAUDE.md), `2.0.0` if the product line is meant to restart — then set it
+   in `agentd/src/agentd/__init__.py` and `agentd/pyproject.toml`, rename the
+   newest [RELEASE_NOTES.md](RELEASE_NOTES.md) entry and this report's
+   heading, and let `tests/integration/test_release_train.py` follow (it pins
+   the version and the release-notes order).
+6. Tag after the decision: `git tag v<version> && git push --tags`; build
+   the wheel (`python -m build agentd/`).
 
 | Role | Decision | Name | Date |
 |---|---|---|---|
@@ -125,4 +143,4 @@ rollback operations, the release procedure) · [RELEASE_NOTES.md](RELEASE_NOTES.
 | Release Manager — soak PASS on both hosts, guides refreshed, rollback = revert the release PR | approve / hold | ________ | ______ |
 | Product Owner — the six DoD items met, the five-step contract holds | approve / hold | ________ | ______ |
 
-**The tag `v1.0.0` is applied only after every row reads "approve".**
+**The release tag is applied only after every row reads "approve".**

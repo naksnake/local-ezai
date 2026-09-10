@@ -432,8 +432,9 @@ DoD checked item by item against evidence, the P6 criteria status, known
 limitations and the human checklist ending in the sign-off table and the
 tag; version **1.0.0** in `__init__` and `pyproject.toml` (they disagreed
 before). **Human steps remaining, by design:** the soak results on both
-host classes, the sign-off, the merge, the tag — agents propose, humans
-approve.
+host classes, the sign-off, the release tag — agents propose, humans
+approve. The merge landed as PR #5 (2026-09-10); the tag name is open, since
+`v1.0.0` already exists in the repository (V1_RELEASE_REPORT §7 step 5).
 
 ## 4. Sizing & sequence summary
 
