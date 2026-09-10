@@ -1,0 +1,94 @@
+# Packaged model catalog seed (PR-4, ADR-026 R-5).
+#
+# DATA, not a blessed list: entries state declared capabilities and
+# requirements — never hardware brands. Operators extend or override any id
+# with config/catalog/*.yaml; a user-supplied hf:/gguf: reference needs no
+# row here at all. Sizes are the artifact bytes reported by the hub
+# (2026-09-08); install replaces them with measured bytes. Curated per-class
+# content is a P5 deliverable — this seed covers the models the stack's
+# profiles already default to plus the CLAUDE.md reference set.
+version: 1
+entries:
+  qwen2.5-1.5b-instruct:
+    display_name: Qwen2.5 1.5B Instruct
+    license: apache-2.0
+    groups: [chat]
+    context: 32768
+    template: chatml
+    tool_call_format: hermes
+    notes: the low-power profile's default chat model; fast on any CPU
+    variants:
+      hf: {ref: Qwen/Qwen2.5-1.5B-Instruct, size_gb: 2.9}
+      gguf: {ref: hf://Qwen/Qwen2.5-1.5B-Instruct-GGUF/qwen2.5-1.5b-instruct-q4_k_m.gguf,
+             size_gb: 1.1, quant: Q4_K_M}
+
+  qwen2.5-3b-instruct:
+    display_name: Qwen2.5 3B Instruct
+    license: qwen-research (non-commercial)
+    groups: [chat, reasoning]
+    context: 32768
+    template: chatml
+    tool_call_format: hermes
+    variants:
+      gguf: {ref: hf://Qwen/Qwen2.5-3B-Instruct-GGUF/qwen2.5-3b-instruct-q4_k_m.gguf,
+             size_gb: 2.0, quant: Q4_K_M}
+
+  qwen2.5-7b-instruct:
+    display_name: Qwen2.5 7B Instruct
+    license: apache-2.0
+    groups: [chat, reasoning]
+    context: 32768
+    template: chatml
+    tool_call_format: hermes
+    notes: the accelerator profile's default chat model
+    variants:
+      hf: {ref: Qwen/Qwen2.5-7B-Instruct, size_gb: 14.2}
+
+  qwen2.5-coder-1.5b-instruct:
+    display_name: Qwen2.5 Coder 1.5B Instruct
+    license: apache-2.0
+    groups: [coding]
+    context: 32768
+    template: chatml
+    tool_call_format: hermes
+    variants:
+      gguf: {ref: hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf,
+             size_gb: 1.1, quant: Q4_K_M}
+
+  qwen2.5-coder-7b-instruct:
+    display_name: Qwen2.5 Coder 7B Instruct
+    license: apache-2.0
+    groups: [coding]
+    context: 32768
+    template: chatml
+    tool_call_format: hermes
+    variants:
+      hf: {ref: Qwen/Qwen2.5-Coder-7B-Instruct, size_gb: 14.2}
+      gguf: {ref: hf://Qwen/Qwen2.5-Coder-7B-Instruct-GGUF/qwen2.5-coder-7b-instruct-q4_k_m.gguf,
+             size_gb: 4.4, quant: Q4_K_M}
+
+  hermes-3-llama-3.1-8b:
+    display_name: Hermes 3 (Llama 3.1 8B)
+    license: llama3
+    groups: [reasoning, chat]
+    context: 16384
+    template: chatml
+    tool_call_format: hermes
+    variants:
+      hf: {ref: NousResearch/Hermes-3-Llama-3.1-8B, size_gb: 15.0}
+      gguf: {ref: hf://NousResearch/Hermes-3-Llama-3.1-8B-GGUF/Hermes-3-Llama-3.1-8B.Q4_K_M.gguf,
+             size_gb: 4.6, quant: Q4_K_M}
+
+  deepseek-r1-distill-qwen-7b:
+    display_name: DeepSeek-R1 Distill (Qwen 7B)
+    license: mit
+    groups: [reasoning, coding]
+    context: 16384
+    template: deepseek-r1
+    # no dedicated parser: only runtimes with a generic template-driven
+    # tool-call handler negotiate tool_calling for it
+    tool_call_format: generic
+    variants:
+      hf: {ref: deepseek-ai/DeepSeek-R1-Distill-Qwen-7B, size_gb: 14.2}
+      gguf: {ref: hf://bartowski/DeepSeek-R1-Distill-Qwen-7B-GGUF/DeepSeek-R1-Distill-Qwen-7B-Q4_K_M.gguf,
+             size_gb: 4.4, quant: Q4_K_M}

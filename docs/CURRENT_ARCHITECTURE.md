@@ -47,6 +47,23 @@ by container name. All external configuration flows through `.env`
 | 7 | **mcpo** | local build (`mcpo/Dockerfile`) | 8200 | MCP→OpenAPI proxy exposing 4 MCP servers as bearer-authenticated REST tools |
 | 8 | **monitor** | local build — FastAPI + SSE (`monitor/monitor.py`, 813 lines) | 8888 | Live health dashboard; RAG upload/list/delete UI; HTTP Basic RBAC (admin/viewer) + Bearer machine credential |
 
+**Optional overlay (V1 P2, PR-8 / ADR-028):** **ezaid** — local build
+`agentd/Dockerfile` (FastAPI, `agentd[control]`), port 8010
+(`EZAI_CONTROL_PORT`), the platform control plane: bearer service token
+`EZAI_CONTROL_TOKEN` + forwarded identity for the audit trail, the single
+audit log (`config/governance/log.jsonl`), `/v1/health` aggregation over the
+eight services + the platform snapshot, the model lifecycle / governance
+queue / project allowlist operations of the CLI as `/v1` endpoints (PR-9:
+same functions, same JSON, idempotency keys, one error vocabulary), the
+async run registry (PR-10: `POST /v1/runs` for run/fix/sprint/evolve/plan
+on registered projects, status/report/journal/cancel, concurrency limits),
+OpenAPI contract `docs/api/ezaid-openapi.json` **frozen at 1.0.0** (P2
+close). Two deployment shapes: the container overlay
+(`docker-compose.control.yml`, `make control-up` — model/governance over
+`config/`) and the host daemon (`make control-serve` — sees the registered
+repositories, so SWE runs through the API work). Not part of `make up` in
+V1 (opt-in); the CLI's connected mode uses whichever answers.
+
 ### Deployment profiles (same topology, different engine)
 
 | Profile | Compose files | Engine | Default model |
@@ -59,8 +76,15 @@ by container name. All external configuration flows through `.env`
 | HPC batch | `slurm/*.sh` | batch embedding jobs only | n/a |
 
 Profile overrides use the Compose `!override` YAML tag to *replace* the GPU
-`deploy` block (memory caps per service on 16 GB boxes), and swap the LiteLLM
-config file per profile (`config/litellm-config{,.n97,.cpu}.yaml`).
+`deploy` block (memory caps per service on 16 GB boxes). Since the V1
+cutover (ADR-027, PR-7) LiteLLM routing and the engine slot are **rendered
+per model generation** into `config/rendered/` by `make bootstrap` /
+`local-ezai`; the per-profile LiteLLM config variants are retired (kept as
+test fixtures) and every `make up*` adds the rendered engine override. Since
+PR-21 `./install.sh` writes `.env` itself — hardware detected (or a class
+asserted via `--profile`), secrets minted, `AI_RUNTIME` chosen from the
+runtime descriptors, the model seeds validated before any download — and
+repairs an existing `.env` without touching anything else.
 
 ---
 
@@ -90,6 +114,13 @@ context. This is the right failure mode for retrieval; it will be exactly the
 *wrong* default for action-taking tools (see GAP_ANALYSIS §5).
 
 ### 3.3 MCP tool plane (mcpo)
+
+> **V1 addition (PR-13):** mcpo also serves the vendored **SWE Tool Server**
+> (`mcp-servers/swe-server/`, `/swe`) — a thin MCP adapter over the `ezaid`
+> control plane: start plan/run/sprint/fix/evolve on registered projects and
+> inspect status, reports, journals, models and the governance queue. No
+> governance verbs exist as tools. Reaches the daemon at
+> `EZAI_CONTROL_URL_MCPO`.
 `config/mcpo-config.json` declares four MCP servers, proxied as REST by mcpo:
 
 | Tool | Implementation | Capability |

@@ -97,6 +97,13 @@ class ModelEntry(BaseModel):
     tool_call_format: str = ""
     #: Latest measurements (filled by the lifecycle manager, PR-4).
     benchmarks: dict[str, Any] = Field(default_factory=dict)
+    #: Lifecycle bookkeeping (PR-4): where the installed weights live, when
+    #: validation passed, the last install/validation error, the license
+    #: shown as evidence (MODEL_GOVERNANCE_V2 §1).
+    artifact: str = ""
+    installed_at: str = ""
+    error: str = ""
+    license: str = ""
 
 
 class RoleSpec(BaseModel):

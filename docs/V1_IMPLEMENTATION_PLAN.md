@@ -152,6 +152,19 @@ N1′ (container hardening) folded into the soak gate.
 4. human release sign-off (governance: production releases require
    approval) → tag **v1.0.0**.
 
+> **As built (PR-24):** criterion 1 is `agentd/tests/parity/` (`make
+> swe-parity`) — every CLI_AND_WEBUI §3 row on three identical worlds,
+> equal response bodies, declarative state and operation audit with the
+> transports' annotations normalised explicitly; `make release-gate` runs
+> the whole gate (lint · chat-stack baseline · boundary drill · F1–F11 ·
+> parity · agnosticism gates · the full suite). The ADR-026 gates H1–H4 and
+> the third-runtime drill are `agentd/tests/gates/` (`make swe-gates`, PR-25;
+> HARDWARE_AGNOSTIC §6 and RUNTIME_ABSTRACTION §6 as-built). Criterion 3 is
+> [V1_RELEASE_REPORT.md](V1_RELEASE_REPORT.md) §3 (PR-26); criteria 2 and 4
+> are the human steps PR-26 prepared — the 72 h soak per
+> [SOAK_RUNBOOK.md](SOAK_RUNBOOK.md) (`make soak`) with its results in the
+> report's §4, and the sign-off in §7 that tags `v1.0.0`.
+
 ## Cross-cutting workstreams (every phase)
 
 - **Preservation proof:** the full pre-existing suite runs unmodified in

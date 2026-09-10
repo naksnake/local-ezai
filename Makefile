@@ -1,8 +1,9 @@
-.PHONY: help setup build pull up up-cpu pull-cpu download-cpu update-cpu setup-cpu wait-ready \
+.PHONY: help setup setup-system setup-offline bundle install build pull up up-cpu pull-cpu download-cpu update-cpu setup-cpu wait-ready \
+        bootstrap require-rendered download-embed \
         up-n97 pull-n97 download-n97 update-n97 setup-n97 up-n97-igpu bench \
         setup-gpu download-gpu \
         down restart logs health status embed \
-        reset-webui reset-password install-autorag \
+        reset-webui reset-password install-autorag orchestrator \
         k8s k8s-delete update clean slurm-setup push-github monitor
 
 # Load .env if it exists
@@ -23,15 +24,33 @@ N97_GGUF_DIR    ?= $(CURDIR)/models/gguf
 DOCUMENTS_DIR   ?= $(CURDIR)/documents
 RAG_COLLECTION  ?= my-knowledge-base
 
-# HF hub cache layout: hf download puts each model in models--<org>--<name>
-CHAT_MODEL_DIR  = $(MODELS_DIR)/models--$(subst /,--,$(CPU_CHAT_MODEL))
-EMBED_MODEL_DIR = $(MODELS_DIR)/models--$(subst /,--,$(CPU_EMBED_MODEL))
-EMBED_CODE_DIR  = $(MODELS_DIR)/models--$(subst /,--,$(EMBED_CODE_REPO))
-
 COMPOSE_CPU = docker compose -f docker-compose.yml -f docker-compose.cpu.yml
 
-CHAT_MODEL     ?= Qwen/Qwen2.5-7B-Instruct
-GPU_MODEL_DIR   = $(MODELS_DIR)/models--$(subst /,--,$(CHAT_MODEL))
+# V1 (ADR-027): LiteLLM routing and the engine slot are RENDERED per model
+# generation by `make bootstrap`, which reads the .env model seeds once.
+# Every start includes the rendered engine override; `require-rendered`
+# guards starts on a platform that was never bootstrapped.
+RENDERED_DIR     = config/rendered
+RENDERED_ENGINE  = $(RENDERED_DIR)/docker-compose.engine.yml
+COMPOSE_RENDERED = -f $(RENDERED_ENGINE)
+AGENTD_CLI      ?= $(if $(wildcard .venv-agentd/bin/local-ezai),.venv-agentd/bin/local-ezai,local-ezai)
+
+# V1 P2 (ADR-028): the ezaid control plane is an OPT-IN compose overlay
+# (ADR-002 — rollback = don't start it) until CLI connected mode lands.
+COMPOSE_CONTROL  = -f docker-compose.control.yml
+EZAID_CLI       ?= $(if $(wildcard .venv-agentd/bin/ezaid),.venv-agentd/bin/ezaid,ezaid)
+EZAID_SPEC       = docs/api/ezaid-openapi.json
+
+# V1 P5 (ADR-031): the first run. `make setup` is the five-step contract of
+# FINAL_FIRST_RUN_EXPERIENCE — install.sh (detect, .env, secrets; stops once
+# for the model seeds when .env is new) then `local-ezai setup` (bootstrap,
+# images, up, wait-ready, smoke, report). The CLI lives in the venv install.sh
+# creates, so it is resolved when the recipe runs, not when make parses.
+EZAI_CLI_RUN = CLI=$$( [ -x .venv-agentd/bin/local-ezai ] && echo .venv-agentd/bin/local-ezai || echo local-ezai ); $$CLI
+EZAI_SETUP = $(EZAI_CLI_RUN) setup
+# Offline bundle (PR-23): make bundle BUNDLE=<dir> on a connected host; on the
+# air-gapped host make setup-offline BUNDLE=<dir> (no egress).
+BUNDLE ?= ./local-ezai-bundle
 
 help: ## Show all available commands
 	@echo ""
@@ -43,8 +62,25 @@ help: ## Show all available commands
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 	@echo ""
 
-setup: ## Run the automated system setup script (first time only)
+setup: ## First run, all steps: ./install.sh (edit .env once when asked) → local-ezai setup (bootstrap, images, up, verify, report)
+	@bash install.sh $(INSTALL_ARGS)
+	@$(EZAI_SETUP) $(SETUP_ARGS)
+
+setup-system: ## System packages for a fresh Ubuntu host: Docker, NVIDIA toolkit, Python venv, Node (was `make setup`)
 	@bash scripts/setup.sh
+
+bundle: ## Offline bundle of THIS bootstrapped platform (images + weights + seeds) → make bundle BUNDLE=/media/usb/local-ezai-bundle
+	@$(EZAI_CLI_RUN) bundle create $(BUNDLE) $(BUNDLE_ARGS)
+
+setup-offline: ## First run on an air-gapped host from a bundle, no egress: ./install.sh --offline $(BUNDLE) → local-ezai setup --offline
+	@bash install.sh --offline $(BUNDLE) $(INSTALL_ARGS)
+	@$(EZAI_SETUP) --offline $(SETUP_ARGS)
+
+# V1 first run, steps 1–3 (ADR-031, PR-21): detect hardware → generate or REPAIR
+# .env (secrets minted, model seeds validated before any download) → one review
+# stop. Pass flags with INSTALL_ARGS="--yes --profile n97". Then: make setup.
+install: ## First run, steps 1–3 only: detect hardware, generate/repair .env with minted secrets, validate the model seeds (./install.sh)
+	@bash install.sh $(INSTALL_ARGS)
 
 build: ## Build custom Docker images (embed-server, mcpo, monitor)
 	docker compose build embed-server mcpo monitor
@@ -59,45 +95,51 @@ up: ## Start all services with GPU (auto-resolves port conflicts)
 	@bash scripts/check-ports.sh
 	@$(MAKE) --no-print-directory up-run
 
-up-run:
-	@if [ ! -d "$(GPU_MODEL_DIR)/snapshots" ] || [ ! -d "$(EMBED_MODEL_DIR)/snapshots" ] || [ ! -d "$(EMBED_CODE_DIR)/snapshots" ]; then \
-		echo "Models not found in $(MODELS_DIR) — downloading them first..."; \
-		$(MAKE) download-gpu; \
-	fi
-	docker compose up -d
+up-run: require-rendered
+	@bash scripts/download-embed.sh
+	docker compose -f docker-compose.yml $(COMPOSE_RENDERED) up -d
 	@echo ""
 	@echo "  Services starting... run 'make health' in 2-3 minutes"
 	@echo "  Chat UI:  http://localhost:$(or $(OPENWEBUI_PORT),3000)"
 	@echo "  Monitor:  http://localhost:$(or $(MONITOR_PORT),8888)"
 	@echo ""
 
-setup-gpu: ## One command for the NVIDIA GPU stack: pull, build, download models, start, wait until healthy
-	$(MAKE) pull
-	$(MAKE) build
-	$(MAKE) download-gpu
-	$(MAKE) up
-	$(MAKE) wait-ready
+setup-gpu: ## First run asserting an accelerator: install.sh --profile gpu → local-ezai setup --profile gpu (bootstrap, images, up, verify, report)
+	@bash install.sh --profile gpu $(INSTALL_ARGS)
+	@$(EZAI_SETUP) --profile gpu $(SETUP_ARGS)
 
-download-gpu: ## Download models for the GPU stack (~15 GB default; runs in Docker, resumable)
+bootstrap: ## Consume the .env model seeds ONCE into model generation 1 and render LiteLLM + engine config (V1)
+	@test -x .venv-agentd/bin/local-ezai || command -v local-ezai >/dev/null 2>&1 || $(MAKE) swe-install
+	$(AGENTD_CLI) bootstrap --env .env
+
+require-rendered:
+	@if [ ! -f "$(RENDERED_DIR)/litellm-config.yaml" ] || [ ! -f "$(RENDERED_ENGINE)" ]; then \
+		echo ""; \
+		echo "  No rendered platform config yet: LiteLLM routing and the engine slot are"; \
+		echo "  generated from the model registry. Run once:  make bootstrap"; \
+		echo "  (reads AI_RUNTIME / REASONING_MODEL / CODING_MODEL / CHAT_MODEL from .env;"; \
+		echo "   legacy CHAT_MODEL / CPU_* / N97_* settings are migrated automatically)"; \
+		echo ""; \
+		exit 1; \
+	fi
+
+download-gpu: ## Legacy: download the .env CHAT_MODEL + embedding model for the GPU stack (~15 GB default; runs in Docker)
 	@bash scripts/download-models.sh
 
-setup-cpu: ## One command for the vLLM CPU stack: pull, build, download models, start, wait until healthy
-	$(MAKE) pull-cpu
-	$(MAKE) build
-	$(MAKE) download-cpu
-	$(MAKE) up-cpu
-	$(MAKE) wait-ready
+download-embed: ## Download the RAG embedding model (every profile; skipped when present; runs in Docker)
+	@bash scripts/download-embed.sh
+
+setup-cpu: ## First run asserting the cpu-standard class: install.sh --profile cpu → local-ezai setup --profile cpu
+	@bash install.sh --profile cpu $(INSTALL_ARGS)
+	@$(EZAI_SETUP) --profile cpu $(SETUP_ARGS)
 
 up-cpu: ## Start with vLLM on CPU (auto-downloads models, auto-resolves port conflicts)
 	@bash scripts/check-ports.sh
 	@$(MAKE) --no-print-directory up-cpu-run
 
-up-cpu-run:
-	@if [ ! -d "$(CHAT_MODEL_DIR)/snapshots" ] || [ ! -d "$(EMBED_MODEL_DIR)/snapshots" ] || [ ! -d "$(EMBED_CODE_DIR)/snapshots" ]; then \
-		echo "Models not found in $(MODELS_DIR) — downloading them first (~3.6 GB)..."; \
-		$(MAKE) download-cpu; \
-	fi
-	$(COMPOSE_CPU) up -d
+up-cpu-run: require-rendered
+	@bash scripts/download-embed.sh
+	$(COMPOSE_CPU) $(COMPOSE_RENDERED) up -d
 	@echo ""
 	@echo "  vLLM CPU mode: http://localhost:$(or $(OPENWEBUI_PORT),3000)"
 	@echo "  vLLM takes 1-3 minutes to load the model — run 'make wait-ready' or 'make health'"
@@ -132,25 +174,19 @@ download-cpu: ## Download models for the vLLM CPU stack (~3.6 GB; runs in Docker
 
 update-cpu: ## Pull latest images and restart the vLLM CPU stack (do NOT use 'make update')
 	$(COMPOSE_CPU) pull
-	$(COMPOSE_CPU) up -d
+	$(COMPOSE_CPU) $(COMPOSE_RENDERED) up -d
 
-setup-n97: ## One command for the N97 stack: pull, build, download models, start, wait until healthy
-	$(MAKE) pull-n97
-	$(MAKE) build
-	$(MAKE) download-n97
-	$(MAKE) up-n97
-	$(MAKE) wait-ready
+setup-n97: ## First run asserting the low-power class: install.sh --profile n97 → local-ezai setup --profile n97
+	@bash install.sh --profile n97 $(INSTALL_ARGS)
+	@$(EZAI_SETUP) --profile n97 $(SETUP_ARGS)
 
-up-n97: ## Start all services tuned for Intel N97 / low-power mini PCs (auto-downloads models, auto-resolves ports)
+up-n97: ## Start all services for the low-power CPU profile (the n97 preset = class cpu-low; auto-downloads models, auto-resolves ports)
 	@bash scripts/check-ports.sh
 	@$(MAKE) --no-print-directory up-n97-run
 
-up-n97-run:
-	@if [ ! -f "$(N97_GGUF_DIR)/$(N97_MODEL_FILE)" ] || [ ! -d "$(EMBED_MODEL_DIR)/snapshots" ] || [ ! -d "$(EMBED_CODE_DIR)/snapshots" ]; then \
-		echo "Models not found — downloading them first..."; \
-		$(MAKE) download-n97; \
-	fi
-	docker compose -f docker-compose.yml -f docker-compose.n97.yml up -d
+up-n97-run: require-rendered
+	@bash scripts/download-embed.sh
+	docker compose -f docker-compose.yml -f docker-compose.n97.yml $(COMPOSE_RENDERED) up -d
 	@echo ""
 	@echo "  N97 mode (llama.cpp): http://localhost:$(or $(OPENWEBUI_PORT),3000)"
 	@echo "  First start loads the model — run 'make wait-ready' or 'make health'"
@@ -160,8 +196,8 @@ up-n97-igpu: ## N97 profile with llama.cpp on the Intel iGPU (Vulkan): ~2-3x fas
 	@bash scripts/check-ports.sh
 	@$(MAKE) --no-print-directory up-n97-igpu-run
 
-up-n97-igpu-run:
-	docker compose -f docker-compose.yml -f docker-compose.n97.yml -f docker-compose.n97-igpu.yml up -d
+up-n97-igpu-run: require-rendered
+	docker compose -f docker-compose.yml -f docker-compose.n97.yml -f docker-compose.n97-igpu.yml $(COMPOSE_RENDERED) up -d
 	@echo ""
 	@echo "  N97 iGPU mode (llama.cpp + Vulkan): http://localhost:$(or $(OPENWEBUI_PORT),3000)"
 	@echo "  Check the iGPU was picked up:  docker compose logs vllm | grep -i vulkan"
@@ -175,7 +211,7 @@ download-n97: ## Download the small quantized model set for the N97 stack
 
 update-n97: ## Pull latest images and restart the N97 stack (do NOT use 'make update')
 	docker compose -f docker-compose.yml -f docker-compose.n97.yml pull
-	docker compose -f docker-compose.yml -f docker-compose.n97.yml up -d
+	docker compose -f docker-compose.yml -f docker-compose.n97.yml $(COMPOSE_RENDERED) up -d
 
 down: ## Stop all services
 	docker compose down
@@ -198,22 +234,14 @@ bench: ## One-question LLM benchmark — prints prompt & generation tokens/sec
 install-autorag: ## Install the Auto-RAG filter into OpenWebUI (global, no UI steps)
 	@bash scripts/install-autorag.sh
 
+orchestrator: ## Install/refresh the "Local-EZAI Orchestrator" persona in OpenWebUI (after the first login; no UI steps)
+	@bash scripts/register-orchestrator.sh
+
 status: ## Show status of all containers
 	docker compose ps
 
 embed: ## Embed documents from the documents folder into the Qdrant knowledge base (runs in Docker)
-	@echo "Embedding documents from $(DOCUMENTS_DIR)..."
-	@mkdir -p "$(DOCUMENTS_DIR)"
-	docker run --rm --network host \
-		-v "$(CURDIR)/scripts":/scripts:ro \
-		-v "$(DOCUMENTS_DIR)":/documents:ro \
-		python:3.11-slim \
-		bash -c "pip install -q qdrant-client requests pypdf && \
-		         python3 /scripts/embed_documents.py \
-		           --input-dir /documents \
-		           --qdrant-url http://localhost:$(or $(QDRANT_PORT),6333) \
-		           --embed-url http://localhost:$(or $(EMBED_PORT),8001)/v1 \
-		           --collection $(RAG_COLLECTION)"
+	@bash scripts/embed-documents.sh
 
 reset-webui: ## Factory-reset OpenWebUI — deletes ALL users, passwords, chats and settings (asks first)
 	@bash scripts/reset-openwebui.sh wipe
@@ -221,8 +249,8 @@ reset-webui: ## Factory-reset OpenWebUI — deletes ALL users, passwords, chats 
 reset-password: ## Reset an OpenWebUI password: make reset-password EMAIL=you@example.com PASSWORD=newpass  (EMAIL=all → every user)
 	@bash scripts/reset-openwebui.sh password "$(EMAIL)" "$(PASSWORD)"
 
-monitor: ## Open the web monitoring dashboard
-	@echo "Monitor dashboard: http://localhost:8888"
+monitor: ## Open the Admin Center (monitor): health & knowledge at /, overview at /overview, runs at /runs
+	@echo "Admin Center (monitor): http://localhost:8888   overview: /overview   runs: /runs"
 	@xdg-open http://localhost:8888 2>/dev/null || open http://localhost:8888 2>/dev/null || true
 
 k8s: ## Deploy to K3s Kubernetes cluster
@@ -239,7 +267,7 @@ k8s-delete: ## Delete all Kubernetes resources
 
 update: ## Pull latest images and restart
 	docker compose pull
-	docker compose up -d
+	docker compose -f docker-compose.yml $(COMPOSE_RENDERED) up -d
 
 slurm-setup: ## Run the automated Slurm setup script
 	@bash slurm/setup-slurm.sh
@@ -253,16 +281,38 @@ clean: ## Remove all containers, images, and volumes (WARNING: deletes data)
 # ═══════════════════════════════════════════════════════════════════════════
 # Autonomous SWE runtime (agentd) — additive targets, see agentd/README.md
 # ═══════════════════════════════════════════════════════════════════════════
-.PHONY: swe-install swe-browsers swe-test swe-lint swe-run swe-plan
+.PHONY: swe-install swe-browsers swe-test swe-lint swe-drill swe-accept swe-parity swe-gates \
+        release-gate soak swe-run swe-plan control-up control-down control-logs control-spec \
+        control-serve
 
-swe-install: ## Install the agentd runtime into ./.venv-agentd (editable, dev + browser extras)
+swe-install: ## Install the agentd runtime into ./.venv-agentd (editable, dev + browser + control extras)
 	python3 -m venv .venv-agentd
 	.venv-agentd/bin/pip install --upgrade pip -q
-	.venv-agentd/bin/pip install -e './agentd[dev,browser]'
+	.venv-agentd/bin/pip install -e './agentd[dev,browser,control]'
 	@echo ""
 	@echo "  agentd installed. Try:  .venv-agentd/bin/ezai run \"...\" --repo /path/to/repo"
 	@echo "  For Browser QA, also run:  make swe-browsers"
 	@echo ""
+
+control-up: ## Start the ezaid control plane (:EZAI_CONTROL_PORT, default 8010) as a compose overlay
+	docker compose -f docker-compose.yml $(COMPOSE_CONTROL) up -d --build ezaid
+	@echo ""
+	@echo "  ezaid: http://localhost:$(or $(EZAI_CONTROL_PORT),8010)/health   (docs: /docs, spec: /openapi.json)"
+	@echo "  Calls under /v1 need:  Authorization: Bearer $$EZAI_CONTROL_TOKEN"
+	@echo ""
+
+control-down: ## Stop and remove the ezaid control plane container (the stack keeps running)
+	docker compose -f docker-compose.yml $(COMPOSE_CONTROL) rm -sf ezaid
+
+control-logs: ## Follow the ezaid control plane logs
+	docker compose -f docker-compose.yml $(COMPOSE_CONTROL) logs -f ezaid
+
+control-spec: ## Regenerate the versioned OpenAPI contract artifact ($(EZAID_SPEC)) from the app
+	$(EZAID_CLI) --write-spec $(EZAID_SPEC)
+
+control-serve: ## Run the ezaid control plane ON THIS HOST (foreground) — sees your repositories, so SWE runs through the API work
+	@test -x .venv-agentd/bin/ezaid || command -v ezaid >/dev/null 2>&1 || $(MAKE) swe-install
+	$(EZAID_CLI) --platform config --host $(or $(EZAI_CONTROL_HOST),127.0.0.1) --port $(or $(EZAI_CONTROL_PORT),8010)
 
 swe-browsers: ## Download the Playwright Chromium used by Browser QA
 	.venv-agentd/bin/playwright install chromium
@@ -272,6 +322,33 @@ swe-test: ## Run the agentd test suite (offline — no models needed)
 
 swe-lint: ## Lint the agentd runtime with ruff
 	cd agentd && ../.venv-agentd/bin/python -m ruff check src tests
+
+swe-drill: ## Chat-ops boundary drill: governance unreachable from chat, prompt-injection red-team, chat/RAG byte-identical (offline)
+	cd agentd && ../.venv-agentd/bin/python -m pytest tests/security -v
+
+swe-accept: ## First-run acceptance suite F1–F11 (docs/FIRST_RUN_EXPERIENCE.md §6, FINAL_FIRST_RUN_EXPERIENCE §6), offline
+	cd agentd && ../.venv-agentd/bin/python -m pytest tests/acceptance -v
+
+swe-parity: ## Parity harness (P6 release gate): every CLI_AND_WEBUI_STRATEGY §3 row via CLI-direct · CLI-connected · API — same bodies, state, audit (offline)
+	cd agentd && ../.venv-agentd/bin/python -m pytest tests/parity -v
+
+swe-gates: ## Agnosticism gates (P6): the third-runtime drill (a mock runtime from descriptor data alone), the H1 word audit, the H2–H4 class fixtures (offline)
+	cd agentd && ../.venv-agentd/bin/python -m pytest tests/gates -v
+
+release-gate: ## The P6 release gate in one command: lint · chat-stack baseline · boundary drill · F1–F11 acceptance · parity harness · agnosticism gates · the full suite
+	$(MAKE) swe-lint
+	python3 scripts/chat-stack-baseline.py --check
+	$(MAKE) swe-drill
+	$(MAKE) swe-accept
+	$(MAKE) swe-parity
+	$(MAKE) swe-gates
+	$(MAKE) swe-test
+	@echo ""
+	@echo "  release gate: green — next: make soak (docs/SOAK_RUNBOOK.md), then docs/V1_RELEASE_REPORT.md §7 (sign-off, tag)"
+	@echo ""
+
+soak: ## 72 h soak on this host (docs/SOAK_RUNBOOK.md): health · status · bench · SWE runs · lifecycle churn with rollback · evolution → config/soak/<stamp>/results.md — make soak HOURS=72 [SOAK_ARGS="--dry-run"]
+	@bash scripts/soak.sh --hours $(or $(HOURS),72) $(SOAK_ARGS)
 
 swe-run: ## Autonomous run: make swe-run TASK="fix the bug" REPO=/path/to/repo
 	.venv-agentd/bin/ezai run "$(TASK)" --repo "$(REPO)"

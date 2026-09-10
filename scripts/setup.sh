@@ -152,12 +152,9 @@ success "Directories created: $SCRIPT_DIR/models, $SCRIPT_DIR/documents"
 step "Setting up environment configuration"
 
 if [[ -f "$SCRIPT_DIR/.env" ]]; then
-    success ".env already exists — skipping"
+    success ".env already exists — ./install.sh repairs it (missing keys, placeholder secrets)"
 else
-    cp "$SCRIPT_DIR/.env.example" "$SCRIPT_DIR/.env"
-    success "Created .env from .env.example"
-    warn "⚠️  Edit .env and change the secret keys before starting the service"
-    warn "    nano $SCRIPT_DIR/.env"
+    info "no .env yet — ./install.sh creates it: hardware detected, secrets minted, model seeds validated"
 fi
 
 # ── Final summary ─────────────────────────────────────────────────────────────
@@ -168,24 +165,17 @@ echo -e "${GREEN}╚════════════════════
 echo ""
 echo "  Next steps:"
 echo ""
+echo "  1. Create/validate .env: ./install.sh      (detects hardware, mints secrets,"
+echo "                                              opens .env once for the model seeds)"
 if [[ "$HAS_GPU" == "true" ]]; then
-    echo "  1. Edit your config:     nano .env"
-    echo "  2. Download AI models:   bash scripts/download-models.sh"
-    echo "  3. Build images:         make build"
-    echo "  4. Pull images:          make pull"
-    echo "  5. Start services:       make up"
-    echo "  6. Health check:         make health"
+    echo "  2. Everything else:      make setup-gpu   (pull, build, download, bootstrap, up, health)"
     echo ""
-    echo -e "  ${GREEN}GPU mode:${NC} vLLM will run on your NVIDIA GPU"
+    echo -e "  ${GREEN}GPU mode:${NC} the engine will run on your NVIDIA GPU"
 else
-    echo "  1. Edit your config:     nano .env"
-    echo "  2. Download AI models:   make download-n97"
-    echo "  3. Build images:         make build"
-    echo "  4. Pull images:          make pull-n97"
-    echo "  5. Start services:       make up-n97"
-    echo "  6. Health check:         make health"
+    echo "  2. Everything else:      make setup-n97   (pull, build, download, bootstrap, up, health)"
     echo ""
-    echo -e "  ${YELLOW}CPU mode:${NC} no NVIDIA GPU found — use the llama.cpp profile"
-    echo "           (make up-n97). Guide: docs/DEPLOY-N97.md"
+    echo -e "  ${YELLOW}CPU mode:${NC} no NVIDIA GPU found — the low-power llama.cpp profile"
+    echo "           applies. Guide: docs/DEPLOY-N97.md"
 fi
+echo "  Step by step instead:    make bootstrap, then make up / up-n97 / up-cpu, make health"
 echo ""

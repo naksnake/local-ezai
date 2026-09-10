@@ -1,14 +1,18 @@
 """
 monitor/monitor.py
 ──────────────────────────────────────────────────────────────────────────────
-Web monitoring dashboard for the AI service stack.
+Web monitoring dashboard for the AI service stack — and, since V1 P4, the
+first pages of the Local-EZAI Admin Center (admin_center.py, ADR-030).
 
 Polls all 7 services on a background thread and serves:
-  GET  /               → dashboard HTML
+  GET  /               → dashboard HTML (health + knowledge base, unchanged)
   GET  /api/status     → current status JSON
   GET  /api/stream     → SSE stream (push updates to browser)
   POST /api/rag/upload → embed an uploaded text file into the knowledge base
   GET  /api/rag/status → knowledge-base collection info (chunk count)
+  GET  /overview · /models · /routing · /runtime · /runs · /runs/{id} · /sprints
+       · /evolution · /governance · /governance/{id} · /memory · /projects · /api/ezai/…
+                       → Admin Center pages (admin_center.py)
 """
 import asyncio
 import json
@@ -19,8 +23,9 @@ import uuid
 from collections import deque
 from typing import AsyncGenerator, Optional
 
+import admin_center
 import httpx
-from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
@@ -33,6 +38,13 @@ HISTORY_POINTS = int(os.getenv("HISTORY_POINTS", "60")) # keep last N readings
 LITELLM_KEY = os.getenv("LITELLM_MASTER_KEY", "sk-ai-service-2024")
 MCP_KEY     = os.getenv("MCP_API_KEY",         "local-tools-key")
 
+# ── Admin Center (V1 P4, PR-16) ───────────────────────────────────────────────
+# The pages under /overview and /runs render what the ezaid control plane
+# serves (admin_center.py): where the monitor finds the daemon and the service
+# token it presents — server-side only, the browser never sees it.
+EZAI_CONTROL_URL   = os.getenv("EZAI_CONTROL_URL",   admin_center.DEFAULT_CONTROL_URL)
+EZAI_CONTROL_TOKEN = os.getenv("EZAI_CONTROL_TOKEN", "")
+
 # ── RBAC ──────────────────────────────────────────────────────────────────────
 # Two browser roles via HTTP Basic auth, plus a machine credential:
 #   admin  — full access (dashboard + RAG upload/delete)
@@ -44,38 +56,130 @@ MONITOR_AUTH = os.getenv("MONITOR_AUTH", "true").lower() != "false"
 ADMIN_PASSWORD  = os.getenv("MONITOR_ADMIN_PASSWORD",  "admin")
 VIEWER_PASSWORD = os.getenv("MONITOR_VIEWER_PASSWORD", "viewer")
 
+# ── SSO handoff (V1 P4, PR-20, ADR-030) ──────────────────────────────────────
+# Two OPTIONAL ways to arrive already signed in; HTTP Basic stays the fallback
+# and MONITOR_AUTH=false still opens everything.
+#  1. Trusted header from a reverse proxy / SSO gateway in front of the stack:
+#     MONITOR_SSO_TRUSTED_HEADER names the header that carries the user (e.g.
+#     X-Forwarded-Email); the proxy proves itself with MONITOR_SSO_TRUSTED_SECRET
+#     in X-EZAI-Proxy-Secret — a header without the secret is never trusted.
+#     Users listed in MONITOR_SSO_ADMINS (comma-separated) are admins, the
+#     rest viewers.
+#  2. OpenWebUI session: cookies ignore ports, so the `token` cookie OpenWebUI
+#     sets on this host reaches the monitor; it is validated against
+#     MONITOR_SSO_OPENWEBUI_URL/api/v1/auths/ (empty = off). An OpenWebUI admin
+#     is an Admin Center admin, any other active user a viewer — the deep links
+#     the Orchestrator prints therefore open already signed in.
+# The human behind the login (`Identity.user`) is forwarded to the control
+# plane as X-EZAI-User, so the audit trail names people, not roles.
+SSO_TRUSTED_HEADER = os.getenv("MONITOR_SSO_TRUSTED_HEADER", "").strip()
+SSO_TRUSTED_SECRET = os.getenv("MONITOR_SSO_TRUSTED_SECRET", "")
+SSO_ADMINS = {a.strip().lower() for a in os.getenv("MONITOR_SSO_ADMINS", "").split(",")
+              if a.strip()}
+SSO_OPENWEBUI_URL = os.getenv("MONITOR_SSO_OPENWEBUI_URL", "").rstrip("/")
+SSO_PROXY_SECRET_HEADER = "X-EZAI-Proxy-Secret"
+SSO_CACHE_TTL_S = 60.0
+#: Test seam: an httpx transport for the OpenWebUI lookup (None = real network).
+SSO_TRANSPORT: Optional[httpx.AsyncBaseTransport] = None
+_sso_cache: dict[str, tuple[float, Optional["Identity"]]] = {}
+
+
+class Identity(str):
+    """A resolved login. The string itself is the ROLE ('admin' / 'viewer'),
+    so every existing `role == "admin"` check keeps working; `user` is the
+    human behind it (forwarded to the control plane for the audit trail) and
+    `via` how they arrived: basic · bearer · trusted-header · openwebui · open."""
+
+    user: str
+    via: str
+
+    def __new__(cls, role: str, user: str = "", via: str = "basic") -> "Identity":
+        obj = super().__new__(cls, role)
+        obj.user = user or role
+        obj.via = via
+        return obj
+
+
 _basic = HTTPBasic(auto_error=False)
 
 
 def _resolve_role(credentials: Optional[HTTPBasicCredentials],
-                  authorization: Optional[str]) -> Optional[str]:
+                  authorization: Optional[str]) -> Optional[Identity]:
+    """The pre-existing paths: auth off, the machine bearer, HTTP Basic."""
     if not MONITOR_AUTH:
-        return "admin"
+        return Identity("admin", "admin", "open")
     if authorization and secrets.compare_digest(authorization, f"Bearer {MCP_KEY}"):
-        return "admin"
+        return Identity("admin", "service", "bearer")
     if credentials:
         if (credentials.username == "admin"
                 and secrets.compare_digest(credentials.password, ADMIN_PASSWORD)):
-            return "admin"
+            return Identity("admin", "admin", "basic")
         if (credentials.username == "viewer"
                 and secrets.compare_digest(credentials.password, VIEWER_PASSWORD)):
-            return "viewer"
+            return Identity("viewer", "viewer", "basic")
     return None
 
 
+def _trusted_header_identity(request: Request) -> Optional[Identity]:
+    if not (SSO_TRUSTED_HEADER and SSO_TRUSTED_SECRET):
+        return None
+    user = (request.headers.get(SSO_TRUSTED_HEADER) or "").strip()
+    secret = request.headers.get(SSO_PROXY_SECRET_HEADER) or ""
+    if not user or not secrets.compare_digest(secret, SSO_TRUSTED_SECRET):
+        return None
+    role = "admin" if user.lower() in SSO_ADMINS else "viewer"
+    return Identity(role, user, "trusted-header")
+
+
+async def _openwebui_identity(token: Optional[str]) -> Optional[Identity]:
+    """Validate OpenWebUI's session token against OpenWebUI itself (cached
+    briefly). Any failure means "not signed in here" — never an error."""
+    if not (SSO_OPENWEBUI_URL and token):
+        return None
+    now = time.time()
+    cached = _sso_cache.get(token)
+    if cached and cached[0] > now:
+        return cached[1]
+    identity: Optional[Identity] = None
+    try:
+        async with httpx.AsyncClient(timeout=3.0, transport=SSO_TRANSPORT) as client:
+            response = await client.get(f"{SSO_OPENWEBUI_URL}/api/v1/auths/",
+                                        headers={"Authorization": f"Bearer {token}"})
+        if response.status_code == 200:
+            data = response.json()
+            role = data.get("role")
+            user = data.get("email") or data.get("name") or data.get("id") or ""
+            if user and role == "admin":
+                identity = Identity("admin", user, "openwebui")
+            elif user and role == "user":
+                identity = Identity("viewer", user, "openwebui")
+    except (httpx.HTTPError, ValueError):
+        identity = None
+    _sso_cache[token] = (now + SSO_CACHE_TTL_S, identity)
+    if len(_sso_cache) > 512:  # bounded: drop the expired entries
+        for key in [k for k, (expiry, _) in _sso_cache.items() if expiry <= now]:
+            _sso_cache.pop(key, None)
+    return identity
+
+
 async def require_viewer(
+    request: Request,
     credentials: Optional[HTTPBasicCredentials] = Depends(_basic),
     authorization: Optional[str] = Header(None),
-) -> str:
-    role = _resolve_role(credentials, authorization)
-    if role is None:
+) -> Identity:
+    identity = _resolve_role(credentials, authorization)
+    if identity is None:
+        identity = _trusted_header_identity(request)
+    if identity is None:
+        identity = await _openwebui_identity(request.cookies.get("token"))
+    if identity is None:
         raise HTTPException(
             status_code=401, detail="Authentication required",
             headers={"WWW-Authenticate": 'Basic realm="AI Service Monitor"'})
-    return role
+    return identity
 
 
-async def require_admin(role: str = Depends(require_viewer)) -> str:
+async def require_admin(role: Identity = Depends(require_viewer)) -> Identity:
     if role != "admin":
         raise HTTPException(status_code=403,
                             detail="admin role required (viewer is read-only)")
@@ -93,7 +197,7 @@ RAG_MAX_BYTES  = 20_000_000
 EMBED_BATCH    = 16
 
 # The LLM slot is engine-agnostic: vLLM answers /health with an empty 200 body,
-# llama.cpp (N97 profile) with {"status":"ok"} — so match on status code only
+# llama.cpp (the low-power profile) with {"status":"ok"} — so match on status code only
 # (empty pattern) and let compose overrides relabel the card.
 LLM_NAME = os.getenv("LLM_SERVICE_NAME", "vLLM")
 LLM_DESC = os.getenv("LLM_SERVICE_DESC", "LLM inference (GPU)")
@@ -261,7 +365,7 @@ async def _poll_loop() -> None:
 
 
 # ── FastAPI app ───────────────────────────────────────────────────────────────
-app = FastAPI(title="AI Service Monitor", version="1.0.0")
+app = FastAPI(title="Local-EZAI Admin Center (monitor)", version="1.1.0")
 
 # Open CORS so other lab dashboards on the LAN can call the RAG upload API
 # directly from browser JavaScript.
@@ -275,6 +379,11 @@ app.add_middleware(
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 if os.path.isdir(STATIC_DIR):
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+# Admin Center routes (Overview, Runs, run detail and their /api/ezai data),
+# guarded by the RBAC above: viewer reads, admin may also cancel a run.
+admin_center.install(app, admin_center.ControlPlane(EZAI_CONTROL_URL, EZAI_CONTROL_TOKEN),
+                     viewer=require_viewer, admin=require_admin)
 
 
 @app.on_event("startup")
@@ -505,7 +614,7 @@ _DASHBOARD_HTML = """<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>AI Service Monitor</title>
+<title>Local-EZAI Admin Center · Health</title>
 <style>
   :root {
     --bg:    #0f1117;
@@ -526,6 +635,10 @@ _DASHBOARD_HTML = """<!doctype html>
            padding: 16px 24px; display: flex; align-items: center; gap: 16px; }
   header h1 { font-size: 18px; font-weight: 600; }
   header .subtitle { color: var(--muted); font-size: 13px; }
+  nav.nav { display: flex; gap: 4px; margin-left: auto; }
+  nav.nav a { color: var(--muted); text-decoration: none; padding: 6px 12px; border-radius: 6px;
+              font-size: 13px; font-weight: 600; }
+  nav.nav a.active, nav.nav a:hover { background: var(--bg); color: var(--text); }
   .conn-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--yellow);
               flex-shrink: 0; transition: background .3s; }
   .conn-dot.live { background: var(--green); }
@@ -589,9 +702,22 @@ _DASHBOARD_HTML = """<!doctype html>
 <header>
   <div class="conn-dot" id="conn-dot"></div>
   <div>
-    <h1>AI Service Monitor</h1>
+    <h1>Local-EZAI Admin Center</h1>
     <div class="subtitle" id="subtitle">Connecting…</div>
   </div>
+  <nav class="nav">
+    <a href="/overview">Overview</a>
+    <a href="/models">Models</a>
+    <a href="/routing">Routing</a>
+    <a href="/runtime">Runtime</a>
+    <a href="/runs">Runs</a>
+    <a href="/sprints">Sprints</a>
+    <a href="/evolution">Evolution</a>
+    <a href="/governance">Governance</a>
+    <a href="/memory">Memory</a>
+    <a href="/projects">Projects</a>
+    <a href="/" class="active">Health &amp; Knowledge</a>
+  </nav>
 </header>
 
 <div class="summary" id="summary"></div>

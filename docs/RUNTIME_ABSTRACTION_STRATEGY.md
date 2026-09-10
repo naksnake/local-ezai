@@ -43,6 +43,23 @@ concurrency traits (multi-model? hot-swap?), health, side-load support.
 **V1 ships two descriptors** (llamacpp, vllm). The contract is the
 product; the descriptors are content.
 
+> **As-built (PR-3):** the two descriptors live in `config/providers/`
+> (schema: `agentd/runtime_descriptor.py`). `materialize` and
+> `capabilities` are realized by the renderer as pure data → artifacts;
+> `control`, `ready`, `validate_model`, `bench` are declared in the
+> `verbs:` block (probe path/timeouts, probe kind, bench token budget,
+> timings field) and are executed by the lifecycle manager from PR-4/PR-5
+> on. `ready` already renders as the engine service's compose healthcheck.
+
+> **As-built (PR-21):** one optional field joined the contract —
+> `default_for_classes: [<capability class>, …]`, the classes for which the
+> installer proposes this runtime as `AI_RUNTIME` on a fresh `.env`
+> (shipped: the GGUF runtime for the CPU classes, the HF runtime for the
+> accelerator classes). It is a default, not a rule: the candidates are the
+> descriptors with an image for the host's accelerator kind, the user's
+> `AI_RUNTIME` always wins, and a host no default serves gets the first
+> candidate with the reason printed. The installer names no runtime.
+
 ## 3. Neutral naming (killing the `vllm`-name coupling, compatibly)
 
 - The compose service name `vllm` is **kept** (ADR-001 compatibility; no
@@ -54,6 +71,12 @@ product; the descriptors are content.
   only when vLLM is genuinely the selected runtime.
 - Full rename of the service is deferred to a major version (breaking);
   the alias makes it a no-op later.
+
+> **As-built (PR-3):** `docker-compose.yml` attaches network alias
+> `engine` to the slot service; every rendered artifact addresses
+> `http://engine:8000/v1`, and a test asserts the alias stays in place. The
+> renderer spells the historical service name in exactly one constant
+> (`render.ENGINE_SERVICE`) to key the compose override.
 
 ## 4. Capability negotiation (model × runtime × role, all data)
 
@@ -75,6 +98,16 @@ immediately if it declares its template/format — and a mismatch is a
 clear render-time error naming the missing capability, never a silent
 request-time failure.
 
+> **As-built (PR-3, `render.negotiate`):** the check runs for every model
+> in a role's resolution chain — **fallbacks included** (a fallback that
+> cannot serve the role would otherwise fail silently at request time) —
+> and covers four properties: `tool_calling` (`tool_call_format ∈ runtime
+> tool_call_parsers`), `json_output`, `min_context` against
+> `min(model.context, class ctx budget)`, and source format ∈
+> `serves_formats` (a model may declare several variants; each runtime picks
+> its own). Every failure is aggregated into one error that names the role,
+> model, runtime, and the missing capability with both numbers/lists.
+
 ## 5. Runtime selection & switching UX
 
 - `.env` seeds `AI_RUNTIME` once
@@ -89,6 +122,20 @@ request-time failure.
   (PROVIDER_ABSTRACTION §4/§7) — stated to users as a fitting problem, not
   a mystery.
 
+> **As built (PR-17, Admin Center `/runtime`):** the Runtime page shows the
+> engine slot (runtime, class, accelerator, memory, engine/router health,
+> active models) and, for every other runtime the descriptors serve, a
+> **pre-check**: the active models that have no variant for it (with the
+> fix above — install a served variant or keep the current runtime) and the
+> catalog candidates per group with the recommender's fit and contract
+> verdicts (on a small host the vllm descriptor's context budget rules out
+> every candidate; the page carries that sentence). Switching is what P1
+> built: activating a model served by the other runtime — the change
+> request is flagged `runtime.switch` (activation.propose) and needs
+> approval. There is **no switch button** and no `local-ezai runtime`
+> verb yet: the 1.0.0 contract has no runtime operation; a dedicated verb is
+> a 1.1 candidate.
+
 ## 6. The third-runtime drill (acceptance test)
 
 Before V1 ships, prove agnosticism empirically: implement a **mock
@@ -98,6 +145,36 @@ end — install→activate→benchmark→serve→rollback purely through descrip
 fixtures. CI keeps this drill green forever; it is the regression test
 that the seam stays a seam. (It also becomes the template for real future
 runtimes: TGI, ollama, etc. — explicitly out of V1 scope.)
+
+> **As built (PR-25, `agentd/tests/gates/test_third_runtime_drill.py`, `make
+> swe-gates`):** the drill runs in CI, offline. `mockengine` is a descriptor
+> under `agentd/tests/fixtures/providers/` (served format, capabilities with
+> the generic tool handler, a readiness path that is *not* `/health`, its
+> own benchmark timing keys, a prefixed served-id template, its own mount
+> paths, single and multi materialization forms, class tuning, images per
+> accelerator kind) and an OpenAI-API stub server stands in for its image.
+> Copied into a checkout's `config/providers/`, the platform runs it end to
+> end through the CLI: `bootstrap` from `AI_RUNTIME=mockengine` seeds
+> (install → the real side-load validator and benchmark against the stub,
+> docker faked → generation 1 rendered in the multi form with the fixture's
+> image, command, preset, mount and healthcheck; LiteLLM routes to the
+> prefixed served ids), day-2 `model install` (served by the slot's own
+> runtime), `benchmark`, `activate` → approval → `governance approve`,
+> `rollback`, the setup pipeline's wait-ready on the descriptor's readiness
+> path, `up --rendered`. `install.sh --runtime mockengine` validates the
+> seeds against it (F8). A tripwire proves the runtime id appears in no
+> shipped code, data, compose file or script — the seam is a seam. Two
+> findings: the resolver's default runtime for a `gguf:`/`hf:` source was the
+> first descriptor serving the format alphabetically, not the slot's own
+> runtime (fixed in PR-25 — `lifecycle.slot_runtime_for`; invisible while
+> each format has one server); and the control plane's health table probes
+> the engine slot at its own `/health`, not the descriptor's readiness path
+> (recorded as a residual for the release train: the wait-ready step is
+> descriptor-driven, the generic sweep is operator data). Also observed: a
+> day-2 `model install` of an undeclared user source gets no tool-call
+> format (the bootstrap's generic default applies to seeds only), so
+> tool-calling roles refuse it at render time — a negotiation rule, not a
+> runtime coupling.
 
 ## 7. LiteLLM's position (finding CF-10)
 

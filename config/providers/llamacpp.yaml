@@ -1,0 +1,137 @@
+# Runtime descriptor — llama.cpp
+# (docs/RUNTIME_ABSTRACTION_STRATEGY.md §2, docs/PROVIDER_ABSTRACTION.md §2,
+#  docs/HARDWARE_AGNOSTIC_ARCHITECTURE.md §2 — schema: agentd/runtime_descriptor.py)
+#
+# This file is DATA. It is the single sanctioned home for everything the
+# platform knows about this runtime: images per accelerator kind, engine
+# flags, device wiring, tuning per capability class. Code never learns any
+# of it — adding or changing a runtime is a descriptor edit (a platform PR).
+# Users select MODELS; a model's `provider` + the host's capability vector
+# select this descriptor. `{placeholders}` are filled by the renderer;
+# `${VAR:-default}` is docker-compose interpolation and passes through.
+runtime: llamacpp
+version: 1
+display_name: llama.cpp
+serves_formats: [gguf]
+# The installer's AI_RUNTIME default for these capability classes (PR-21); any
+# host whose accelerator kind is listed below may still choose this runtime.
+default_for_classes: [cpu-standard, cpu-low]
+
+capabilities:
+  # tool_call_format values the --jinja template engine handles
+  tool_call_parsers: [hermes, llama3, mistral, functionary, generic]
+  json_output: true          # grammar / json_schema constrained decoding
+  parallel_models: true      # router mode: several GGUFs behind one slot
+  hot_swap: true             # the router loads/unloads models on demand
+
+# Six-verb contract data. `materialize` + `capabilities` are realized by the
+# renderer (PR-3); control / ready / validate_model / bench are consumed by
+# the lifecycle manager (PR-4/PR-5).
+verbs:
+  control: {kind: compose}
+  ready:
+    path: /health
+    timeout_s: 600
+    interval_s: 30
+    start_period_s: 30
+    retries: 3
+    healthcheck: [CMD-SHELL, "curl -f http://localhost:{port}{path} || exit 1"]
+  validate_model: {probe: chat_completion, max_tokens: 1}
+  bench:                     # server-side timings in the completion response
+    max_tokens: 120
+    timings_field: timings
+    rate_key: predicted_per_second
+    prompt_rate_key: prompt_per_second
+    count_key: predicted_n
+
+weights:
+  # legacy variable name kept so existing installs keep their model folder
+  # (the .env migration of PR-7 introduces the neutral name)
+  host_dir: "${N97_GGUF_DIR:-./models/gguf}"
+  container_dir: /models
+  read_only: true
+
+materialize:
+  served_id: "{model_name}"
+  # One active model: the classic server command (today's low-power profile)
+  single:
+    command:
+      - -m
+      - "{model_path}"
+      - --alias
+      - "{model_name}"
+      - --host
+      - 0.0.0.0
+      - --port
+      - "{port}"
+      - --ctx-size
+      - "{model_ctx}"
+      - --threads
+      - "{threads}"
+      - --parallel
+      - "1"
+      - --jinja
+  # Several active models: router mode over a rendered preset file; the
+  # request `model` field selects the [section] = registry model name
+  multi:
+    command:
+      - --models-preset
+      - "{preset_path}"
+      - --models-max
+      - "{models_max}"
+      - --host
+      - 0.0.0.0
+      - --port
+      - "{port}"
+    preset:
+      container_path: /presets/engine-models.ini
+      common: {threads: "{threads}", parallel: 1, jinja: true}
+      per_model: {model: "{model_path}", c: "{model_ctx}"}
+
+service:
+  shm_size: "{shm_size}"
+
+# Tuning defaults ← class ← accelerator (later wins)
+tuning:
+  ctx_size: 16384
+  threads: "{cpu_cores}"
+  gpu_layers: 99
+  memory_limit: 12g
+  shm_size: 256mb
+  models_max: "{served_count}"
+
+classes:
+  accel-large:  {ctx_size: 32768, memory_limit: 24g}
+  accel-small:  {ctx_size: 16384}
+  cpu-standard: {ctx_size: 16384}
+  cpu-low:      {ctx_size: 8192, threads: 4, memory_limit: 6g, models_max: 1}
+
+accelerators:
+  none:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    compose:
+      deploy: {resources: {limits: {memory: "{memory_limit}"}}}
+  cuda:
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    args: [--gpu-layers, "{gpu_layers}"]
+    preset: {n-gpu-layers: "{gpu_layers}"}
+    compose:
+      deploy:
+        resources:
+          reservations:
+            devices: [{driver: nvidia, count: 1, capabilities: [gpu]}]
+  rocm:
+    image: ghcr.io/ggml-org/llama.cpp:server-rocm
+    args: [--gpu-layers, "{gpu_layers}"]
+    preset: {n-gpu-layers: "{gpu_layers}"}
+    compose:
+      devices: [/dev/kfd:/dev/kfd, /dev/dri:/dev/dri]
+      group_add: [video]
+      deploy: {resources: {limits: {memory: "{memory_limit}"}}}
+  igpu:
+    image: ghcr.io/ggml-org/llama.cpp:server-vulkan
+    args: [--gpu-layers, "{gpu_layers}"]
+    preset: {n-gpu-layers: "{gpu_layers}"}
+    compose:
+      devices: [/dev/dri:/dev/dri]
+      deploy: {resources: {limits: {memory: "{memory_limit}"}}}

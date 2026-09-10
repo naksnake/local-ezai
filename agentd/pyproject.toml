@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agentd"
-version = "0.5.0"
+version = "1.0.0"
 description = "local-ezai — Local Autonomous Software Engineer: plan, code, validate, debug, and commit on your own hardware"
 readme = "README.md"
 license = { text = "MIT" }
@@ -38,14 +38,24 @@ Documentation = "https://github.com/naksnake/local-ezai/blob/main/agentd/README.
 browser = [
     "playwright>=1.40,<2",
 ]
+# ezaid control plane (PR-8, ADR-028): the only web framework in agentd —
+# direct-mode CLI and every repo-work verb never import it.
+control = [
+    "fastapi>=0.111,<1",
+    "uvicorn>=0.29,<1",
+]
 dev = [
     "pytest>=8.0",
     "ruff>=0.5",
+    # the vendored SWE tool server (mcp-servers/swe-server) is exercised by the
+    # suite; the image pins mcp==1.28.1 (mcpo/Dockerfile) — keep the range in step
+    "mcp>=1.28,<2",
 ]
 
 [project.scripts]
 local-ezai = "agentd.main_cli:main"
 ezai = "agentd.cli:main"
+ezaid = "agentd.control.main:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/agentd"]

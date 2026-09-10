@@ -35,6 +35,18 @@ entry points; they *assert* a class (gpu→accel-*, cpu→cpu-standard,
 n97→cpu-low preset) instead of selecting bespoke files. Existing installs
 keep working; `n97` becomes an alias, not an architecture.
 
+> **As-built note (PR-21, `install.sh`):** the vector is detected by the
+> installer and recorded in `.env` as a comment block (accelerator kind,
+> memory, cores, SIMD flags → class). The class is *asserted* only when the
+> operator says so: `install.sh --profile cpu|n97|n97-igpu` or `--class`
+> writes `EZAI_CAPABILITY_CLASS`, which re-runs of the installer and the
+> CLI's platform context (`make bootstrap`, `local-ezai …`) honor over
+> detection; `--profile gpu` checks that an accelerator exists and asserts
+> nothing. The installer's `AI_RUNTIME` proposal is descriptor data
+> (`default_for_classes` per runtime) filtered by the descriptors' image
+> table for the detected accelerator kind — the table below stays the only
+> other place hardware knowledge lives.
+
 ## 2. Where hardware knowledge is allowed to live
 
 Exactly **one** place: runtime descriptor data
@@ -67,6 +79,14 @@ agent code and prompts · registry roles/groups · CLI/WebUI surfaces
 > `fit()` sizing comes exclusively from the declared `ModelEntry.size_gb`
 > (measured at install), never from model names.
 
+> **As-built note (PR-3, `config/providers/*.yaml`):** the table above
+> exists as shipped data — `accelerators: {cuda|rocm|igpu|none: {image,
+> args, preset, tuning, compose}}` per runtime, with class tuning under
+> `classes:`. The renderer (`agentd/src/agentd/render.py`) fills templates
+> and is tested to contain no brand, image, device path, or engine flag;
+> a runtime lacking an image for the detected kind fails loudly (no silent
+> CPU fallback) and the CPU path is an explicit `accelerator="none"`.
+
 A vendor never named in a descriptor is still supported the day its
 runtime supports it — that is the test of agnosticism.
 
@@ -86,6 +106,14 @@ and the vector. It powers:
 It estimates conservatively and **never blocks a user override**
 (`--i-know` / explicit WebUI confirmation): agnosticism includes the
 freedom to run something slowly.
+
+> **As-built (PR-4, `catalog.recommend`):** the recommender is the first
+> consumer of `fit()`: for a group it takes every catalog variant a runtime
+> serves, checks the group's role contracts against the (model × runtime)
+> pair on this class, ranks by placement (accelerator before system
+> memory) then declared size, and returns every candidate with its verdict
+> so `auto` choices are explainable (F9). Catalog entries declare sizes,
+> context, template, tool-call format, and license — never a brand.
 
 ## 4. Benchmarks replace assumptions
 
@@ -110,3 +138,32 @@ new capability-vector fields.
 | H2 | Same `.env` role seeds produce a working platform on `accel-large` and `cpu-low` with only class-appropriate models substituted by the recommender |
 | H3 | Fit verdicts for a 7B Q4 model correct on all four classes (fixture vectors) |
 | H4 | `setup-n97` = `cpu-low` preset equivalence (byte-identical rendered artifacts modulo class name) |
+
+> **As built (PR-25, `agentd/tests/gates/`, `make swe-gates`; part of `make
+> release-gate` and the CI workflow):** **H1** is a test that scans the
+> platform's code, packaged data, prompts, the console, the tool server and
+> the continuity layer (Makefile, compose files, `.env.example`, scripts,
+> `install.sh`) for vendor, brand and SKU tokens — word-bounded, with product
+> context for the vendor name that is also an English word, `amd64` and the
+> `-apple-system` font stack excluded. Accelerator *kinds* are allowed
+> everywhere. `config/providers/*.yaml` is the sanctioned home and is not
+> scanned; every other exception is an entry with a reason: the
+> `ACCELERATOR_PROBES` driver names and `PROFILE_PRESETS` in `capability.py`,
+> the legacy profile names in the installer's and the CLI's `--profile` help,
+> the host-provisioning script that installs the accelerator toolkit, and
+> the frozen chat stack's legacy profile files and comments (ADR-002) —
+> pinned, not edited. A stale allowance fails too. The gate found brand words
+> in a prompt's usage note, a legacy download script's header, a monitor
+> comment and the `up-n97` help text; all four were reworded. **H2** runs the
+> same `AI_RUNTIME` + three `auto` seeds through the first-run pipeline on
+> `accel-large` and on `cpu-low`: both ready, identical roles and groups,
+> each group served by the recommender's pick for that class, the engine
+> materialized from the descriptor's (class × accelerator) row. **H3** is a
+> 7B Q4 entry (declared 4.4 GB) on the four class fixture vectors —
+> accelerator/fast on both accelerator classes, system/moderate on both CPU
+> classes, plus the edges: no SIMD → slow, a small accelerator → spills to
+> system memory with the warning, too little memory → does not fit but stays
+> overridable, unknown size → an honest unknown. **H4** runs `install.sh
+> --profile n97` and `--class cpu-low` on two copies of one checkout, then
+> the pipeline: byte-identical rendered artifacts (manifest included) and the
+> same generation.

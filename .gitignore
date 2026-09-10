@@ -84,3 +84,10 @@ temp/
 # ── agentd (autonomous SWE runtime) ───────────────────────────────────────
 .venv-agentd/
 .agentd/
+
+# ── first run (local-ezai setup): the report + WebUI banner, the sample
+#    project working copy at the checkout root (the source that IS tracked
+#    lives in examples/sample-project — hence the leading slash)
+config/first-run/
+config/soak/
+/sample-project/

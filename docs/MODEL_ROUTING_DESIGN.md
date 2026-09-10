@@ -136,6 +136,23 @@ Registry v2 (platform)  <  per-repo .agent/model_registry.yaml (ADR-020)
   config from Registry v2 resolution first (via the rendered defaults),
   then applies repo overrides — same override philosophy as `.agentd.yaml`.
 
+> **As-built (PR-6, `agentd/src/agentd/routing.py`):** three layers —
+> (1) code defaults are **role aliases** (`role-<role>`; `config.py` holds
+> no model name, CF-3 closed); (2) the platform's role map — the rendered
+> `config/rendered/role_map.yaml` when present (what LiteLLM serves after
+> cutover), else `config/models/registry.yaml` resolution — seeds concrete
+> primaries + fallback chains; (3) the per-repo ADR-020 registry wins per
+> role, and a role it declares is taken **exactly** as declared (a repo pin
+> is an explicit chain; the platform's fallbacks for that role are not
+> inherited). The platform is located via `platform.config_dir`,
+> `$AGENTD_PLATFORM__CONFIG_DIR`, or by walking up from the project to a
+> directory holding `docker-compose.yml` + `config/providers/`; never from
+> the package location or the cwd, so runs against arbitrary repositories
+> stay hermetic. `local-ezai models` and `evaluate-models` resolve the same
+> layers. The stack's hand-written LiteLLM configs gained the `role-*`
+> aliases (data) so the alias switch keeps every profile working before
+> the PR-7 cutover.
+
 ## 6. Rendered artifacts (never hand-edited after install)
 
 From `registry.yaml` + provider descriptors, the control plane **renders**:
@@ -152,6 +169,23 @@ Render is atomic per generation: write generation N+1, validate, reload,
 record; rollback = re-render generation N
 ([MODEL_LIFECYCLE_MANAGEMENT.md](MODEL_LIFECYCLE_MANAGEMENT.md) §4).
 
+> **As-built (PR-3, `agentd/src/agentd/render.py`):** artifacts 1–3 are
+> rendered by `render()` into `<config>/rendered/` — `litellm-config.yaml`
+> (served-model aliases + `role-<role>` aliases → `http://engine:8000/v1`,
+> the stack's `general_settings`/`litellm_settings` preserved verbatim, the
+> embedding route supplied as caller data), `docker-compose.engine.yml`,
+> and `role_map.yaml` in the ADR-020 `agent_model_map` shape (fallback keys
+> only when non-empty; a golden test parses it with the shipped loader
+> against this repo's `.agent/model_registry.yaml`). Role aliases point at
+> the primary only — request-time fallback stays the ADR-020 client
+> mechanism. Two more artifacts exist: `capability_report.yaml` (evidence)
+> and `manifest.yaml` (hashes for drift detection). The render is
+> all-or-nothing: any negotiation or slot problem aborts with one aggregated
+> error. **Cutover done in PR-7:** `docker-compose.yml` mounts
+> `config/rendered/litellm-config.yaml` and `make up*` adds the rendered
+> engine override; the hand-written variants live on as fixtures under
+> `agentd/tests/fixtures/legacy/`.
+
 ## 7. Explain routing (the transparency contract)
 
 Three levels, all served from the same resolution:
@@ -164,6 +198,15 @@ Three levels, all served from the same resolution:
 
 Every explain answer names the **generation** it was resolved from, so an
 answer is reproducible even after later changes.
+
+> **As built (PR-17):** the Admin Center **Routing** page (`/routing`)
+> renders `GET /v1/roles/{role}` for every logical role: source (pin or
+> group), primary and fallbacks, the resolver's reason lines, the contract,
+> the per-model checks with the failure text, the generation resolved from;
+> roles the registry does not define are listed as such; the generation
+> history with diffs sits below. The Models page's group panels use the
+> same resolution as their serving order. "What DID serve stage Y of run Z"
+> is the run detail page (PR-16, `models used`).
 
 ## 8. Fallback semantics (unchanged, restated)
 

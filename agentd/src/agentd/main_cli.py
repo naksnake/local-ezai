@@ -30,6 +30,15 @@ Commands:
     models                     live model routing (primary/fallback per role)
     explain-run [run-id]       which model handled each stage of a run
 
+Platform namespaces (PR-6, direct mode — see platform_cli.py):
+    model <verb>               install · benchmark · activate · upgrade ·
+                               rollback · retire · uninstall · explain ·
+                               history · catalog
+    governance <verb>          list · show · approve · reject
+    project <verb>             add · list · remove
+    status                     generation, models, approvals, stack health
+    up | down                  compose profile wrappers
+
 Every command drives the existing agents: Planner, Coder, Validator,
 Debugger, Browser QA, Memory, Reviewer, Sprint, Documentation, Evolution,
 Git — through the execution sandbox and the mandatory reviewer gate.
@@ -44,12 +53,14 @@ from pathlib import Path
 from agentd import __version__
 from agentd.config import AgentdConfig, load_config
 from agentd.logging_setup import get_logger, setup_logging
+from agentd.platform_cli import PLATFORM_COMMANDS, add_platform_parsers, dispatch_platform
 
 log = get_logger("local-ezai")
 
 COMMANDS = ("chat", "plan", "run", "code", "test", "fix", "review",
             "commit", "memory", "sprint", "docs", "evolve", "roadmap",
-            "evaluate-models", "models", "explain-run", "version")
+            "evaluate-models", "models", "explain-run", "version",
+            *PLATFORM_COMMANDS)
 
 
 # ── argv preprocessing: leading path selection ────────────────────────────────
@@ -200,6 +211,7 @@ def build_parser() -> argparse.ArgumentParser:
     explain_p.add_argument("--json", action="store_true", dest="as_json")
 
     sub.add_parser("version", help="Print the version")
+    add_platform_parsers(sub, common)  # model · governance · project · status · up · down
     return parser
 
 
@@ -223,7 +235,9 @@ def main(argv: list[str] | None = None) -> int:
     from agentd.workspace import WorkspaceError, ensure_git_repo
 
     try:
-        if command not in ("chat",):  # chat works in any directory
+        # chat works in any directory; platform verbs act on the platform,
+        # not on a repository
+        if command not in ("chat", *PLATFORM_COMMANDS):
             ensure_git_repo(project)
         return _dispatch(command, args, config, project)
     except WorkspaceError as exc:
@@ -236,6 +250,8 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _dispatch(command: str, args, config: AgentdConfig, project: Path) -> int:
+    if command in PLATFORM_COMMANDS:
+        return dispatch_platform(command, args, config, project)
     if command == "chat":
         return cmd_chat(config, project)
     if command == "plan":
@@ -644,13 +660,13 @@ _ROLE_ORDER = ("planner", "coder", "debugger", "reviewer", "documentation",
 
 
 def cmd_models(config: AgentdConfig, project: Path, args) -> int:
-    """`local-ezai models` — the live routing from .agent/model_registry.yaml
-    merged over the config, exactly as a run would resolve it."""
-    from agentd.model_registry import apply_model_registry
+    """`local-ezai models` — the effective routing exactly as a run would
+    resolve it: role aliases < platform Registry v2 < .agent/model_registry.yaml."""
+    from agentd.routing import effective_routing
     from agentd.runner import resolve_origin_root
 
     origin = resolve_origin_root(project)
-    effective = apply_model_registry(config, origin)
+    effective, sources = effective_routing(config, origin, project=project)
     registry_path = origin / ".agent" / "model_registry.yaml"
 
     roles = [r for r in _ROLE_ORDER if r in effective.llm.roles]
@@ -661,6 +677,7 @@ def cmd_models(config: AgentdConfig, project: Path, args) -> int:
 
         print(_json.dumps({
             "registry": str(registry_path) if registry_path.is_file() else None,
+            "sources": sources,
             "endpoint": effective.llm.base_url,
             "roles": {
                 role: {
@@ -675,6 +692,9 @@ def cmd_models(config: AgentdConfig, project: Path, args) -> int:
               else "(no registry — global config defaults)")
     print(f"model routing for {origin.name}")
     print(f"registry: {source}")
+    for applied in sources:
+        if applied.startswith("platform"):
+            print(f"platform: {applied.split(': ', 1)[1]}")
     print(f"endpoint: {effective.llm.base_url}\n")
     for role in roles:
         fallbacks = effective.llm.role_fallbacks.get(role, [])

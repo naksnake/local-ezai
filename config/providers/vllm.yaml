@@ -1,0 +1,102 @@
+# Runtime descriptor — vLLM
+# (docs/RUNTIME_ABSTRACTION_STRATEGY.md §2, docs/PROVIDER_ABSTRACTION.md §2,
+#  docs/HARDWARE_AGNOSTIC_ARCHITECTURE.md §2 — schema: agentd/runtime_descriptor.py)
+#
+# DATA, not code — see llamacpp.yaml for the contract. `{placeholders}` are
+# filled by the renderer; `${VAR:-default}` is compose interpolation.
+runtime: vllm
+version: 1
+display_name: vLLM
+serves_formats: [hf, awq, gptq]
+# The installer's AI_RUNTIME default for these capability classes (PR-21).
+default_for_classes: [accel-large, accel-small]
+
+capabilities:
+  # built-in --tool-call-parser values
+  tool_call_parsers:
+    [hermes, mistral, llama3_json, llama4_pythonic, granite, granite4,
+     granite-20b-fc, internlm, jamba, xlam, deepseek_v3, deepseek_v31,
+     openai, kimi_k2, hunyuan_a13b, cohere_command3, longcat, glm45, glm47,
+     functiongemma, qwen3_xml, olmo3, gigachat3, apertus, pythonic]
+  json_output: true          # guided decoding (json schema)
+  parallel_models: false     # one model per engine instance (V1 stance)
+  hot_swap: false            # a weight change is a container restart
+
+verbs:
+  control: {kind: compose}
+  ready:
+    path: /health
+    timeout_s: 1200
+    interval_s: 30
+    start_period_s: 60
+    retries: 3
+    healthcheck: [CMD-SHELL, "curl -f http://localhost:{port}{path} || exit 1"]
+  validate_model: {probe: chat_completion, max_tokens: 1}
+  bench: {max_tokens: 120, timings_field: ""}       # measured client-side
+
+weights:
+  host_dir: "${MODELS_DIR:-./models/hf-cache}"
+  container_dir: /root/.cache/huggingface
+  read_only: false
+
+materialize:
+  served_id: "{model_name}"
+  single:
+    command:
+      - --model
+      - "{model_ref}"
+      - --served-model-name
+      - "{model_name}"
+      - --max-model-len
+      - "{model_ctx}"
+    # appended only when the served model's tool_call_format negotiated
+    tool_calling_args: [--enable-auto-tool-choice, --tool-call-parser, "{tool_call_parser}"]
+
+service:
+  environment:
+    - HF_HUB_OFFLINE=1
+    # keep the hub lookup path aligned with the mount root
+    - HF_HUB_CACHE=/root/.cache/huggingface
+  volumes:
+    # torch.compile artifacts — restarts take seconds instead of minutes
+    - vllm-cache:/root/.cache/vllm
+  shm_size: "{shm_size}"
+
+tuning:
+  ctx_size: 4096
+  shm_size: 2gb
+  gpu_memory_utilization: "0.85"
+  dtype: bfloat16          # CPU backend: bf16 recommended over fp16
+  kv_cache_gb: 2           # CPU backend KV-cache reservation (GiB)
+  memory_limit: 10g
+
+classes:
+  accel-large:  {ctx_size: 8192}
+  accel-small:  {ctx_size: 4096}
+  cpu-standard: {ctx_size: 8192, memory_limit: 10g}   # today's CPU profile cap
+  cpu-low:      {ctx_size: 2048, memory_limit: 8g}
+
+accelerators:
+  cuda:
+    image: "${VLLM_IMAGE:-vllm/vllm-openai:latest}"
+    args: [--gpu-memory-utilization, "{gpu_memory_utilization}"]
+    compose:
+      deploy:
+        resources:
+          reservations:
+            devices: [{driver: nvidia, count: 1, capabilities: [gpu]}]
+  rocm:
+    image: "${VLLM_ROCM_IMAGE:-vllm/vllm-openai-rocm:latest}"
+    args: [--gpu-memory-utilization, "{gpu_memory_utilization}"]
+    compose:
+      devices: [/dev/kfd:/dev/kfd, /dev/dri:/dev/dri]
+      group_add: [video]
+      cap_add: [SYS_PTRACE]
+      security_opt: [seccomp=unconfined]
+  none:
+    image: "${VLLM_CPU_IMAGE:-vllm/vllm-openai-cpu:latest}"
+    args: [--dtype, "{dtype}"]
+    compose:
+      environment: ["VLLM_CPU_KVCACHE_SPACE={kv_cache_gb}"]
+      cap_add: [SYS_NICE]      # NUMA memory-binding syscalls
+      deploy: {resources: {limits: {memory: "{memory_limit}"}}}

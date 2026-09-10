@@ -38,7 +38,7 @@ from agentd.journal import Journal
 from agentd.llm import LLMClient, build_llm
 from agentd.logging_setup import get_logger
 from agentd.memory import FIX_KINDS, KIND_IMPLEMENTATION, MemoryStore
-from agentd.model_registry import apply_model_registry
+from agentd.routing import effective_routing
 from agentd.runner import (
     build_memory_store,
     build_registry,
@@ -69,7 +69,7 @@ def run_evolution(
 ) -> EvolutionReport:
     evolution_id = evolution_id or new_run_id()
     repo = Path(repo).resolve()
-    config = apply_model_registry(config, resolve_origin_root(repo))
+    config, _ = effective_routing(config, resolve_origin_root(repo), project=repo)
     # Repo overrides (validation commands, limits, browser QA) apply to the
     # benchmark stage and the proposal budget, not only to the task runs.
     config = merge_repo_overrides(config, load_repo_overrides(repo))

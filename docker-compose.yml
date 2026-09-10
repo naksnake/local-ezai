@@ -46,7 +46,12 @@ services:
       # user's machine — set LAN_HOST in .env (e.g. 192.168.100.1) when you
       # access the UI from other devices. NOTE: once an admin edits the tool
       # list in the UI, the UI-saved value wins over this env default.
-      - 'TOOL_SERVER_CONNECTIONS=[{"url":"http://${LAN_HOST:-localhost}:${MCPO_PORT:-8200}/qdrant-rag","path":"openapi.json","auth_type":"bearer","key":"${MCP_API_KEY:-local-tools-key}","config":{"enable":true},"info":{"id":"qdrant-rag","name":"Knowledge Base Search"}},{"url":"http://${LAN_HOST:-localhost}:${MCPO_PORT:-8200}/fetch","path":"openapi.json","auth_type":"bearer","key":"${MCP_API_KEY:-local-tools-key}","config":{"enable":true},"info":{"id":"fetch","name":"Web Fetch"}},{"url":"http://${LAN_HOST:-localhost}:${MCPO_PORT:-8200}/memory","path":"openapi.json","auth_type":"bearer","key":"${MCP_API_KEY:-local-tools-key}","config":{"enable":true},"info":{"id":"memory","name":"Memory"}},{"url":"http://${LAN_HOST:-localhost}:${MCPO_PORT:-8200}/filesystem","path":"openapi.json","auth_type":"bearer","key":"${MCP_API_KEY:-local-tools-key}","config":{"enable":true},"info":{"id":"filesystem","name":"Filesystem"}}]'
+      - 'TOOL_SERVER_CONNECTIONS=[{"url":"http://${LAN_HOST:-localhost}:${MCPO_PORT:-8200}/qdrant-rag","path":"openapi.json","auth_type":"bearer","key":"${MCP_API_KEY:-local-tools-key}","config":{"enable":true},"info":{"id":"qdrant-rag","name":"Knowledge Base Search"}},{"url":"http://${LAN_HOST:-localhost}:${MCPO_PORT:-8200}/fetch","path":"openapi.json","auth_type":"bearer","key":"${MCP_API_KEY:-local-tools-key}","config":{"enable":true},"info":{"id":"fetch","name":"Web Fetch"}},{"url":"http://${LAN_HOST:-localhost}:${MCPO_PORT:-8200}/memory","path":"openapi.json","auth_type":"bearer","key":"${MCP_API_KEY:-local-tools-key}","config":{"enable":true},"info":{"id":"memory","name":"Memory"}},{"url":"http://${LAN_HOST:-localhost}:${MCPO_PORT:-8200}/filesystem","path":"openapi.json","auth_type":"bearer","key":"${MCP_API_KEY:-local-tools-key}","config":{"enable":true},"info":{"id":"filesystem","name":"Filesystem"}},{"url":"http://${LAN_HOST:-localhost}:${MCPO_PORT:-8200}/swe","path":"openapi.json","auth_type":"bearer","key":"${MCP_API_KEY:-local-tools-key}","config":{"enable":true},"info":{"id":"swe","name":"Local-EZAI SWE"}}]'
+    # The first run (`local-ezai setup`, V1 P5) writes the "Platform ready"
+    # banner as WEBUI_BANNERS into this optional file; absent = no banner.
+    env_file:
+      - path: config/first-run/openwebui.env
+        required: false
     volumes:
       - openwebui-data:/app/backend/data
     networks:
@@ -65,7 +70,10 @@ services:
     ports:
       - "${LITELLM_PORT:-4000}:4000"
     volumes:
-      - ./config/litellm-config.yaml:/app/config.yaml:ro
+      # RENDERED artifact (V1 cutover): generated from config/models/registry.yaml
+      # + config/providers/*.yaml by `make bootstrap` / local-ezai — never
+      # hand-edited. Model + role-* aliases point at the engine slot.
+      - ./config/rendered/litellm-config.yaml:/app/config.yaml:ro
       # Auto-RAG pre-call hook (module referenced by litellm_settings.callbacks)
       - ./config/litellm_custom_callbacks.py:/app/litellm_custom_callbacks.py:ro
     command: ["--config", "/app/config.yaml", "--port", "4000"]
@@ -126,7 +134,12 @@ services:
               capabilities: [gpu]
     shm_size: '2gb'
     networks:
-      - ai-net
+      ai-net:
+        # Runtime-neutral name for the engine slot (ADR-026 R-3): rendered
+        # artifacts and new consumers address http://engine:8000; the service
+        # keeps its historical name so http://vllm:8000 routes keep working.
+        aliases:
+          - engine
 
   # ═══════════════════════════════════════════════════════════════════════
   # Embed Server — Embedding model running on CPU
@@ -206,6 +219,15 @@ services:
     environment:
       - MCP_API_KEY=${MCP_API_KEY:-local-tools-key}
       - RAG_COLLECTION=${RAG_COLLECTION:-my-knowledge-base}
+      # SWE tool server (chat-ops, V1 P3): where it finds the ezaid control
+      # plane (container overlay by default; host.docker.internal for a host
+      # daemon), its service token, and the Admin Center base for deep links.
+      - EZAI_CONTROL_URL_MCPO=${EZAI_CONTROL_URL_MCPO:-http://ezaid:8010}
+      - EZAI_CONTROL_TOKEN=${EZAI_CONTROL_TOKEN:-ezai-control-key}
+      - LAN_HOST=${LAN_HOST:-localhost}
+      - MONITOR_PORT=${MONITOR_PORT:-8888}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - ai-net
 
@@ -242,6 +264,22 @@ services:
       - QDRANT_PORT=${QDRANT_PORT:-6333}
       - SEARXNG_PORT=${SEARXNG_PORT:-8092}
       - MCPO_PORT=${MCPO_PORT:-8200}
+      # Admin Center pages (V1 P4, /overview and /runs): where the monitor
+      # finds the ezaid control plane (container overlay by default;
+      # host.docker.internal for a host daemon) and the service token it
+      # presents on the server side — the browser never sees it.
+      - EZAI_CONTROL_URL=${EZAI_CONTROL_URL_MONITOR:-http://ezaid:8010}
+      - EZAI_CONTROL_TOKEN=${EZAI_CONTROL_TOKEN:-ezai-control-key}
+      # SSO handoff (V1 P4): an OpenWebUI admin arriving from a deep link is
+      # already signed in (session cookie validated against OpenWebUI); a
+      # reverse proxy may pass a trusted user header with a shared secret.
+      # HTTP Basic (admin / viewer above) stays the fallback.
+      - MONITOR_SSO_OPENWEBUI_URL=${MONITOR_SSO_OPENWEBUI_URL:-http://openwebui:8080}
+      - MONITOR_SSO_TRUSTED_HEADER=${MONITOR_SSO_TRUSTED_HEADER:-}
+      - MONITOR_SSO_TRUSTED_SECRET=${MONITOR_SSO_TRUSTED_SECRET:-}
+      - MONITOR_SSO_ADMINS=${MONITOR_SSO_ADMINS:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - ai-net
     depends_on:

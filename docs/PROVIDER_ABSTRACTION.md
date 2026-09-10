@@ -63,6 +63,23 @@ Descriptors ship with the platform and are versioned; users select
 the descriptor. Users never author descriptors (extending them is a
 platform-development task like any other, via PRs).
 
+> **As-built (PR-3, `config/providers/*.yaml`, schema in
+> `agentd/src/agentd/runtime_descriptor.py`):** the shipped schema keys
+> hardware by **accelerator kind** (`accelerators: {cuda|rocm|igpu|none:
+> {image, args, preset, tuning, compose}}`) and tunes by **capability
+> class** (`classes: {accel-large|…|cpu-low: {ctx_size, threads,
+> memory_limit, …}}`) instead of the SKU `profiles:` sketched above
+> (ADR-026 R-2). The six verbs appear as `materialize` (`served_id`,
+> `single` command, optional `multi` command + INI `preset`) and `verbs:
+> {control, ready, validate_model, bench}`; `capabilities` carries
+> `tool_call_parsers`, `json_output`, `parallel_models`, `hot_swap`. All
+> engine-specific strings are `{placeholder}` templates filled by the
+> renderer; compose `${VAR:-default}` interpolation passes through.
+> llama.cpp's `parallel_models: true` is realized through its router mode
+> (`--models-preset` + a rendered INI whose `[sections]` are registry model
+> names); a single active model renders the classic command, field-for-
+> field today's low-power profile.
+
 ## 3. What the renderer produces
 
 For the current generation ([MODEL_LIFECYCLE_MANAGEMENT.md](MODEL_LIFECYCLE_MANAGEMENT.md) §4):
@@ -77,6 +94,19 @@ For the current generation ([MODEL_LIFECYCLE_MANAGEMENT.md](MODEL_LIFECYCLE_MANA
    role that needs tool calling must sit on a provider/parser combination
    that supports it; resolution fails at render time otherwise
    (never at request time).
+
+> **As-built (PR-3, `agentd/src/agentd/render.py`):** `render()` produces
+> `litellm-config.yaml` (model aliases + `role-*` aliases → `engine:8000`),
+> `docker-compose.engine.yml` (the slot override, `deploy` under compose's
+> `!override` tag), `role_map.yaml` (ADR-020 shape for agentd),
+> `capability_report.yaml`, and `engine-models.ini` when several models are
+> served; `write_rendered()` stores them under `<config>/rendered/` with a
+> `manifest.yaml` of content hashes and refuses hand-edited or unmanaged
+> files (drift). Until the PR-7 cutover this is a parallel path — the
+> hand-written LiteLLM configs remain the live ones. The §4 slot rule is
+> enforced as data: a `parallel_models: false` runtime accepts one active
+> model; a mixed-runtime active set is a render error naming the models per
+> runtime and the fix.
 
 ## 4. Provider selection rules (deterministic)
 
@@ -100,6 +130,15 @@ remain as thin wrappers — nothing breaks). Every provider exposes:
 `materialize`, `start/stop/restart`, `ready?`, `bench(tokens/sec)`,
 `validate_model(load+probe)` — the verbs the lifecycle manager calls.
 
+> **As-built (PR-3/PR-4):** `materialize` and `capabilities` are realized
+> by the renderer (PR-3); `ready?`, `validate_model`, and `bench` are
+> executed by `lifecycle.py` against a side-loaded engine from descriptor
+> data (`verbs.ready`, `verbs.validate_model`, `verbs.bench` incl. the
+> timing field names). `start/stop/restart` of the live slot remain
+> declared (`verbs.control: compose`) and are executed by the activation
+> protocol in PR-5. `scripts/bench.sh` is untouched; its measurement logic
+> lives in `lifecycle.measure_tokens_per_s`.
+
 ## 6. Side-load slot (benchmark without downtime)
 
 Benchmarking a *candidate* model must not displace the serving set. The
@@ -109,6 +148,17 @@ gated by VRAM/RAM checks for vLLM — on small profiles the fallback is a
 scheduled swap window with explicit user confirmation). Side-loads are
 never registered in LiteLLM's public alias space; only the benchmark
 harness addresses them.
+
+> **As-built (PR-4, `lifecycle.SideLoad`):** a side-load is the PR-3
+> `materialize_service()` of exactly one model, written as a standalone
+> compose project (`ezai-sideload-<model>`) with an ephemeral published
+> host port, brought up with `docker compose up -d`, polled on the
+> descriptor's `ready` probe within its `timeout_s`, and always torn down
+> (`down -v`). It powers `validate_model` (one-token chat completion) and
+> `bench`. Runtime knowledge stays in the descriptor; the lifecycle code
+> only resolves `${VAR:-default}` host paths and declares named volumes.
+> The vLLM memory gate / scheduled swap window is not implemented in this
+> slice (fit verdicts exist; gating lands with activation in PR-5).
 
 ## 7. Deliberate V1 boundaries
 

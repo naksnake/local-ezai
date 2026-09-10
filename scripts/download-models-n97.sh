@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/download-models-n97.sh
 # ─────────────────────────────────────────────────────────────────────────────
-# Downloads the small quantized model set for Intel N97 / low-power CPU boxes.
+# Downloads the small quantized model set for the low-power CPU profile (n97).
 # Run this BEFORE `make up-n97` for the first time.
 #
 #   Chat model:  Qwen2.5-1.5B-Instruct  Q4_K_M GGUF  (~1.1 GB, llama.cpp)

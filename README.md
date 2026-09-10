@@ -73,17 +73,22 @@ cd local-ezai
 # 2. No Docker yet? This installs it (safe to skip otherwise):
 bash scripts/setup.sh
 
-# 3. Configure
-cp .env.example .env
-nano .env
-#    change: LITELLM_MASTER_KEY, WEBUI_SECRET_KEY, SEARXNG_SECRET,
-#            MONITOR_ADMIN_PASSWORD, MONITOR_VIEWER_PASSWORD
-#    set:    LAN_HOST=<this machine's IP>   (needed for browser-side tools)
-#    The default chat model is already Qwen2.5-1.5B — nothing else needed.
+# 3. Configure — one command, one edit
+./install.sh
+#    detects the hardware (here: a low-power CPU class), creates .env with
+#    fresh secrets and the runtime for this machine, and opens it ONCE:
+#      set:  REASONING_MODEL=auto  CODING_MODEL=auto  CHAT_MODEL=auto
+#            (the platform picks GGUF models that fit this box; or name
+#             your own hf: / gguf: sources)
+#      set:  LAN_HOST=<this machine's IP>   (needed for browser-side tools)
+#    Problems are printed with their fix before anything is downloaded.
+#    Re-running later repairs .env and never overwrites your values.
 
-# 4. Everything else in one command: pull, build, download models,
-#    start all 8 services, wait until healthy (~15-30 min first time)
-make setup-n97
+# 4. Everything else in one command: the model seeds are downloaded,
+#    validated and benchmarked into generation 1, images pulled and built,
+#    all services started and waited for, a chat turn / RAG / plan smoke
+#    run, and the URLs printed (~15-30 min first time). Re-run any time.
+make setup-n97          # `make setup` detects the class instead of asserting it
 #    Occupied ports are relocated automatically and saved to .env.
 
 # 5. Optional: run inference on the Intel iGPU instead of the CPU
@@ -123,7 +128,8 @@ section of `.env.example`.
 | **Embed Server** — embedding API | http://localhost:8001 | none |
 | **Qdrant** — vector database | http://localhost:6333 | none |
 | **SearXNG** — private web search | http://localhost:8092 | none |
-| **mcpo** — MCP tools proxy | http://localhost:8200 | `MCP_API_KEY` from `.env` |
+| **mcpo** — MCP tools proxy (filesystem, memory, fetch, knowledge base, `/swe` SWE tools) | http://localhost:8200 | `MCP_API_KEY` from `.env` |
+| **ezaid** — platform control plane (optional: `make control-up`) | http://localhost:8010 | `EZAI_CONTROL_TOKEN` from `.env` (bearer; `/health` open) |
 
 ---
 
@@ -176,21 +182,24 @@ local-ezai/
 │   └── DEPLOY-N97.md           Deployment guide for Intel N97 / no-GPU boxes
 │
 ├── config/
-│   ├── litellm-config.yaml     Model routing (reads from env)
-│   ├── litellm-config.n97.yaml Model routing for the N97/llama.cpp profile
-│   ├── litellm-config.cpu.yaml Model routing for the vLLM CPU profile
+│   ├── models/                 Model registry + generations (written by `make bootstrap` / local-ezai)
+│   ├── rendered/               GENERATED LiteLLM config + engine override per generation — never hand-edited
+│   ├── governance/             Change-request queue + append-only audit log
 │   ├── mcpo-config.json        MCP server list (reads from env)
+│   ├── providers/              Runtime descriptors (llama.cpp, vLLM) — data for the V1 renderer
 │   ├── searxng/settings.yml    Search engine config
 │   └── prompts/
-│       └── web-search-assistant.md   System prompt for proactive web search
+│       ├── web-search-assistant.md   System prompt for proactive web search
+│       └── orchestrator.md           System preset of the Local-EZAI Orchestrator persona (make orchestrator)
 │
 ├── embed-server/               Embedding API (FastAPI + sentence-transformers)
 │   ├── Dockerfile
 │   └── server.py
 │
-├── monitor/                    Live monitoring dashboard (FastAPI + SSE)
+├── monitor/                    Admin Center: live dashboard (FastAPI + SSE) + platform console pages
 │   ├── Dockerfile
-│   └── monitor.py
+│   ├── monitor.py              Health & knowledge dashboard, RBAC, RAG upload API
+│   └── admin_center.py         /overview and /runs pages over the ezaid control plane (V1 P4)
 │
 ├── mcpo/                       MCP tool proxy container
 │   └── Dockerfile
@@ -259,20 +268,25 @@ openssl rand -hex 32
 
 ```
 make help        List all commands
-make setup       First-time system setup (Docker, NVIDIA, Python, Node)
+make setup       First run, all steps: ./install.sh (edit .env once) → local-ezai setup (bootstrap, images, up, smoke, report)
+make setup-system  System packages for a fresh Ubuntu host (Docker, NVIDIA toolkit, Python venv, Node)
+make setup-offline  First run on an air-gapped host from a bundle (BUNDLE=<dir>), nothing downloaded
+make bundle      Offline bundle of this bootstrapped platform: images + weights + seeds (BUNDLE=<dir>)
+make install     First run, steps 1–3 only: detect hardware, create/repair .env with minted secrets, validate the seeds
 make build       Build embed-server, mcpo, and monitor images
 make pull        Pull official Docker images
-make setup-gpu   GPU stack end-to-end: pull, build, download, start, health
-make up          Start all 8 services (GPU mode; auto-downloads models)
-make download-gpu  Download models for the GPU stack (~15 GB default)
-make setup-n97   N97 stack end-to-end: pull, build, download, start, health
-make up-n97      Start CPU-only via llama.cpp (auto-downloads models if missing)
+make setup-gpu   First run asserting an accelerator (install.sh --profile gpu → local-ezai setup --profile gpu)
+make up          Start all 8 services with the rendered engine (GPU profile; fetches the embedding model if missing)
+make download-embed  Download the RAG embedding model (every profile; skipped when present)
+make download-gpu  Legacy: download the .env CHAT_MODEL + embedding model for the GPU stack
+make setup-n97   First run asserting the low-power class (install.sh --profile n97 → local-ezai setup --profile n97)
+make up-n97      Start CPU-only via llama.cpp (fetches the embedding model if missing)
 make up-n97-igpu Same, but llama.cpp runs on the Intel iGPU (Vulkan; faster prefill)
 make pull-n97    Pull images for the N97 stack (llama.cpp)
 make download-n97  Download the small quantized model set (~2.5 GB)
 make update-n97  Pull latest images and restart the N97 stack
-make setup-cpu   vLLM CPU stack end-to-end: pull, build, download, start, health
-make up-cpu      Start CPU-only via vLLM (auto-downloads models if missing)
+make setup-cpu   First run asserting the cpu-standard class (install.sh --profile cpu → local-ezai setup --profile cpu)
+make up-cpu      Start CPU-only via vLLM (fetches the embedding model if missing)
 make pull-cpu    Pull images for the vLLM CPU stack
 make download-cpu  Download models for the vLLM CPU stack (~3.6 GB, runs in Docker)
 make update-cpu  Pull latest images and restart the vLLM CPU stack
@@ -289,7 +303,17 @@ make status      Show container status table
 make embed       Ingest ./documents into the Qdrant knowledge base
 make install-autorag  (optional) install the in-OpenWebUI RAG filter — RAG
                  already works via the LiteLLM hook without this
-make monitor     Open the monitor dashboard in your browser
+make orchestrator  Install/refresh the Local-EZAI Orchestrator persona in OpenWebUI (after first login)
+make monitor     Open the Admin Center (monitor) in your browser — health & knowledge at /, /overview, /runs
+make control-up  Start the ezaid control plane overlay (:8010; V1 P2, optional)
+make control-down / control-logs / control-spec  Stop it · follow logs · regenerate docs/api/ezaid-openapi.json
+make control-serve  Run ezaid on this host instead (sees your repos → SWE runs through the API)
+make swe-drill   Chat-ops boundary drill (offline): governance unreachable from chat, prompt-injection red-team, chat/RAG byte-identical
+make swe-accept  First-run acceptance suite F1–F11 (offline)
+make swe-parity  Parity harness (release gate): every management operation via CLI-direct, CLI-connected and the API — same result, state, audit (offline)
+make swe-gates   Agnosticism gates: the third-runtime drill (a mock runtime from descriptor data alone), the H1 word audit, the H2–H4 class fixtures (offline)
+make release-gate  The P6 release gate in one command: lint · chat-stack baseline · drill · acceptance · parity · agnosticism gates · full suite
+make soak        72 h soak on this host (docs/SOAK_RUNBOOK.md): health · bench · SWE runs · lifecycle churn with rollback · evolution — make soak HOURS=72
 make update      Pull latest images and restart
 make k8s         Deploy to K3s Kubernetes
 make clean       Remove all containers, images, volumes (destructive)
@@ -311,65 +335,109 @@ Supports Ubuntu 24.04 and 26.04 LTS.
 > If NVIDIA drivers were installed, the script exits and asks you to reboot.  
 > After rebooting, run `bash scripts/setup.sh` again to finish.
 
-### 2. Configure secrets
+### 2. Configure — `.env`, once
 
 ```bash
-cp .env.example .env
+./install.sh          # or: make install
 ```
 
-Open `.env` and change at minimum:
-- `LITELLM_MASTER_KEY` — used as the API key everywhere
-- `WEBUI_SECRET_KEY` — signs OpenWebUI session cookies
-- `SEARXNG_SECRET` — HMAC key for SearXNG
+Detects your hardware (class, not brand), creates `.env` from
+`.env.example` with fresh secrets (`LITELLM_MASTER_KEY`, `WEBUI_SECRET_KEY`,
+`MCP_API_KEY`, `EZAI_CONTROL_TOKEN`, `SEARXNG_SECRET`, the two monitor
+passwords) and the runtime that fits the machine, then opens it **once** so
+you can set the model seeds (`REASONING_MODEL` / `CODING_MODEL` /
+`CHAT_MODEL` — `auto` lets the platform pick models that fit, or name a
+`hf:` / `gguf:` source) and `LAN_HOST` if other devices will use the UI.
+Every problem with the seeds is printed with its fix before anything is
+downloaded. Re-running the script later *repairs* `.env` (missing or
+placeholder secrets, new keys) and never overwrites your values — a backup
+is written first. `./install.sh --yes` skips the edit stop, `--check` writes
+nothing, `--profile n97` asserts the low-power class.
 
-Everything else can stay as-is for a local-only deployment.
+By hand instead: `cp .env.example .env` and change the values marked ⚠️.
 
-### 3. Download models
+### 3. Bring the platform up — one command
 
 ```bash
-bash scripts/download-models.sh
+make setup            # or make setup-gpu / setup-cpu / setup-n97 to assert a class
 ```
 
-Downloads:
-- **Qwen2.5-7B-Instruct** (~15 GB) — main chat model
-- **nomic-embed-text-v1.5** (~500 MB) — embedding model for RAG
+`make setup` runs `./install.sh` again (a no-op once `.env` is complete) and
+then `local-ezai setup`, which:
 
-Models are stored in `./models/hf-cache` (inside the project folder) and mounted read-only into the containers. You only download once; rebuilding images does not re-download.
+1. **bootstraps** the model seeds into generation 1 — download (resumable,
+   checksummed), load-validation, benchmark, the one implicit activation,
+   the rendered LiteLLM + engine configuration (`make bootstrap` on its own);
+2. **pulls and builds** the images with the rendered engine override, and
+   downloads the RAG embedding model (~500 MB) if missing;
+3. **starts** all 8 services and **waits** until the engine answers its
+   readiness probe and every service is healthy (the engine takes 1–5
+   minutes to load a model);
+4. **smoke-tests** the platform: one chat turn (required), a RAG answer over
+   a sample document, a plan against the bundled sample project, the
+   model probes of every role (the last three are advisory);
+5. **prints the URLs**, writes `config/first-run/report.md` and shows the
+   "Platform ready" card in the WebUI.
 
-For **gated models** (Llama, Gemma): get a token at https://huggingface.co/settings/tokens and add `HF_TOKEN=hf_your_token` to `.env`.
+Every step is idempotent — re-run `make setup` after a failure or an
+interruption and it continues where it stopped. Step by step instead:
+`make bootstrap`, then `make up` (or `up-n97` / `up-cpu`), `make wait-ready`,
+`make health`. No model seeds in `.env` yet? `local-ezai init` proposes the
+catalog's recommended set for your hardware and continues with the same
+pipeline.
 
-### 4. Build and start
+Models are stored in `./models` (inside the project folder) and mounted
+read-only into the containers. For **gated models** (Llama, Gemma): get a
+token at https://huggingface.co/settings/tokens and add
+`HF_TOKEN=hf_your_token` to `.env`.
+
+**Air-gapped host?** On a connected machine that already ran `make setup`:
+`make bundle BUNDLE=/media/usb/local-ezai-bundle` saves the images, the
+model weights and the seeds of its generation. On the offline machine:
+`./install.sh --offline /media/usb/local-ezai-bundle && make setup-offline
+BUNDLE=/media/usb/local-ezai-bundle` — the same steps, nothing downloaded
+(the bundle is a directory; `tar` it for transport; Docker and Python 3 are
+still needed on the host).
+
+### 4. Check
 
 ```bash
-make build   # builds embed-server, mcpo, and monitor (~5 min)
-make pull    # pulls openwebui, litellm, vllm, qdrant, searxng
-make up      # starts all 8 services in the background
+make health           # all 8 services
+local-ezai status     # generation, models, approvals, health
 ```
 
-### 5. Wait for vLLM
+### 5. First login
 
-vLLM takes 2–5 minutes to load the model into VRAM. Watch it:
-
-```bash
-make logs-vllm
-# Wait until you see: "Application startup complete."
-```
-
-Then verify all services:
-
-```bash
-make health
-```
-
-All 8 checks should pass.
-
-### 6. First login
-
-1. Open **http://localhost:3000**
+1. Open **http://localhost:3000** — the "Platform ready" banner shows the
+   groups, the models that fill them, the smoke results and the links
 2. Click **Sign up** → create your admin account
-3. Select model `qwen2.5-7b` in the chat dropdown
+3. Pick a model in the chat dropdown — the role entries (`role-chat`, …) or
+   the served model name
+4. `make orchestrator` — installs the **Local-EZAI Orchestrator** persona
+   (plans and starts autonomous engineering work on projects you registered
+   with `local-ezai project add <path>`; needs the control plane:
+   `make control-up` or `make control-serve`). Pick it in the dropdown.
+5. Open the **Admin Center** at `http://localhost:8888/overview` (monitor
+   login `admin` / `viewer`): platform health, roles → models, the
+   governance queue, every run with its report at `/runs`, the model
+   lifecycle at `/models` (install · benchmark · activate · rollback), the
+   routing explanation at `/routing`, the engine slot at `/runtime`, the
+   approval queue at `/governance` (evidence next to every decision;
+   admins approve or reject there), sprints and evolution cycles at
+   `/sprints` and `/evolution` (admins start them from the page), each
+   project's memory at `/memory`, and the allowlist at `/projects`. Signed
+   in to the WebUI on the same host? The console recognises that session
+   (a WebUI admin is a console admin); the monitor login stays the fallback,
+   and a reverse proxy can hand over an identity header instead
+   (`MONITOR_SSO_*` in `.env.example`). The five zero-CLI walkthroughs of
+   the console are its own Browser QA workflows
+   (`agentd/examples/browser-qa.admin-center.yaml`).
 
-### 7. Connect MCP agent tools
+### 6. Connect MCP agent tools
+
+The mcpo tool servers are pre-registered at boot (Admin Panel → Settings →
+Tools lists them; set `LAN_HOST` in `.env` when you use the UI from other
+devices). To add them by hand instead:
 
 1. In OpenWebUI: **Admin Panel → Settings → Tools**
 2. Add a new tool server:
@@ -380,8 +448,10 @@ All 8 checks should pass.
    - `memory` — persistent knowledge graph across sessions
    - `fetch` — retrieve any web page
    - `search_knowledge_base` — semantic search over your embedded documents
+   - `swe` — the Local-EZAI SWE tools (plan / run / sprint / fix / evolve,
+     status, reports; enabled by default for the Orchestrator persona only)
 
-### 8. Add documents to the knowledge base
+### 7. Add documents to the knowledge base
 
 ```bash
 # Put .txt or .md files in ./documents, then:
@@ -455,33 +525,27 @@ docker compose -f docker-compose.yml -f docker-compose.n97.yml up -d vllm
 A code-specialist variant is also pre-wired — **Qwen2.5-Coder-1.5B**
 (Apache-2.0), better at writing and explaining code than the chat model at
 the same speed; uncomment its block in `.env.example`'s N97 section the
-same way. All three Qwen names are pre-routed in LiteLLM; for a brand-new model name also
-add an entry in `config/litellm-config.n97.yaml` (copy an existing block,
-change the two name fields) and restart litellm. Keep ~2 GB headroom under
-the 6 GB memory cap; Q4_K_M quantizations of 1-4B models fit comfortably.
+same way. LiteLLM routing is **rendered from the model registry** (V1) — a
+new model becomes routable the moment it is installed and activated; no
+config file to edit. Keep ~2 GB headroom under the 6 GB memory cap; Q4_K_M
+quantizations of 1-4B models fit comfortably.
 
-**GPU / vLLM profile** — models are HuggingFace safetensors repos:
+**Day-2 model changes (V1, any profile)** — models are lifecycle-managed;
+`.env` is read once by `make bootstrap`:
 
 ```bash
-# 1. Download the model (runs in Docker, no host Python needed)
-CHAT_MODEL=mistralai/Mistral-7B-Instruct-v0.3 bash scripts/download-models.sh
-
-# 2. Update .env
-CHAT_MODEL=mistralai/Mistral-7B-Instruct-v0.3
-CHAT_MODEL_NAME=mistral-7b
-
-# 3. Update LiteLLM config to match the new short name
-nano config/litellm-config.yaml
-# change model_name: qwen2.5-7b → model_name: mistral-7b
-
-# 4. Restart
-make restart
+local-ezai model install hf:mistralai/Mistral-7B-Instruct-v0.3 --name mistral-7b
+local-ezai model benchmark mistral-7b            # tokens/sec on this box
+local-ezai model activate mistral-7b --group chat   # → change request
+local-ezai governance approve cr-0001            # renders + reloads generation N+1
+local-ezai model rollback                        # if you regret it
 ```
 
-The same pattern applies to the CPU profiles — set `CPU_CHAT_MODEL` /
-`CPU_CHAT_MODEL_NAME` (vLLM CPU) or `N97_GGUF_REPO` / `N97_MODEL_FILE` /
-`N97_MODEL_NAME` (llama.cpp) in `.env`, run the matching `make download-*`,
-and keep the short name in sync with `config/litellm-config.*.yaml`.
+`model install` also takes `gguf:<url|hf://org/repo/file.gguf|path>`, a
+catalog id (`local-ezai model catalog`), or `auto`. The legacy `.env`
+families (`CHAT_MODEL`/`CHAT_MODEL_NAME`, `CPU_*`, `N97_*`) are migrated into
+generation 1 automatically by the first `make bootstrap`, keeping your
+served model name so existing chats keep working.
 
 ---
 
@@ -659,8 +723,8 @@ vLLM's x86 CPU backend is optimized for AVX-512; on AVX2-only CPUs it runs
 in "limited features" mode — expect it to be noticeably slower and heavier
 than option 1 on the same hardware (that's why option 1 exists). Tune via
 `CPU_CHAT_MODEL`, `CPU_MAX_MODEL_LEN`, and `VLLM_CPU_KVCACHE_SPACE` in
-`.env`; if you change the model, also edit `config/litellm-config.cpu.yaml`
-and restart LiteLLM.
+`.env` before the first `make bootstrap`; afterwards change models with
+`local-ezai model …` (LiteLLM routing is rendered per generation).
 
 ---
 

@@ -54,10 +54,8 @@ services:
         limits:
           memory: ${CPU_MEM_LIMIT:-10g}
 
-  # Route the CPU model name instead of qwen2.5-7b
-  litellm:
-    volumes:
-      - ./config/litellm-config.cpu.yaml:/app/config.yaml:ro
+  # LiteLLM routing is rendered per generation (config/rendered/, see the base
+  # file) — no per-profile config variant anymore (V1 cutover).
 
   monitor:
     environment:

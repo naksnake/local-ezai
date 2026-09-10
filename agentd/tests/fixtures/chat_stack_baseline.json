@@ -1,0 +1,272 @@
+{
+  "files": {
+    "config/litellm_custom_callbacks.py": "d30c1c197b79464bf6009570e45d4f9c1a3e2ff5f15c00a489563e5ff1b9150b",
+    "config/searxng/settings.yml": "0a821c54de2c57229d138b7f3c976a558b94c2576f977beb334d1bc7d813c49f"
+  },
+  "mcp_servers": {
+    "fetch": {
+      "command": "mcp-server-fetch",
+      "description": "Fetch and read any web page"
+    },
+    "filesystem": {
+      "args": [
+        "/data/documents"
+      ],
+      "command": "mcp-server-filesystem",
+      "description": "Read and write files in the project's documents folder"
+    },
+    "memory": {
+      "command": "mcp-server-memory",
+      "description": "Persistent knowledge graph memory across conversations",
+      "env": {
+        "MEMORY_FILE_PATH": "/data/memory/memory.json"
+      }
+    },
+    "qdrant-rag": {
+      "args": [
+        "/mcp-servers/qdrant-rag/index.js"
+      ],
+      "command": "node",
+      "description": "Semantic search over your personal knowledge base",
+      "env": {
+        "COLLECTION": "${RAG_COLLECTION:-my-knowledge-base}",
+        "EMBED_URL": "http://embed-server:8001/v1",
+        "QDRANT_URL": "http://qdrant:6333"
+      }
+    }
+  },
+  "services": {
+    "embed-server": {
+      "build": {
+        "context": ".",
+        "dockerfile": "embed-server/Dockerfile"
+      },
+      "container_name": "embed-server",
+      "environment": {
+        "EMBED_MODEL_ID": "${CPU_EMBED_MODEL:-nomic-ai/nomic-embed-text-v1.5}",
+        "HF_HUB_CACHE": "/root/.cache/huggingface",
+        "HF_HUB_OFFLINE": "1"
+      },
+      "networks": [
+        "ai-net"
+      ],
+      "ports": [
+        "${EMBED_PORT:-8001}:8001"
+      ],
+      "restart": "unless-stopped",
+      "volumes": [
+        "${MODELS_DIR:-./models/hf-cache}:/root/.cache/huggingface"
+      ]
+    },
+    "litellm": {
+      "command": [
+        "--config",
+        "/app/config.yaml",
+        "--port",
+        "4000"
+      ],
+      "container_name": "litellm",
+      "depends_on": [
+        "vllm",
+        "embed-server"
+      ],
+      "environment": {
+        "EMBED_URL": "http://embed-server:8001/v1",
+        "QDRANT_URL": "http://qdrant:6333",
+        "RAG_AUTO": "${RAG_AUTO:-true}",
+        "RAG_COLLECTION": "${RAG_COLLECTION:-my-knowledge-base}",
+        "RAG_MIN_SCORE": "${RAG_MIN_SCORE:-0.4}",
+        "RAG_TOP_K": "${RAG_TOP_K:-3}"
+      },
+      "image": "ghcr.io/berriai/litellm:main-latest",
+      "networks": [
+        "ai-net"
+      ],
+      "ports": [
+        "${LITELLM_PORT:-4000}:4000"
+      ],
+      "restart": "unless-stopped",
+      "volumes": [
+        "./config/rendered/litellm-config.yaml:/app/config.yaml:ro",
+        "./config/litellm_custom_callbacks.py:/app/litellm_custom_callbacks.py:ro"
+      ]
+    },
+    "mcpo": {
+      "build": {
+        "context": ".",
+        "dockerfile": "mcpo/Dockerfile"
+      },
+      "container_name": "mcpo",
+      "environment": {
+        "MCP_API_KEY": "${MCP_API_KEY:-local-tools-key}",
+        "RAG_COLLECTION": "${RAG_COLLECTION:-my-knowledge-base}"
+      },
+      "networks": [
+        "ai-net"
+      ],
+      "ports": [
+        "${MCPO_PORT:-8200}:8200"
+      ],
+      "restart": "unless-stopped",
+      "volumes": [
+        "${DOCUMENTS_DIR:-./documents}:/data/documents",
+        "mcpo-memory:/data/memory",
+        "./config/mcpo-config.json:/app/mcpo-config.json:ro"
+      ]
+    },
+    "monitor": {
+      "build": {
+        "context": ".",
+        "dockerfile": "monitor/Dockerfile"
+      },
+      "container_name": "monitor",
+      "depends_on": [
+        "openwebui",
+        "litellm",
+        "embed-server",
+        "qdrant"
+      ],
+      "environment": {
+        "EMBED_PORT": "${EMBED_PORT:-8001}",
+        "LITELLM_MASTER_KEY": "${LITELLM_MASTER_KEY:-sk-ai-service-2024}",
+        "LITELLM_PORT": "${LITELLM_PORT:-4000}",
+        "LLM_PORT": "${LLM_PORT:-8000}",
+        "MCPO_PORT": "${MCPO_PORT:-8200}",
+        "MCP_API_KEY": "${MCP_API_KEY:-local-tools-key}",
+        "MONITOR_ADMIN_PASSWORD": "${MONITOR_ADMIN_PASSWORD:-admin}",
+        "MONITOR_AUTH": "${MONITOR_AUTH:-true}",
+        "MONITOR_VIEWER_PASSWORD": "${MONITOR_VIEWER_PASSWORD:-viewer}",
+        "OPENWEBUI_PORT": "${OPENWEBUI_PORT:-3000}",
+        "POLL_INTERVAL": "15",
+        "QDRANT_PORT": "${QDRANT_PORT:-6333}",
+        "RAG_COLLECTION": "${RAG_COLLECTION:-my-knowledge-base}",
+        "SEARXNG_PORT": "${SEARXNG_PORT:-8092}"
+      },
+      "networks": [
+        "ai-net"
+      ],
+      "ports": [
+        "${MONITOR_PORT:-8888}:8888"
+      ],
+      "restart": "unless-stopped",
+      "volumes": [
+        "${DOCUMENTS_DIR:-./documents}:/data/documents"
+      ]
+    },
+    "openwebui": {
+      "container_name": "openwebui",
+      "depends_on": [
+        "litellm"
+      ],
+      "environment": {
+        "ENABLE_RAG_WEB_SEARCH": "${ENABLE_WEB_SEARCH:-true}",
+        "ENABLE_WEB_SEARCH": "${ENABLE_WEB_SEARCH:-true}",
+        "OPENAI_API_BASE_URL": "http://litellm:4000/v1",
+        "OPENAI_API_KEY": "${LITELLM_MASTER_KEY:-sk-ai-service-2024}",
+        "RAG_WEB_SEARCH_ENGINE": "searxng",
+        "RAG_WEB_SEARCH_RESULT_COUNT": "${WEB_SEARCH_RESULT_COUNT:-2}",
+        "SEARXNG_QUERY_URL": "http://searxng:8080",
+        "WEBUI_SECRET_KEY": "${WEBUI_SECRET_KEY:-change-this-secret}",
+        "WEB_SEARCH_ENGINE": "searxng",
+        "WEB_SEARCH_RESULT_COUNT": "${WEB_SEARCH_RESULT_COUNT:-2}"
+      },
+      "image": "ghcr.io/open-webui/open-webui:main",
+      "networks": [
+        "ai-net"
+      ],
+      "ports": [
+        "${OPENWEBUI_PORT:-3000}:8080"
+      ],
+      "restart": "unless-stopped",
+      "tool_server_connections": [
+        {
+          "auth_type": "bearer",
+          "config": {
+            "enable": true
+          },
+          "info": {
+            "id": "qdrant-rag",
+            "name": "Knowledge Base Search"
+          },
+          "key": "local-tools-key",
+          "path": "openapi.json",
+          "url": "http://localhost:8200/qdrant-rag"
+        },
+        {
+          "auth_type": "bearer",
+          "config": {
+            "enable": true
+          },
+          "info": {
+            "id": "fetch",
+            "name": "Web Fetch"
+          },
+          "key": "local-tools-key",
+          "path": "openapi.json",
+          "url": "http://localhost:8200/fetch"
+        },
+        {
+          "auth_type": "bearer",
+          "config": {
+            "enable": true
+          },
+          "info": {
+            "id": "memory",
+            "name": "Memory"
+          },
+          "key": "local-tools-key",
+          "path": "openapi.json",
+          "url": "http://localhost:8200/memory"
+        },
+        {
+          "auth_type": "bearer",
+          "config": {
+            "enable": true
+          },
+          "info": {
+            "id": "filesystem",
+            "name": "Filesystem"
+          },
+          "key": "local-tools-key",
+          "path": "openapi.json",
+          "url": "http://localhost:8200/filesystem"
+        }
+      ],
+      "volumes": [
+        "openwebui-data:/app/backend/data"
+      ]
+    },
+    "qdrant": {
+      "container_name": "qdrant",
+      "environment": {},
+      "image": "qdrant/qdrant:latest",
+      "networks": [
+        "ai-net"
+      ],
+      "ports": [
+        "${QDRANT_PORT:-6333}:6333"
+      ],
+      "restart": "unless-stopped",
+      "volumes": [
+        "qdrant-data:/qdrant/storage"
+      ]
+    },
+    "searxng": {
+      "container_name": "searxng",
+      "environment": {
+        "SEARXNG_SECRET": "${SEARXNG_SECRET:-searxng-local-secret-change-this}"
+      },
+      "image": "searxng/searxng:latest",
+      "networks": [
+        "ai-net"
+      ],
+      "ports": [
+        "${SEARXNG_PORT:-8092}:8080"
+      ],
+      "restart": "unless-stopped",
+      "volumes": [
+        "./config/searxng:/etc/searxng:rw"
+      ]
+    }
+  }
+}

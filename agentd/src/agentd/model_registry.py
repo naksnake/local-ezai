@@ -32,6 +32,29 @@ log = get_logger("model_registry")
 REGISTRY_FILENAME = "model_registry.yaml"
 
 
+def parse_agent_model_map(mapping: Any, origin: str) -> dict[str, dict[str, Any]]:
+    """Normalize an ``agent_model_map`` mapping (role → model | {primary,
+    fallback}) into ``{role: {"primary": str, "fallback": [str, ...]}}``.
+    Shared by the per-repo registry and the platform's rendered role map."""
+    if not isinstance(mapping, dict):
+        raise ValueError(f"{origin}: agent_model_map must be a mapping")
+    registry: dict[str, dict[str, Any]] = {}
+    for role, spec in mapping.items():
+        if isinstance(spec, str):  # shorthand: role: model
+            registry[str(role)] = {"primary": spec, "fallback": []}
+            continue
+        if not isinstance(spec, dict) or "primary" not in spec:
+            raise ValueError(
+                f"{origin}: role '{role}' needs a 'primary' model"
+            )
+        fallback = spec.get("fallback") or []
+        if isinstance(fallback, str):
+            fallback = [fallback]
+        registry[str(role)] = {"primary": str(spec["primary"]),
+                               "fallback": [str(f) for f in fallback]}
+    return registry
+
+
 def load_model_registry(agent_dir: Path) -> dict[str, dict[str, Any]] | None:
     """Parse ``.agent/model_registry.yaml``; None when absent."""
     path = Path(agent_dir) / REGISTRY_FILENAME
@@ -40,25 +63,7 @@ def load_model_registry(agent_dir: Path) -> dict[str, dict[str, Any]] | None:
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     if not isinstance(data, dict):
         raise ValueError(f"{path} must contain a YAML mapping")
-    mapping = data.get("agent_model_map", data)
-    if not isinstance(mapping, dict):
-        raise ValueError(f"{path}: agent_model_map must be a mapping")
-
-    registry: dict[str, dict[str, Any]] = {}
-    for role, spec in mapping.items():
-        if isinstance(spec, str):  # shorthand: role: model
-            registry[str(role)] = {"primary": spec, "fallback": []}
-            continue
-        if not isinstance(spec, dict) or "primary" not in spec:
-            raise ValueError(
-                f"{path}: role '{role}' needs a 'primary' model"
-            )
-        fallback = spec.get("fallback") or []
-        if isinstance(fallback, str):
-            fallback = [fallback]
-        registry[str(role)] = {"primary": str(spec["primary"]),
-                               "fallback": [str(f) for f in fallback]}
-    return registry
+    return parse_agent_model_map(data.get("agent_model_map", data), str(path))
 
 
 def apply_model_registry(config: AgentdConfig, repo_root: Path) -> AgentdConfig:

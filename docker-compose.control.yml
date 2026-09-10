@@ -1,0 +1,40 @@
+# ezaid — Platform Control Plane overlay (V1 P2, PR-8 / ADR-028)
+#
+# Additive service in the ADR-002 overlay pattern: nothing in the base stack
+# depends on it, and rollback = don't start it. Start / stop with
+#
+#   make control-up      docker compose -f docker-compose.yml -f docker-compose.control.yml up -d --build ezaid
+#   make control-down
+#
+# The CLI keeps its offline direct mode; connected mode (PR-11) and the
+# Admin Center (P4) become clients of this service.
+
+services:
+
+  ezaid:
+    build:
+      context: .
+      dockerfile: agentd/Dockerfile
+    container_name: ezaid
+    restart: unless-stopped
+    ports:
+      - "${EZAI_CONTROL_PORT:-8010}:8010"
+    environment:
+      # ⚠️  the service token every /v1 call must present (see .env.example)
+      - EZAI_CONTROL_TOKEN=${EZAI_CONTROL_TOKEN:-ezai-control-key}
+      - AGENTD_PLATFORM__CONFIG_DIR=/platform/config
+      - AGENTD_LOG_LEVEL=${EZAI_CONTROL_LOG_LEVEL:-INFO}
+      # credentials the aggregated health report needs to probe two services
+      - MCP_API_KEY=${MCP_API_KEY:-local-tools-key}
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-ai-service-2024}
+    volumes:
+      # The platform's declarative state: Registry v2 + generations,
+      # descriptors, governance queue + audit log, rendered artifacts.
+      - ./config:/platform/config
+      # SWE runs through the API (PR-10) need the registered projects on
+      # this container's filesystem AT THE SAME PATH as registered — mount
+      # the directory that holds them, e.g.:
+      #   - /home/me/projects:/home/me/projects
+      # (or run `ezaid` on the host instead; the P2 close decides the default)
+    networks:
+      - ai-net

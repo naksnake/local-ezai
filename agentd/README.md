@@ -390,13 +390,18 @@ llm:
   max_tokens: 4096
   timeout: 180
   retries: 2
-  roles:                        # role → model alias (ADR-007)
-    default: qwen2.5-7b
-    planner: qwen2.5-7b         # e.g. a larger instruct model on GPU boxes
-    coder: qwen2.5-7b           # e.g. qwen2.5-coder-1.5b on the N97 profile
-    validator: qwen2.5-7b
-    git: qwen2.5-7b
-    debugger: qwen2.5-7b        # give this the strongest reasoning model you have
+  roles:                        # role → LiteLLM alias (ADR-007 / ADR-026 R-1)
+    default: role-chat          # no model NAME lives in code: every role binds
+    planner: role-planner       # to a `role-*` alias the stack's LiteLLM
+    coder: role-coder           # config serves; the platform's model registry
+    validator: role-validator   # seeds concrete primaries + fallback chains
+    git: role-git               # at run preparation, and a repo's
+    debugger: role-debugger     # .agent/model_registry.yaml overrides per role
+
+platform:
+  config_dir: null              # the platform's config/ dir (Registry v2,
+                                # descriptors, governance); null → discovered
+                                # when running inside the local-ezai checkout
 
 limits:
   max_plan_tasks: 8
@@ -538,9 +543,15 @@ The hardened isolation level (ADR-021, superseding the ADR-014 interim):
 ## Development & testing
 
 ```bash
-make swe-install     # venv + editable install with dev extras
+make swe-install     # venv + editable install with dev, browser + control extras
 make swe-test        # unit + integration tests (no network, no models)
 make swe-lint        # ruff
+make swe-drill       # chat-ops boundary drill (tests/security)
+make swe-accept      # first-run acceptance criteria F1–F11 (tests/acceptance)
+make swe-parity      # parity harness: CLI-direct · CLI-connected · API (tests/parity)
+make swe-gates       # agnosticism gates: third-runtime drill, H1 word audit, H2–H4 (tests/gates)
+make release-gate    # all of the above + the chat-stack baseline + the full suite (P6 gate)
+ezaid --print-spec   # the control plane's OpenAPI contract (agentd[control], PR-8)
 ```
 
 The test suite runs **fully offline**: a `ScriptedLLM` replays canned
@@ -606,9 +617,10 @@ agentd/
 - **New agent**: subclass `BaseAgent` (set `agent_name`, `role`,
   `tool_names`), give it a prompt file in `agents/prompts/`, and wire a node
   + edges in `graph.py`. Per ADR-010, new states/agents need an ADR entry.
-- **Different models per role**: map roles in `llm.roles` — e.g. point
-  `coder` at `qwen2.5-coder-1.5b` on the N97 profile (the model is already
-  pre-wired in the stack's `.env.example`).
+- **Different models per role**: the platform's Registry v2 (`local-ezai
+  model activate … --group coding`) or a repo's `.agent/model_registry.yaml`
+  decide which model serves each role; `llm.roles` stays on the `role-*`
+  aliases and only needs editing for ad-hoc experiments.
 
 ## Architecture mapping
 

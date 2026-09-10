@@ -165,3 +165,26 @@ models" toggle. Users think in capabilities; audit still sees names.
 
 Each journey ships as a Browser-QA workflow in CI — the walkthroughs *are*
 the tests.
+
+> **As built (PR-20, ADR-030 Accepted):** the five journeys are
+> `agentd/examples/browser-qa.admin-center.yaml`, one Browser-QA workflow
+> each, run in CI by the platform's own harness (real headless Chromium,
+> console errors fail the step) against
+> `agentd/tests/fixtures/admin_center_app.py` — the monitor as shipped over
+> an in-process control plane on a scratch platform (lifecycle seams faked,
+> login disabled for the walkthrough; the login paths have their own tests).
+> Coverage, honestly: **1** add a model (`gguf:` source) → benchmark →
+> activate into the reasoning group → approve in Governance with the
+> evidence on screen → Routing shows the new primary; the chat-side subtitle
+> check needs OpenWebUI and is outside the suite. **2** the Runtime
+> pre-check names the blockers and the format-gap fix; approving a real
+> switch and its rollback drill need a host where a variant of the other
+> runtime fits. **3** register a project → sprint from a pasted spec → the
+> report with waves, the dependency graph and "how to merge" — in full.
+> **4** trigger a cycle → read its proposal, bundle and "awaiting human
+> review"; rejecting it in Governance and the memory write-back wait for the
+> evolution pipeline to submit change requests. **5** the Overview banner's
+> *Roll back* → reason → confirm — three clicks; Routing no longer names the
+> rolled-back model — in full. Every confirmation on the console is an
+> inline form: the harness has no dialog step by design, so native dialogs
+> would have made the journeys untestable by the product's own capability.

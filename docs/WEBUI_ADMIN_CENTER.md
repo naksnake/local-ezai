@@ -37,6 +37,97 @@ local-ezai CLI ─────────────────────�
 | **Health** | existing monitor health + tokens/sec bench + exec-audit tail + disk usage of runs/workspaces | prune old runs/workspaces |
 | **Knowledge** | existing KB bar (unchanged) | ingest (unchanged) |
 
+> **As built (PR-16, ADR-030 Proposed):** the monitor is the Admin Center —
+> one service, one image, `monitor/admin_center.py` installed on the existing
+> app behind the existing RBAC. **Overview** (`/overview`) shows stack health
+> as `ezaid` sees it, generation / capability class / engine runtime, role
+> cards (role → group or pin → primary + fallbacks, from `GET /v1/roles/…`),
+> the pending governance queue (with the CLI verb that decides it until the
+> Governance page lands), recent runs, and a footer naming the generation and
+> registry the view came from. **Runs** (`/runs`, `/runs/<id>` — the deep
+> link the CLI and the SWE tools print) lists and details runs: plan,
+> validation incl. Browser QA, review verdict + findings, healing iterations,
+> models used, delivery (commit, branch, pushed or not, the merge command
+> that stays human), sprint tasks, evolution proposal / benchmark / PR link,
+> journal tail; **cancel** is the one mutation, admin role only. The browser
+> talks to the monitor (`/api/ezai/…`); the monitor talks to the daemon with
+> the service token (never sent to the browser) and forwards the login as
+> the audited human (`admin via admin-center`). A daemon that is down is a
+> page state with the fix; **Health** (`/`) and **Knowledge** keep working
+> unchanged. Remaining pages: Governance (PR-18), Sprints / Evolution /
+> Memory / Projects (PR-19); SSO handoff and the Browser-QA journey suite
+> (PR-20).
+
+> **As built (PR-17):** **Models** (`/models`) is role-first — group panels
+> in *resolution* order (an unpinned role's primary + fallbacks, then the
+> group's other members) with state, runtime · format, size · context,
+> measured tokens/s and a fit badge that is the recommender's verdict for a
+> matching catalog candidate (a user-supplied source shows "no verdict");
+> models in no group; role cards; the catalog with per-variant verdicts for
+> the active runtime; the generation history; the queue. Mutations (admin,
+> same-origin header): add model (catalog id or `hf:` / `gguf:`), install a
+> catalog variant, benchmark, activate into a group, upgrade, retire,
+> uninstall (force on request), roll back to a generation — each the CLI
+> verb through the daemon, approval-gated where a serving role changes, and
+> every refusal the daemon's own text. **Routing** (`/routing`) is the
+> explain view (MODEL_ROUTING_DESIGN §7): standing table, per-role card with
+> reasons, contract, per-model checks and the generation resolved from,
+> undefined roles listed, generation diffs. "Edit role/group assignment" has
+> no 1.0.0 operation and no CLI verb — parity or absence — so it is not
+> offered. **Runtime** (`/runtime`): the engine slot (runtime, class,
+> accelerator, memory, engine/router health, active models) and, per other
+> runtime, the switch pre-check of RUNTIME_ABSTRACTION §5 (active models
+> lacking a variant, catalog candidates per group with fit + contract
+> verdicts); switching is an activation flagged as a runtime switch — no
+> switch button, the contract has no runtime verb.
+
+> **As built (PR-19):** **Projects** (`/projects`) lists the allowlist with
+> each project's work (runs, active, last run) and links to its runs and
+> memory; admins register (path, optional name) and remove — the daemon's
+> refusals verbatim. **Sprints** (`/sprints`) shows every sprint run with
+> goal, waves, branch, report document, task results and the **dependency
+> graph as mermaid source** generated from the plan (the rendered report
+> document lives in the repository; the offline page loads no rendering
+> library); admins start a sprint from a pasted specification. **Evolution**
+> (`/evolution`) shows every cycle with proposal, improvements, benchmark
+> before → after, tasks, PR or bundle and "awaiting human review"; admins
+> run a cycle with an optional focus; proposals join the Governance queue
+> once the pipeline submits change requests (the page says so). **Memory**
+> (`/memory`) browses a project's rules, styles, decisions, fix lessons
+> (signature, category, files) and implementation history with counts,
+> kind filter and search; admins remember a curated rule / style / decision
+> (`local-ezai memory --add`). The Memory page rides on the **additive
+> contract 1.1.0** operations `GET|POST /v1/projects/{name}/memory`. Console
+> starts exist for sprint and evolve only (journeys 3–4); runs, fixes and
+> plans start from the CLI or chat. Remaining: SSO handoff and the
+> Browser-QA journey suite (PR-20 → ADR-030 Accepted).
+
+> **As built (PR-20, ADR-030 Accepted — P4 closed):** **Identity handoff.**
+> The console resolves who you are in this order: the monitor login (Basic,
+> always available); a trusted identity header from a reverse proxy in front
+> of the monitor (`MONITOR_SSO_TRUSTED_HEADER`, honoured only with the shared
+> secret in `X-EZAI-Proxy-Secret`; the addresses in `MONITOR_SSO_ADMINS` are
+> admins, everyone else a viewer); the OpenWebUI session cookie, validated
+> server-side at `MONITOR_SSO_OPENWEBUI_URL/api/v1/auths/` and cached 60 s
+> (OpenWebUI admin → admin, user → viewer, pending → not signed in). All
+> opt-in by environment; the audit trail names the person
+> (`you@example.com via admin-center`); the daemon is untouched. **No native
+> dialogs:** every confirmation and reason is an inline form on the page.
+> **Overview banner:** the last registry change (generation, note, diff, the
+> generation a rollback restores) with *Roll back* → reason → confirm.
+> **The journeys are the tests:** the five walkthroughs of
+> WEBUI_PRODUCT_STRATEGY §5 ship as `agentd/examples/browser-qa.admin-center.yaml`
+> and run in CI on the platform's own Browser QA harness in a real Chromium
+> (see §5 there for the stated boundaries of journeys 1, 2 and 4).
+
+> **As built (PR-23):** the **Platform-ready card** on the Overview — what
+> `local-ezai setup` recorded (`config/first-run/report.json`, served by the
+> contract's additive 1.2.0 `GET /v1/first-run`): groups → models, runtime
+> and class, the smoke tally, and three ways onward (Start chatting → the
+> WebUI, Try the Orchestrator → the deep link, Models & routing). Shown while
+> a report exists; an older daemon without the operation shows no card.
+> Journey `j0-first-run-card` drives it in Browser QA.
+
 ## 3. The Governance queue (the page that matters most)
 
 One queue, three item types, one contract: **agents propose, humans
@@ -51,6 +142,25 @@ approve** (CLAUDE.md).
 Every decision writes an immutable audit record (who, when, what,
 evidence snapshot) to the control plane's governance log.
 
+> **As built (PR-18):** `/governance` lists the pending requests and the
+> history (status filter; each row shows who decided, when, why, and the
+> resulting generation). The approval view `/governance/<id>` — the deep
+> link the SWE tools and the CLI print — shows **what changes** (diff lines,
+> affected roles before → after), **evidence** (benchmarks measured on this
+> host, fit verdicts of newly active models, the render-time capability
+> report per role × model × runtime, runtime before → after with the switch
+> flag, the capability class), **proposed by** (human or evolution, marked
+> advisory), **reversibility** (the generation one rollback restores) and
+> the **decision**: Reject with a required reason, Approve & apply — both
+> `POST /v1/governance/{id}/…` through the daemon as the monitor login
+> (`admin via admin-center`), admin role only, same-origin guarded, the
+> daemon's refusals verbatim ("a rejection needs a reason", "decisions are
+> made once"). A viewer reads everything and decides nothing. Of the three
+> item types only model activations/upgrades enter the queue today (a
+> runtime switch is a flag on them); evolution proposals and release
+> candidates join when their pipelines submit change requests — the page
+> states this and points at the Runs page meanwhile.
+
 ## 4. AuthN/AuthZ
 
 - Reuses the monitor's existing RBAC: `admin` (mutations + governance) and
@@ -61,6 +171,23 @@ evidence snapshot) to the control plane's governance log.
   V1.
 - The Admin Center authenticates to `ezaid` with its service token;
   user identity is forwarded per request for the audit trail.
+
+> **As built (PR-20):** two opt-in handoffs, both resolved in the monitor
+> and both falling back to Basic. (a) **Trusted header** from a reverse
+> proxy or SSO gateway in front of the monitor: `MONITOR_SSO_TRUSTED_HEADER`
+> names the header carrying the user (e.g. `X-Forwarded-Email`); it is
+> honoured only when the proxy also presents `MONITOR_SSO_TRUSTED_SECRET` in
+> `X-EZAI-Proxy-Secret`; `MONITOR_SSO_ADMINS` (comma-separated) are admins,
+> everyone else a viewer. (b) **OpenWebUI session:** cookies ignore ports, so
+> the `token` cookie the WebUI sets on the same host reaches the monitor and
+> is validated server-side at `MONITOR_SSO_OPENWEBUI_URL/api/v1/auths/`
+> (cached 60 s): OpenWebUI admin ⇒ admin, user ⇒ viewer, pending ⇒ not
+> signed in — the deep links chat prints open already signed in. Order of
+> resolution: Basic login → trusted header → cookie → Basic challenge; the
+> machine bearer and `MONITOR_AUTH=false` are unchanged. The person, not the
+> role, is forwarded as `X-EZAI-User` (`you@example.com via admin-center`
+> in the audit trail). Not in V1: a proxy shipped with the stack, or any
+> identity store of the platform's own.
 
 ## 5. UX principles
 

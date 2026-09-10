@@ -25,8 +25,22 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, Field, field_validator
 
+from agentd.control import DEFAULT_HOST as CONTROL_DEFAULT_HOST
+from agentd.control import DEFAULT_PORT as CONTROL_DEFAULT_PORT
+from agentd.control import PORT_ENV as CONTROL_PORT_ENV
+from agentd.control import TOKEN_ENV as CONTROL_TOKEN_ENV
+from agentd.control import URL_ENV as CONTROL_URL_ENV
+
 ENV_PREFIX = "AGENTD_"
 REPO_CONFIG_FILENAME = ".agentd.yaml"
+
+#: LiteLLM alias prefix for logical roles (ADR-026 R-1): ``role-planner``…
+ROLE_ALIAS_PREFIX = "role-"
+#: Every role the runtime may route to a model (the mandated roster +
+#: orchestrator + the deterministic roles, which never call a model but
+#: keep an alias for uniformity).
+LLM_ROLES = ("orchestrator", "planner", "coder", "debugger", "reviewer", "memory",
+             "chat", "documentation", "evolution", "sprint", "validator", "git")
 
 
 class LLMConfig(BaseModel):
@@ -45,22 +59,14 @@ class LLMConfig(BaseModel):
     max_tokens: int = 4096
     #: Bounded retries for transport errors and malformed structured output.
     retries: int = 2
-    #: Role → model alias (ADR-007). All roles default to the stack's
-    #: default chat model; profiles override per role.
+    #: Role → LiteLLM alias (ADR-007, completed by ADR-026 R-1): agents bind
+    #: to ``role-<role>`` aliases — no model name lives in code. The platform
+    #: seeds concrete primaries/fallbacks at run preparation (routing.py) and
+    #: a repository's .agent/model_registry.yaml overrides per role.
     roles: dict[str, str] = Field(
         default_factory=lambda: {
-            "default": "qwen2.5-7b",
-            "planner": "qwen2.5-7b",
-            "coder": "qwen2.5-7b",
-            "validator": "qwen2.5-7b",
-            "git": "qwen2.5-7b",
-            "debugger": "qwen2.5-7b",
-            "memory": "qwen2.5-7b",
-            "reviewer": "qwen2.5-7b",
-            "chat": "qwen2.5-7b",
-            "sprint": "qwen2.5-7b",
-            "documentation": "qwen2.5-7b",
-            "evolution": "qwen2.5-7b",
+            "default": f"{ROLE_ALIAS_PREFIX}chat",
+            **{role: f"{ROLE_ALIAS_PREFIX}{role}" for role in LLM_ROLES},
         }
     )
     #: Ordered fallback models per role (ADR-020): tried when the primary
@@ -68,7 +74,8 @@ class LLMConfig(BaseModel):
     role_fallbacks: dict[str, list[str]] = Field(default_factory=dict)
 
     def model_for_role(self, role: str) -> str:
-        return self.roles.get(role) or self.roles.get("default") or "qwen2.5-7b"
+        return (self.roles.get(role) or self.roles.get("default")
+                or f"{ROLE_ALIAS_PREFIX}{role}")
 
 
 class LimitsConfig(BaseModel):
@@ -259,8 +266,39 @@ class WorkspaceConfig(BaseModel):
     root: Path = Field(default_factory=lambda: Path.home() / ".agentd" / "workspaces")
 
 
+class PlatformConfig(BaseModel):
+    """Where this runtime finds the Local-EZAI platform it belongs to (PR-6).
+    ``config_dir`` is the platform's ``config/`` directory (Registry v2,
+    descriptors, rendered artifacts, governance queue). Unset → discovered by
+    walking up from the project (self-hosting) or none (aliases only)."""
+
+    config_dir: Path | None = None
+
+
+class ControlConfig(BaseModel):
+    """The ``ezaid`` control plane (PR-8, ADR-028). ``token`` is never
+    defaulted in code — the product variable ``EZAI_CONTROL_TOKEN`` (compose,
+    installer) or this section must provide it, otherwise the service refuses
+    to start. ``health_targets`` maps a service id to the URL ``/v1/health``
+    probes (adds to or replaces the defaults; an empty URL removes one)."""
+
+    host: str = CONTROL_DEFAULT_HOST
+    port: int = CONTROL_DEFAULT_PORT
+    token: str | None = None
+    #: Client side (PR-11): where the CLI finds the daemon; default
+    #: ``http://localhost:<port>``. Seeded by ``EZAI_CONTROL_URL``.
+    url: str | None = None
+    health_targets: dict[str, str] = Field(default_factory=dict)
+    #: Run registry (PR-10): worker threads executing pipelines, and how many
+    #: submissions may wait for one; beyond that a start is refused (429).
+    max_concurrent_runs: int = 2
+    max_queued_runs: int = 8
+
+
 class AgentdConfig(BaseModel):
     llm: LLMConfig = Field(default_factory=LLMConfig)
+    platform: PlatformConfig = Field(default_factory=PlatformConfig)
+    control: ControlConfig = Field(default_factory=ControlConfig)
     limits: LimitsConfig = Field(default_factory=LimitsConfig)
     validation: ValidationConfig = Field(default_factory=ValidationConfig)
     browser_qa: BrowserQAConfig = Field(default_factory=BrowserQAConfig)
@@ -337,6 +375,15 @@ def load_config(
     # Stack convention: reuse the LiteLLM master key unless set explicitly.
     if not config.llm.api_key:
         config.llm.api_key = environ.get("LITELLM_MASTER_KEY", "sk-ai-service-2024")
+    # Stack convention (PR-8): the .env/compose product variables seed the
+    # control plane unless the config file or AGENTD_CONTROL__* set them.
+    control_section = merged.get("control") if isinstance(merged.get("control"), dict) else {}
+    if not config.control.token and environ.get(CONTROL_TOKEN_ENV):
+        config.control.token = environ[CONTROL_TOKEN_ENV]
+    if "port" not in control_section and environ.get(CONTROL_PORT_ENV, "").strip().isdigit():
+        config.control.port = int(environ[CONTROL_PORT_ENV].strip())
+    if not config.control.url and environ.get(CONTROL_URL_ENV, "").strip():
+        config.control.url = environ[CONTROL_URL_ENV].strip()
     return config
 
 

@@ -16,6 +16,7 @@ if [[ -f .env ]]; then set -a; source .env; set +a; fi
 
 CACHE_DIR="${MODELS_DIR:-$PWD/models/hf-cache}"
 CHAT_MODEL="${CHAT_MODEL:-Qwen/Qwen2.5-7B-Instruct}"
+CHAT_MODEL="${CHAT_MODEL#hf:}"   # V1 seeds may carry the hf: scheme
 EMBED_MODEL="${CPU_EMBED_MODEL:-nomic-ai/nomic-embed-text-v1.5}"
 
 mkdir -p "$CACHE_DIR"

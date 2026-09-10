@@ -668,10 +668,109 @@ plan P1 absorbs remediations R-1..R-5, P5 implements the final FRE,
 P6 gains gates H1–H4 + the third-runtime drill; the platform can adopt a
 new GPU vendor, runtime, or model family as pure data — which is the
 definition of done for agnosticism.
+**P6 slice (2026-09-09, PR-24) — the parity harness as the release gate:**
+CLI_AND_WEBUI §7's consistency test exists as `agentd/tests/parity/`
+(`make swe-parity`; part of `make release-gate` and of the manual CI
+workflow). Decisions taken in it: (1) **identical worlds, not shared
+state** — each surface acts on its own copy of the platform, so what is
+compared is *results*, never one surface reading what another wrote; (2)
+**the API is called as the console** (`X-EZAI-Client: admin-center`), so
+the matrix's third column exercises its own identity path; (3)
+**equivalence is defined on three planes** — response bodies, declarative
+state, operation audit — and **the transport's annotation is normalised
+explicitly, as data**: the `via <client>` suffix, the daemon's `api.*` /
+`run.*` / `control.*` / `auth.*` events (equal between the two daemon
+surfaces, absent in-process), timestamps, run ids, hashes, durations and
+each world's paths; (4) **absence is asserted, never skipped** — repo-work
+verbs (`run`, `plan`, `memory`) never probe a daemon and equal the API's
+runs report for report and journal for journal, `up`/`down` stay direct
+even when connected is requested and no contract operation exists, the
+memory verb's record is the store itself while the daemon's curated add is
+also platform-audited (PR-19's decision, pinned); (5) the §3 table is
+parsed and every row needs a harness row and a chat-ceiling classification,
+and every mutation the contract offers must be classified by a row. One
+defect found and fixed in the same PR: `model rollback --json` printed its
+ROLLBACK notice before the JSON, so `--json` was not one document.
+**P6 slice (2026-09-09, PR-25) — the agnosticism gates (2) and (3) as
+tests:** `agentd/tests/gates/` (`make swe-gates`, in `make release-gate` and
+the CI workflow). (1) **The third-runtime drill is a fixture, not a
+product runtime**: `mockengine` lives under `tests/fixtures/providers/`,
+its image is an in-test OpenAI-API stub, and the drill copies the descriptor
+into a checkout and runs bootstrap → real side-load validation and
+benchmark → render → day-2 install / benchmark / activate / approve /
+rollback → the pipeline's wait-ready → `up --rendered` through the CLI; a
+grep tripwire proves no shipped code, data, compose file or script names
+the runtime. The fixture is deliberately unlike the shipped descriptors
+wherever the contract allows (readiness path, timing keys, served-id
+template, mount paths), so a silent assumption of a shipped value shows.
+(2) **H1 is a test with its exceptions as data, each with a reason, and a
+stale exception fails** — the scan covers code, packaged data, prompts, the
+console, the tool server and the continuity layer; `config/providers/` is
+the sanctioned home; the frozen chat stack's legacy profile files and
+comments are pinned rather than edited (ADR-002). (3) **What the gates
+found:** the resolver's default runtime for a `gguf:`/`hf:` source was the
+first descriptor serving the format alphabetically — with a third runtime
+present, `model install <source>` would install for another runtime than
+the slot's; fixed (`lifecycle.slot_runtime_for`: the slot's runtime when it
+serves the format, else the format rule — invisible while each format has
+one server). Four brand words in user-facing text were reworded (the
+`up-n97` help, a prompt usage note, a legacy script header, a monitor
+comment). Recorded as a residual for the release train, not fixed here:
+the control plane's health table probes the engine slot at its own
+`/health` rather than the active descriptor's readiness path (the
+pipeline's wait-ready is descriptor-driven; the sweep is operator data);
+and a day-2 `model install` of an undeclared user source carries no
+tool-call format (the bootstrap's generic default applies to seeds only).
+**P6 slice (2026-09-09, PR-26) — the release train, up to the human
+steps:** the five guides absorb the V1 surfaces; `docs/RELEASE_NOTES.md`
+exists with the v1.0.0 entry (CLAUDE.md's mandated fourth guide);
+`docs/SOAK_RUNBOOK.md` + `scripts/soak.sh` (`make soak`) make P6 exit
+criterion 2 a fixed, logged schedule — health and status every 15 min,
+bench hourly, a scripted SWE run every 2 h, lifecycle churn (benchmark → a
+new generation → rollback) every 6 h as the rollback-under-load exercise,
+an evolution cycle and container stats daily, one JSON line per step and a
+summary the release report quotes; `docs/V1_RELEASE_REPORT.md` checks the
+product DoD item by item against tests and PR artifacts and ends in the
+sign-off table. Decisions: (1) **the version is bumped in the release PR**
+(`__version__` and `pyproject.toml` both 1.0.0 — they disagreed before) as
+MAINTENANCE_GUIDE §6 prescribes, **the tag is not**: a test asserts no
+`v1.0.0` tag exists in the repository, because production releases are a
+human act (CLAUDE.md, GOVERNANCE.md); (2) **soak results are a hardware
+measurement** — the PR delivers the runbook, the driver and the results
+template with the offline evidence filled in and marks the host rows
+pending, rather than claiming a soak that did not run; (3) the two PR-25
+residuals are **known limitations in the release notes**, not fixed in the
+train. With PR-26 the V1 plan's twenty-six PRs are delivered; ADR-025..031
+stand as built.
 
-## ADR-027 — Registry v2: platform model registry with generations (P1)
-**Date:** 2026-09-01 · **Status:** Proposed (enters with PR-1; flips to
-Accepted when phase P1 closes at PR-7)
+## ADR-027 — Registry v2 · PAL · governed model lifecycle (P1)
+**Date:** 2026-09-01 · **Status:** **Accepted** (2026-09-08, phase P1
+closed with PR-7; entered as Proposed with PR-1)
+**As built (PR-1..7):** the platform's model state is a **generation-
+versioned Registry v2** (`config/models/registry.yaml` + immutable,
+append-only `generations/`; rollbacks are new generations) resolved
+deterministically role → pin | group → first active model; **runtimes are
+descriptors** (`config/providers/*.yaml`: six-verb contract, image table per
+accelerator kind, tuning per capability class) and the **renderer** turns
+registry + descriptors + the host's capability vector into the LiteLLM
+config (model + `role-*` aliases → `engine:8000`), the engine-slot compose
+override, the ADR-020-shaped role map, and a capability report, with
+render-time **capability negotiation** over every role's chain and a hash
+manifest that refuses drift; the **lifecycle** installs (resumable,
+checksummed, validated through a side-loaded engine), benchmarks, and
+retires/uninstalls with guards; **governance** is a file-backed
+change-request queue with an append-only audit log, a computed approval
+matrix (policy-approved when no serving role or slot runtime changes),
+a bounded evolution lane, and an **atomic apply** (dry render → snapshot →
+write → reload changed → health → self-rollback on any failure);
+**agentd binds to role aliases** (no model name in code) and resolves
+aliases < platform role map < per-repo ADR-020 registry; the
+`local-ezai model|governance|project|status|up|down|bootstrap` namespaces
+are the direct-mode CLI; the **bootstrap** consumes `.env` seeds once
+(legacy families migrated, F8/F10/F11) into generation 1 with the one
+implicit approval, and the **cutover** makes the rendered artifacts the live
+ones. Reference default set: the CLAUDE.md map as packaged data, golden-
+tested against `.agent/model_registry.yaml` throughout.
 **Context:** ADR-025/026 require a platform-scope, declarative,
 generation-versioned model registry — roles → groups → models →
 runtimes — replacing hand-edited routing after installation, resolvable
@@ -698,3 +797,705 @@ code (R-1/H1). No consumers are wired in this slice (PR-3/6/7); the live
 (immutability, write-time servability, byte-compatible role maps) are
 already tested; the golden test becomes the standing tripwire for the
 PR-6 role-alias switch.
+**PR-3 slice (2026-09-08) — runtime descriptors + renderer (ADR-026
+R-1/R-3/R-4):** runtimes are YAML descriptors in `config/providers/`
+(schema `runtime_descriptor.py`): served formats, capabilities
+(tool-call parsers, JSON output, `parallel_models`, `hot_swap`), the
+six-verb contract as data (`materialize` realized; `control`/`ready`/
+`validate_model`/`bench` declared for PR-4/5), image table keyed by
+**accelerator kind**, tuning keyed by **capability class**, templated
+commands/compose extras. `render.py` fills templates only — it holds no
+engine, image, flag, or vendor string (tested) — and produces
+`litellm-config.yaml` (model + `role-*` aliases → `engine:8000`),
+`docker-compose.engine.yml` (`deploy` under compose `!override`),
+`role_map.yaml` (ADR-020 shape; golden-chained to this repo's
+`.agent/model_registry.yaml`), `capability_report.yaml`, and a router
+`engine-models.ini` when llama.cpp serves several models. **Capability
+negotiation** at render time covers primaries **and fallbacks**
+(tool_calling / json_output / min_context vs class budget / source
+format); the one-slot rule (one runtime; `parallel_models: false` ⇒ one
+active model) is enforced; all problems aggregate into one loud error.
+`write_rendered` persists to `<config>/rendered/` with a hash
+`manifest.yaml` and **refuses drift** unless forced. The compose slot
+service gains the neutral network alias `engine` (name, port, behavior
+unchanged). Parallel path until the PR-7 cutover; no process verb runs in
+this slice. As-built refinements: fallbacks negotiated (not only
+primaries); llama.cpp multi-model via router preset (upstream-verified);
+the reference default set spans two runtimes and is therefore reported as
+a slot conflict — LiteLLM/role-map rendering remains independently
+callable for explain/approval surfaces.
+**PR-4 slice (2026-09-08) — lifecycle install / validate / benchmark:**
+`fetch.py` resolves `hf:` · `gguf:` (url / `hf://org/repo/file` / path) ·
+catalog id · `auto` (every other form is rejected with the accepted forms
+listed, F8) and fetches GGUF natively (HTTP-Range resume, streaming
+SHA-256 recorded into `source.sha256`) or hub repositories through the
+`hf download` path the scripts already use (local CLI or the same
+throwaway container). `catalog.py` is data with pluggable sources
+(packaged `defaults/catalog.yaml` seed — hub-verified sizes — merged with
+`config/catalog/*.yaml`) and a requirements-driven recommender: variants a
+runtime serves × the group's role contracts × `fit()` placement, every
+candidate returned with its verdict (R-5/F9). `lifecycle.py` holds the
+state machine as a data table (`TRANSITIONS`, enforced by `transition`),
+`install()` (resolve → fetch into the descriptor's `weights.host_dir` →
+`validate_model` via a **side-loaded** engine → `installed` with measured
+`size_gb` | `failed` with the reason; idempotent on verified weights) and
+`benchmark()` (`bench` verb: descriptor-named server timings or
+tokens/wall-clock → entry `benchmarks` + capped per-model series under a
+new `models` key of `.agent/model_benchmarks.json`, carried forward by
+`evaluate-models`; → `benchmarked`). The side-load is the PR-3
+`materialize_service()` of one model as a standalone compose project on an
+ephemeral port, always torn down. Generations are persisted when the
+registry is servable; pre-bootstrap results stay in memory and say so
+(PR-1's write-time invariant is respected, not worked around). Additive
+schema: `ModelEntry.artifact/installed_at/error/license`,
+`BenchVerb.rate_key/prompt_rate_key/count_key`, `ModelEvalReport.models`.
+Not in this slice: activation/rollback/retire (PR-5), CLI verbs (PR-6),
+the vLLM side-load memory gate / scheduled swap window (gating lands with
+activation), curated per-class catalog content (P5).
+**PR-5 slice (2026-09-08) — activate / upgrade / rollback / retire +
+governance queue:** `governance.py` is the file-backed queue
+(`config/governance/queue/<id>.yaml`, one file per request for life) and
+append-only audit log (`log.jsonl`); a `ChangeRequest` carries the full
+proposed generation, the diff, **affected roles** before → after, and
+evidence (benchmarks, fit, capability report, runtime). Rules are code:
+decisions once, rejection needs a reason, the **approval matrix is
+computed** (no role chain or slot-runtime change ⇒ approved by actor
+`policy`, audited), the **evolution lane** is bounded (evidence required,
+≤1 open, never auto-approved). `activation.py`: `activate`/`upgrade`/
+`propose` validate a proposal exactly as apply will (dry render) and
+enter the queue; `apply` runs MODEL_LIFECYCLE §4 — stale check
+(`superseded`), reconcile, dry render, save N+1, write artifacts
+(drift-checked), reload **changed artifacts only**, health — and on ANY
+failure past the snapshot **self-rolls-back** by saving N's content as a
+new generation (history is append-only; rollbacks are generations);
+`rollback` reuses the protocol without approval, audited + notifying;
+`reconcile` heals a registry ahead of its rendered manifest. Reload/health
+are seams (`ComposeReloader`, `EngineHealth`) defaulting to render-only
+until the PR-7 cutover (audited as such). `lifecycle.retire` (non-serving
+active only; primary or last member blocked) and `uninstall`
+(retired/failed only; rollback target ⇒ `force`). Deferred: CLI verbs
+(PR-6), bootstrap gen 1 (PR-7), git-committing generations (bootstrap
+flag), the proposal-creating evolution lane (N6′).
+**PR-6 slice (2026-09-08) — CLI namespaces + role aliases in code (CF-3
+closed):** `config.py` defaults every role to `role-<role>`
+(`ROLE_ALIAS_PREFIX`, `LLM_ROLES`; no model name remains in code — tested
+by source grep); the shipped hand-written LiteLLM profiles gain the
+`role-*` alias entries as data so every profile keeps working before the
+cutover. `routing.py` implements the three layers of MODEL_ROUTING_DESIGN
+§5 — aliases < platform role map (rendered `role_map.yaml`, else Registry
+v2 resolution) < per-repo ADR-020 registry, where a role the repo declares
+is taken exactly (repo pin = explicit chain, platform fallbacks not
+inherited); the platform is found via `platform.config_dir` /
+`$AGENTD_PLATFORM__CONFIG_DIR` or by walking up from the project, never
+from cwd or the package (hermetic). `prepare_run`, `evaluate-models`, and
+`models` share the resolution. `platform_cli.py` adds the direct-mode
+namespaces `model install|benchmark|activate|upgrade|rollback|retire|
+uninstall|explain|history|catalog`, `governance list|show|approve|reject`
+(approve applies the PR-5 protocol; policy-approved proposals apply at
+once), `project add|list|remove` (`config/projects.yaml`, audited),
+`status`, `up|down` (compose wrappers; profile file chain derived from the
+profile name). Behavior note: the default routing path changes as the plan
+foresaw (one pre-existing assertion of the old hard-coded default updated);
+the PR-1 golden test passes unchanged — the tripwire held.
+**PR-7 slice (2026-09-08) — bootstrap core + `.env` seed consumption +
+cutover (P1 closes):** `bootstrap.py` reads the V1 seeds once (`AI_RUNTIME`,
+three group seeds, optional `EZAI_ROLE_PIN_*`, `<SEED>_TOOL_FORMAT`,
+`<SEED>_CONTEXT`) or migrates the first legacy `.env` family from the data
+table `defaults/legacy_seeds.yaml` into one model for all groups keeping the
+served name (F11); validates every problem with its fix before any download
+(F8: runtime, scheme, format × runtime, slot capacity, `auto` feasibility,
+tool format vs runtime parsers — undeclared user sources default to a
+runtime's generic handler only when it lists one — context vs contracts,
+pins); installs + benchmarks through the PR-4 verbs; plans generation 1
+(reference roles + contracts, groups from seeds, pins); the ONE implicit
+approval (`propose(implicit_approval=True)`, refused on a platform with
+history — a forced re-run becomes a governed request) → PR-5 apply →
+`EZAI_SEEDS_CONSUMED` stamped into `.env`; `--dry-run` shows the F10 diff.
+Cutover: compose mounts `config/rendered/litellm-config.yaml`; the three
+hand-written variants become test fixtures; `make bootstrap` /
+`require-rendered`; every `make up*` adds the rendered engine override and
+`make setup-*` bootstraps before `up` (host venv created on demand — the
+first departure from "no host Python", by design). ADR-027 → Accepted.
+
+## ADR-028 — `ezaid` Platform Control Plane (P2)
+**Date:** 2026-09-08 · **Status:** **Accepted** (2026-09-09, PR-12 — P2
+closed: parity smoke, two concurrent runs through the API, kill-the-daemon,
+contract frozen at 1.0.0). Entered as Proposed with PR-8.
+**As built (PR-8..12):** `agentd.control` — FastAPI behind the optional
+`agentd[control]` extra, opt-in compose overlay or host daemon (`make
+control-up` / `make control-serve`); bearer service token + forwarded
+identity; the platform's single audit log; one error vocabulary shared with
+the CLI; 29 operations (health, identity, audit, model lifecycle, generations,
+roles, catalog, governance, projects, async runs) — each mutating one
+idempotency-keyed and audited, mapped to one CLI verb; the CLI's connected
+mode makes the daemon transparent (same text/JSON/errors) and falls back to
+direct mode when it is absent; the contract `docs/api/ezaid-openapi.json`
+is frozen at `1.0.0` with a tripwire and a frozen inventory.
+**Context:** ADR-025 (1) requires one control plane wrapping the Python
+functions the platform already has, so that CLI connected mode, the Admin
+Center and the SWE tool server are thin clients of one contract and one
+audit log, while the CLI's direct mode keeps working with the stack down.
+P1 delivered the functions (Registry v2, lifecycle, governance, renderer,
+bootstrap) behind the direct-mode CLI; nothing served them.
+**Decision (PR-8 slice — service skeleton):** `agentd.control` is a FastAPI
+application shipped behind the optional extra `agentd[control]` (the only
+web framework in agentd; direct mode and every repo-work verb never import
+it) and started as the **opt-in compose overlay** `docker-compose.control.yml`
+(`ezaid` on `EZAI_CONTROL_PORT`, default 8010; `./config` mounted as the
+platform; ADR-002: rollback = don't start it). Surface of this slice:
+liveness `GET /health` (open), `GET /v1/health` (control info + the
+`local-ezai status` snapshot + one probe per stack service — the probe
+table is **data**, addresses services by compose name and the engine slot
+by its neutral `engine` alias, and `control.health_targets` edits it),
+`GET /v1/whoami`, `GET /v1/audit`, `/openapi.json`. **Authentication:** a
+bearer **service token** (`EZAI_CONTROL_TOKEN`, never defaulted in code —
+no token, no start; constant-time compare) plus **forwarded identity**
+(`X-EZAI-User`, `X-EZAI-Client`) recorded as the audit actor `<user> via
+<client>`; rejected calls are audited without the secret. **Single audit
+log:** `agentd/audit.py` (append-only JSONL) extracted from the governance
+queue without changing path or record shape — governance transitions and
+control-plane events share `config/governance/log.jsonl`. **One error
+envelope** `{"error": {"code", "message", "fix"}}` for every failure — the
+vocabulary the CLI (connected mode) and the Admin Center print verbatim.
+**Contract artifact:** `docs/api/ezaid-openapi.json`, `info.version =
+CONTRACT_VERSION` (`1.0.0-draft.8`), tripwire-tested on the contract
+surface; `make control-spec` regenerates. `local-ezai status` probes the
+control plane.
+**Consequences:** PR-9 (lifecycle + governance endpoints, idempotency keys,
+shared errors) and PR-10 (async run registry) build on the auth dependency,
+the audit log, the envelope and the snapshot; PR-11 gives the CLI its
+connected mode against the same contract; PR-12 freezes the contract at
+`1.0.0`, adds the kill-the-daemon and two-concurrent-runs tests and flips
+this ADR to Accepted. Until then the overlay stays opt-in (`make
+control-up`) and no existing behavior changes.
+**PR-9 slice (2026-09-08) — lifecycle + governance endpoints:** the PR-6
+verbs' orchestration became **shared operations** in `platform_cli`
+(returning the CLI's `--json` mapping); the CLI verbs format them and
+`control/api.py` serves them — 19 operations on `/v1` (models install /
+benchmark / activate / upgrade / retire / uninstall, generations history /
+rollback, roles explain, catalog + recommendations, governance list / show
+/ approve / reject, projects), each summary naming its CLI verb, the actor
+being the forwarded identity. **Parity is tested**: CLI `--json` == API
+body for every read verb. **Idempotency keys** (`Idempotency-Key`: replay
+with `Idempotency-Replayed`, `409 idempotency_conflict` on a different
+payload; one JSON record per key under `config/control/idempotency/`).
+**Shared error vocabulary** `agentd/platform_errors.py`: `classify()` maps
+the platform exceptions to `{code, message, fix}` + HTTP status + exit code
+(`not_found` by the modules' own phrasing); the API returns the envelope,
+the CLI prints the same envelope in `--json` mode. Every mutating call is
+audited as `api.<operationId>` with the forwarded actor; mutations are
+serialized in the daemon; `reload: true` is refused (`reload_unavailable`)
+where no docker CLI exists — the shipped container — before the apply
+protocol starts. Contract `1.0.0-draft.9`. Deferred: run endpoints (PR-10),
+connected mode (PR-11), freeze + phase-close tests (PR-12).
+**PR-10 slice (2026-09-08) — run endpoints, the async run registry:**
+`control/runs.py` executes the platform's **existing** pipelines (`run` /
+`fix` / `sprint` / `evolve` / `plan` = the A0 dry-run) on a bounded worker
+pool with the job's id as the run id — the CLI's journals and reports are
+what the API serves; records persist under `config/control/runs/` and are
+recovered on restart (interrupted jobs → `failed`, audited `run.orphaned`).
+**Cancellation without touching the core graph:** queued jobs cancel at
+once; a running job's model client is wrapped (`CancellableLLM`) so the
+pipeline stops at its next model call. **Limits:** `control.
+max_concurrent_runs` + `max_queued_runs` (beyond → `429 too_many_runs`),
+one in-place job per project (`409 project_busy`). **The chat-ops
+ceiling** is enforced in the registry: runs start only on registered
+projects (`resolve_project`, else `404` with the `project add` fix) and
+every job runs with `git.allow_push = False`. Endpoints: `POST /v1/runs`
+(202), `GET /v1/runs`, `GET /v1/runs/{id}` (+ journal progress),
+`/report` (`409 report_pending` while unfinished), `/journal?tail=`,
+`POST /v1/runs/{id}/cancel`; `run.submitted` / `run.finished` /
+`run.cancel_requested` audited with the forwarded actor. Contract
+`1.0.0-draft.10`. Deployment constraint recorded, not changed: a job needs
+the project on the daemon's filesystem (host `ezaid`, or the projects
+directory mounted at the same path) — the shipped overlay mounts only
+`config/`; PR-12/P3 decide the default. Deferred: connected mode (PR-11),
+freeze + kill-the-daemon + two-concurrent-runs tests (PR-12).
+**PR-11 slice (2026-09-09) — CLI connected mode:** the management verbs
+(`model` / `governance` / `project` / `status`) probe the daemon's liveness
+once (`control.url` / `EZAI_CONTROL_URL`, default `http://localhost:<port>`,
+1 s) and, when it answers, run through the API (`control/client.py::
+ConnectedOps` — the PR-9 verb ↔ endpoint mapping, token + forwarded
+identity `X-EZAI-User`/`X-EZAI-Client: cli` + a fresh `Idempotency-Key` per
+mutation); otherwise in-process as P1 built them. The verb formatters call
+`ctx.ops.<operation>()` on a `PlatformContext` (`DirectOps`) or a
+`ConnectedContext` — **same text, same JSON, same error object and exit
+codes** (parity tested for seven verbs, plus a real uvicorn socket).
+`--transport auto|connected|direct` > `$EZAI_TRANSPORT` > `auto`; a
+requested `connected` with no daemon, or a reachable daemon with no
+configured token, fails fast (exit 2, fix named) — never a silent fallback
+that would fork the audit; `bootstrap` / `up` / `down` are host-only and
+always direct. `status` shows its `transport:`. Decision recorded: direct
+mode keeps P1's in-process management (the strategy's "fail fast" applies
+to a requested connected transport and to the no-platform case) — both
+modes write one declarative store. Deferred: freeze + kill-the-daemon +
+two-concurrent-runs tests (PR-12), the release-gate parity harness (PR-24 —
+delivered as `agentd/tests/parity/`; see the ADR-026 P6 slice).
+**PR-12 slice (2026-09-09) — phase close, ADR-028 → Accepted:** the P2
+exit criteria as tests — (2) two real scripted runs on two repositories
+started through `POST /v1/runs`, active together, both completed with
+reports, plus a gated pair with a mid-flight cancel; (3) a real `ezaid`
+process SIGKILLed after the CLI used it: repo work (`plan`) unaffected,
+`status` falls back to direct on the same state, `--transport connected`
+fails fast, the audit log shows `control.started` without `control.stopped`;
+(4) `CONTRACT_VERSION = "1.0.0"`, artifact regenerated, a frozen inventory
+of the 29 operations pinned (a surface change bumps the version — additive
+→ minor, breaking → major — and updates the inventory); (1) is the PR-11
+parity smoke. **Deployment decision** (deferred by PR-10): two shapes in
+V1 — the container overlay (`make control-up`) for model/governance/health
+over `config/`, and the host daemon (`make control-serve`, agentd venv) for
+SWE runs because it shares the filesystem with the registered projects;
+starting the daemon from `make up` stays opt-in (ADR-002; the P5 installer
+may wire a default). Stability item fixed in the close: run listing orders
+by submission, not by the second-resolution timestamp. P3 (ADR-029), P4
+(ADR-030) and P5 (ADR-031) proceed in parallel from PR-12.
+
+## ADR-029 — Chat-ops boundary: the SWE Tool Server (P3)
+**Date:** 2026-09-09 · **Status:** **Accepted** (2026-09-09, PR-15 — the P3
+close; entered as Proposed with PR-13)
+**Context:** OpenWebUI is the product's front door (ADR-025); chat must be
+able to start autonomous work and read its results without ever reaching
+the governance boundary — a prompt-injected conversation may waste a run,
+never ship, merge, activate or roll anything back (OPENWEBUI_INTEGRATION
+§5). The control plane (ADR-028) serves everything chat needs.
+**Decision (PR-13 slice — the tool server):** a **vendored MCP server**
+(`mcp-servers/swe-server/swe_server.py`, FastMCP over stdio) behind mcpo at
+`:8200/swe`, a **thin adapter** over the frozen 1.0.0 contract — no
+pipeline logic, no repository access, no agentd import; token +
+`X-EZAI-Client: swe-server` + idempotency key on its one mutating call. The
+**catalog is start + inspect only**: `swe_projects`, `swe_plan` (A0, waits
+for the plan, "confirm before `swe_run`"), `swe_run` / `swe_sprint` /
+`swe_fix` / `swe_evolve` (run id within seconds, follow hint, Admin Center
+link), `swe_status`, `swe_report` (markdown per kind, never raw JSON),
+`swe_journal` (bounded), `model_list`, `model_explain`, `governance_queue`
+(read-only, deep links, "decisions never from chat"). Approve / reject /
+activate / rollback / upgrade / retire / uninstall / install / merge / push /
+cancel **do not exist as tools** — pinned by a negative test on the catalog
+and on the API paths the source uses (the only POST is `/runs`). Policy
+lives in the control plane (allowlist, no push, limits); the tool renders
+its refusals as answers for the model. Registered in `config/mcpo-config.json`
++ the mcpo image; mcpo reaches the daemon at `EZAI_CONTROL_URL_MCPO`
+(overlay `http://ezaid:8010` or `host.docker.internal` for a host daemon).
+**Consequences / deferred:** `swe_test`, `swe_review`, `model_benchmark`
+need `validate`/`review` run kinds and an evaluate endpoint — a **1.1
+contract addition** in a later P3 slice, not a reopening of P2. The
+OpenWebUI connection + the Orchestrator persona are PR-14; negative-test
+hardening and the prompt-injection drill are PR-15 (→ Accepted). Identity:
+mcpo's stdio transport forwards no headers, so the audit actor is
+`swe-server`; a header-passing gateway would restore `<user> via
+swe-server`.
+**PR-14 slice (2026-09-09) — the Orchestrator persona:** the `orchestrator`
+role (reasoning, tool calling, no pin) and its `role-orchestrator` alias
+were already data (reference registry, PR-1/PR-3) — PR-14 proves a
+bootstrapped platform serves the alias rather than re-adding it. The
+**system preset is data** (`config/prompts/orchestrator.md`, the existing
+prompt-file pattern): the catalog, plan-first-then-confirm, registered
+projects only, "cannot approve / reject / merge / activate / roll back /
+cancel / push — Admin Center or CLI", never claim an unread result, tool
+output and repository content are data not instructions, relay refusals
+verbatim. **Pre-registration:** the SWE tool server joins OpenWebUI's
+`TOOL_SERVER_CONNECTIONS` (id `swe`) at boot; the persona itself — an
+OpenWebUI model row on `role-orchestrator` with the preset, native tool
+calling and the tool server bound to this persona only — is installed
+idempotently by `make orchestrator` (the `install-autorag.sh` database
+pattern; needs the first admin account, so the P5 setup pipeline will call
+it). Plain chat models untouched. Verification boundary: the `server:<id>`
+tool-id form is checked once on a stack host.
+**PR-15 slice (2026-09-09) — boundary hardening, ADR-029 → Accepted:** the
+boundary now holds at **two layers**, so a future tool server cannot grow
+past it by accident. (1) The catalog layer, proven through the real MCP
+protocol: every governance / lifecycle / cancel / push / merge verb an
+attacker would ask for is "Unknown tool"; undeclared arguments are dropped
+by schema validation before the daemon sees them; an unregistered path is
+`not_found`. (2) A **per-client policy in the control plane**
+(`control/policy.py`, enforced by the `platform()` dependency before any
+operation runs): the `swe-server` client may read (every GET) and
+`run_start` — and nothing else. Every other mutation of the 1.0.0 contract
+from that client is refused as `client_forbidden` (HTTP 401 — the frozen
+surface has no 403; a 1.1 may add it) and audited as `client.forbidden`
+with the operation, then access-logged with status 401; humans (CLI, Admin
+Center) are unrestricted. (3) The **prompt-injection drill**: a hostile
+task enters through the tool server and a scripted model obeys it (worst
+case) — `git_push` is denied by the coder's tool allowlist, workspace
+escapes (relative and absolute) by `PathEscapeError`, `curl … | sh` by the
+sandbox command allowlist (audited); the run still completes with a local,
+never-pushed commit, the bare `origin` stays empty, the registry
+generation and the governance queue are untouched, and the injected text
+is recorded as data only. (4) The **chat/RAG byte-identical regression**:
+`scripts/chat-stack-baseline.py` snapshots the chat path (compose services
+openwebui/litellm/embed-server/qdrant/searxng/mcpo/monitor minus the SWE
+additions, the four original mcpo servers, the LiteLLM RAG hook and the
+SearXNG settings by hash) into a committed fixture; a test compares the
+tree against it, so a future PR that touches the chat stack must update
+the baseline on purpose. Deferred, unchanged: the 1.1 tool additions
+(`swe_test`, `swe_review`, `model_benchmark`), a header-passing gateway for
+`<user> via swe-server`. Run locally with `make swe-drill`; the hosted CI
+runs the same package (workflow remains manual-only).
+
+## ADR-030 — Admin Center: the monitor evolves into the platform console (P4)
+**Date:** 2026-09-09 · **Status:** Accepted (entered Proposed with PR-16;
+Accepted with the P4 close, PR-20)
+**Context:** WEBUI_ADMIN_CENTER names the monitor (:8888 — RBAC admin/viewer,
+health view, knowledge-base bar) as the management console: an evolution of a
+component we own, not a new frontend project and not an OpenWebUI fork. The
+control plane (ADR-028, contract 1.0.0) already serves everything the console
+must show, and the capped chat surface (ADR-029) sends humans here for
+decisions.
+**Decision (PR-16 slice — the client and the first pages):** (1) the monitor
+stays **one service, one image**; the Admin Center is a sibling module
+(`monitor/admin_center.py`) installed on the existing FastAPI app with the
+existing RBAC dependencies — viewer reads, admin mutates; `/` (health +
+knowledge) is unchanged apart from the shared header and a navigation bar.
+(2) **The browser never talks to the daemon**: page JavaScript calls the
+monitor (`/api/ezai/…`), the monitor calls `ezaid` with the service token
+(`EZAI_CONTROL_TOKEN`, server side only) and forwards the monitor login as
+the human (`X-EZAI-User: admin|viewer`, `X-EZAI-Client: admin-center` → audit
+actor `<login> via admin-center`), a fresh `Idempotency-Key` per mutation.
+(3) **Pages are path routes** serving one template — `/overview`, `/runs`,
+`/runs/{id}` — so the deep links the CLI and the SWE tools already print
+resolve; the view is chosen client-side from the path, framework-free (UX
+principle 5: the monitor's look evolves, no rewrite, no build step). (4)
+**Data is aggregated server-side per page** (one request renders a page):
+Overview = aggregated health + platform snapshot + role explanations (roles
+are the interface — orchestrator/planner/coder/debugger/reviewer/chat, a role
+the registry lacks is skipped) + the pending queue + recent runs; run detail
+= record + report (once written) + journal tail. (5) **A daemon that is down
+is a page state**, not a broken console: `connected: false` with the same
+code/message/fix the CLI prints; health and the knowledge base keep working.
+(6) **Parity or absence:** the only mutation is *cancel* (admin) — the
+matrix's "view, cancel"; starting work from the console is deliberately
+absent, governance decisions arrive with their evidence panels (PR-18).
+Because the monitor login is ambient (HTTP Basic), mutations additionally
+require the `X-Requested-With: admin-center` header the page sends — the
+same-origin guard a cross-site form cannot satisfy. (7)
+**Wiring mirrors the mcpo precedent:** compose gives the monitor
+`EZAI_CONTROL_URL` (`EZAI_CONTROL_URL_MONITOR`, default overlay
+`http://ezaid:8010`, `host.docker.internal` for a host daemon), the token and
+`extra_hosts`; the chat-stack baseline (PR-15) treats these keys as additive,
+so its fixture is unchanged.
+**Consequences / deferred:** Models/Routing/Runtime pages (PR-17), the
+Governance queue with approval modal and evidence (PR-18),
+Sprints/Evolution/Memory/Projects (PR-19), the SSO trusted-header handoff and
+the five zero-CLI journeys as Browser-QA workflows (PR-20 → Accepted).
+Identity is the monitor login (two roles) until SSO; a forwarded OpenWebUI
+identity later replaces the header value without touching the daemon.
+Validation already follows the plan's rule "the product is tested by its own
+testing capability": a real-Chromium smoke renders the pages with console
+errors failing the test; the declarative journey suite is PR-20.
+**PR-17 slice (2026-09-09) — Models / Routing / Runtime pages:** (1)
+**Role-first, models as evidence** (WEBUI_PRODUCT_STRATEGY §1): the Models
+page draws group panels whose serving order is the *resolution* order (an
+unpinned role's primary + fallbacks) followed by the group's non-serving
+members, then role cards, the catalog, the generations and the queue; a
+group no model belongs to and no role resolves through is invisible to the
+contract — and to the page. (2) **Fit badges come only from the platform's
+recommender** (`GET /v1/catalog/recommendations`): a model that matches a
+catalog candidate on its runtime shows that verdict; a user-supplied
+source shows "no verdict" and its measured tokens/s — the browser never
+computes fit (HARDWARE_AGNOSTIC §3 has one `fit()`). (3) **One additive
+data enrichment in the control plane, no surface change:** the snapshot's
+per-model entries gain `groups`, `context`, `format`, `license`; the
+`models` object is untyped in the 1.0.0 contract, the artifact and the
+frozen inventory are byte-identical. (4) **Mutations are the CLI's, through
+the daemon, admin only, same-origin guarded:** install (catalog id or any
+`hf:`/`gguf:` source), benchmark, activate and upgrade (→ the approval queue
+whenever a serving role changes; the page says so and names the CLI verb
+that decides until PR-18), retire, uninstall (with `force` for rollback
+targets), rollback to a generation (immediate, audited, reason recorded).
+Every refusal is the daemon's own error object — a source with no
+declared tool-call format cannot become the coder's primary, and the page
+shows the negotiation text. (5) **Routing = the explain view** of
+MODEL_ROUTING_DESIGN §7: every defined role's source (pin or group),
+chain, reason lines, contract, per-model checks with failure text and the
+generation it was resolved from; roles the registry does not define are
+listed as such; the generation history with diffs. (6) **Runtime page,
+honest about switching:** the engine slot (runtime, class, accelerator,
+memory, engine/router health, active models) and, for every other runtime
+the descriptors serve, a **pre-check** — which active models lack a
+variant for it (with the RUNTIME_ABSTRACTION §5 fix wording) and which
+catalog candidates fit per group, contract failures included (on a small
+host the vllm descriptor's context budget rules out every candidate — the
+page carries the recommender's sentence). A switch is described as what it
+is in P1: activating a model served by the other runtime, a change request
+flagged `runtime.switch` that needs approval; **no switch button**, since
+the contract has no runtime verb (a 1.1 candidate, not this slice).
+**PR-18 slice (2026-09-09) — the Governance queue and the approval view:**
+(1) **Evidence next to every button** (WEBUI_ADMIN_CENTER §5.1): the approval
+view at `/governance/<id>` — the deep link the SWE tools and the CLI print —
+lays out *what changes* (the diff lines, each affected role before → after),
+*evidence* (benchmarks measured on this host, fit verdicts of newly active
+models, the render-time capability report per role × model × runtime, the
+runtime before/after with the switch flag, the capability class), *proposed
+by* (human or evolution, with the "advisory, never operator" note), and
+*reversibility* (the generation one rollback restores), then the decision:
+Reject with a required reason, Approve & apply. (2) **The queue is one
+list** with the history behind a status filter; every row carries who
+decided, when, why and the resulting generation — the audit record, read
+back from the request itself. (3) **The daemon rules, not the page:** both
+decisions go through `POST /v1/governance/{id}/approve|reject` as the
+monitor login (`admin via admin-center`), admin role only, same-origin
+guarded; "a rejection needs a reason" and "decisions are made once" are the
+daemon's own refusals (`governance_rule`, 409) shown verbatim; a viewer
+reads everything and decides nothing. (4) **The proposed registry dump
+stays server-side** — the human evidence is the diff and the evidence block,
+not a YAML tree. (5) **Honest about item types:** only the activation
+module submits change requests today (activation, upgrade; a runtime switch
+is a flag on them), so evolution proposals and release candidates are
+described as joining when their pipelines submit requests, with evolution
+runs pointed to on the Runs page meanwhile — no synthetic rows. Behavior
+note: two unmerged tests (PR-16, PR-17) that asserted the monitor had no
+approve route flip to the guard the route now enforces.
+**PR-19 slice (2026-09-09) — Sprints / Evolution / Memory / Projects:** (1)
+**The contract grows additively, by its own rule:** the Memory page needs
+data 1.0.0 never served, so the control plane gains `GET|POST
+/v1/projects/{name}/memory` (`project_memory`, `project_memory_add` — browse
+by kind or search; add a curated rule / style / decision, exported to
+`lessons_learned.json`, audited `memory.added`) and the contract becomes
+**1.1.0**: every 1.0.0 operation, path and method unchanged, the artifact
+regenerated, the inventory test pins both the 29 frozen operations and the
+two additions, the chat-boundary list gains the new mutation (the PR-15
+client policy already refuses it to chat — chat may read memory, never
+write it). Fixes and implementation history stay run-recorded: the API
+accepts the three curated kinds only. The CLI's `memory` verb stays
+direct-mode repository work (no connected twin). (2) **The console starts
+sprints and evolution cycles** — WEBUI_PRODUCT_STRATEGY §3.5/§3.6 and the
+release-gated zero-CLI journeys 3 and 4 require it, and the CLI verbs
+exist (`local-ezai sprint|evolve`); this **amends the parity matrix's
+"view, cancel"** for those two kinds only (recorded in CLI_AND_WEBUI §3 as
+built). Plain runs, fixes and plans keep starting from the CLI or chat; the
+monitor refuses other kinds before the daemon is asked. Same guards as
+every mutation: admin role, same-origin header, daemon refusals verbatim.
+(3) **Sprints and Evolution are views over the run registry** (`GET
+/v1/runs?kind=…` + reports): waves and task results, and the dependency
+graph as mermaid *source* generated from the plan — the runtime's rendered
+report document lives in the repository, which the contract does not serve,
+and the offline product loads no rendering library. Evolution cycles show
+proposal, improvements, benchmark before → after, the PR or bundle and the
+standing "awaiting human review"; the page says proposals reach the
+Governance queue only once the pipeline submits change requests. (4)
+**Projects** is the allowlist with each project's work (run count, active,
+last run) and links to its runs and memory; registering needs the path on
+the control plane's filesystem, and the page says so.
+**PR-20 slice (2026-09-09) — identity handoff, the journeys as Browser-QA
+workflows; P4 close → Accepted:** (1) **Identity comes from the chat surface
+when it can; the login stays the fallback.** The monitor's viewer / admin
+dependencies resolve, in order: an explicit Basic login; a trusted identity
+header set by a reverse proxy in front of the monitor
+(`MONITOR_SSO_TRUSTED_HEADER`, honoured only together with the shared secret
+in `X-EZAI-Proxy-Secret` — a header alone is never trusted; the addresses in
+`MONITOR_SSO_ADMINS` are admins, everyone else a viewer); the OpenWebUI
+session cookie (`token`, validated server-side against
+`MONITOR_SSO_OPENWEBUI_URL/api/v1/auths/` — OpenWebUI's admin is the
+console's admin, a user a viewer, a pending account is not signed in —
+cached 60 s); otherwise the Basic challenge. All of it is opt-in by
+environment: without the keys the PR-16 monitor is unchanged, and so are
+`MONITOR_AUTH=false` and the dashboard. The identity travels to the daemon
+as `X-EZAI-User: <email>`, so the audit trail names the person
+(`nita@example.com via admin-center`), not the role — the PR-16 slice's
+deferred line, closed without touching the daemon. (2) **No native
+dialogs:** every confirmation and reason (activate / upgrade / retire /
+uninstall / rollback, approve / reject, cancel, remove) is an inline form on
+the page. The Browser QA harness has no dialog step by design (ADR-016), so
+a native `prompt()` would have made the journeys untestable by the
+product's own capability; the forms also give the reason a field a
+screenshot can show. (3) **The Overview banner** names the last registry
+change (generation, note, when, diff lines, the generation a rollback
+restores) with *Roll back* → reason → confirm — journey 5 in three clicks
+over the PR-17 rollback route. (4) **The walkthroughs are the tests:** the
+five zero-CLI journeys of WEBUI_PRODUCT_STRATEGY §5 are one declarative
+Browser-QA workflow file (`agentd/examples/browser-qa.admin-center.yaml`),
+run by the platform's own harness (`BrowserQAHarness`, real headless
+Chromium, console errors fail the step) against a launcher
+(`agentd/tests/fixtures/admin_center_app.py`) that serves the monitor as
+shipped over an in-process daemon on a bootstrapped scratch platform with
+the lifecycle seams the offline suites fake; the run is an ordinary CI
+test. (5) **P4 exit criteria, honestly:** criterion 1 (one queue, decided on
+either surface) is proven both ways — the CLI proposes and the console
+approves, the console proposes and the CLI approves; criterion 3 runs the
+five journeys with three stated boundaries: journey 1 ends at the Routing
+page (the chat-side subtitle check needs OpenWebUI), journey 2 covers the
+pre-check and the format-gap explanation (approving a real runtime switch
+needs a host where a variant of the other runtime fits), journey 4 covers
+triggering a cycle and reading its proposal (rejecting it in Governance and
+the memory write-back wait for the evolution pipeline to submit change
+requests — the PR-18 note stands). Criterion 2 (the chat side) is
+ADR-029's, closed with PR-14/15.
+**As built, PR-16..20 — the decision as it stands:** the monitor is the
+Admin Center: one service, one image; a server-side control-plane client
+(token never in the browser); pages as path routes over one template;
+server-side aggregation per page; a daemon that is down as a page state;
+parity or absence (console starts for sprint and evolve only, no runtime
+verb, no role editing); admin mutations through the daemon behind the
+same-origin header with the daemon's refusals verbatim; evidence next to
+every decision; the audit trail naming the person. Contract **1.1.0** (the
+additive memory operations) is the only control-plane change the console
+needed. Deferred beyond P4: evolution and release-candidate items in the
+queue (pipeline work), a runtime verb (a 1.x contract slice), a reverse
+proxy shipped with the stack for the trusted-header path, WebUI-side deep
+links into the console.
+
+## ADR-031 — Installer & onboarding: the five-step first run (P5)
+**Date:** 2026-09-09 · **Status:** Accepted (entered Proposed with PR-21;
+Accepted with the P5 close, PR-23)
+**Context:** TARGET_PRODUCT_V1 §2 promises one edit of `.env`, once, and
+never a config file again; FINAL_FIRST_RUN_EXPERIENCE §3 decomposes `make
+setup` into detect → validate → secrets → fetch → render → up → verify →
+report, and the bootstrap core (PR-7) already covers validate, the model
+part of fetch, and render. Still a README paragraph until now: hardware
+detection into `.env`, secrets, the review-edit stop, the repair of an
+existing install (F5) — and, later in the phase, the smoke, the "Platform
+ready" card, `local-ezai init` and the offline bundle.
+**Decision (PR-21 slice — `install.sh`, steps 1–3):** (1) **One thin bash
+entry, one Python module.** `install.sh` does preflight (python3 ≥ 3.10;
+Docker present or the fix printed — it installs nothing but the agentd venv
+it needs, through `make swe-install`) and runs `python -m agentd.installer`;
+every decision lives in the module, offline-testable, reusing the platform's
+own pieces — `capability.detect_vector` / `classify` (step 1),
+`bootstrap.read_seeds` / `validate_seeds` (F8), the descriptors, the
+catalog. No second detector, no second validator. (2) **Detection is
+recorded, assertions are honored.** The detected vector and class are
+written to `.env` as a comment block (stable text: an unchanged host
+re-renders byte-identical); a class asserted with `--profile
+cpu|n97|n97-igpu` or `--class` is written as `EZAI_CAPABILITY_CLASS`, which
+re-runs of the installer and `platform_cli.build_context` (make exports
+`.env`) both honor, so the installer and `make bootstrap` never disagree on
+the class; `--profile gpu` checks that an accelerator exists and asserts
+nothing (HARDWARE_AGNOSTIC §1: setup targets assert a class). (3) **The
+runtime default is descriptor data.** A new optional field
+`default_for_classes` on a runtime descriptor names the classes for which
+the installer proposes it as `AI_RUNTIME` (shipped: the GGUF runtime for the
+CPU classes, the HF runtime for the accelerator classes); candidates are the
+descriptors with an image for the detected accelerator kind, a host no
+default serves gets the first candidate with the reason printed, `--runtime`
+overrides and is checked against the host. The module names no runtime,
+model or vendor. (4) **The installer never picks models** (ADR-026: users
+select models, the platform adapts). A fresh `.env` is the shipped example
+with its seven placeholder secrets minted (the LiteLLM key keeps `sk-`),
+`AI_RUNTIME` uncommented in the seed section and the hardware recorded; the
+model seeds are the human's one edit. Validation runs the bootstrap's F8
+rules against the chosen class and runtime and adds a class-aware hint when
+the file still carries the example's legacy accelerator-sized default on a
+CPU class; nothing is downloaded. (5) **Repair mode (F5) edits `.env` and
+nothing else:** a timestamped backup first; user values kept byte for byte,
+in place; only secrets that are missing, empty or equal to the example's
+placeholder are minted — the example's model defaults and settings are
+never copied into a user's file; `AI_RUNTIME` is set only when unset and the
+seeds not yet consumed; a consumed stamp means the seeds are history and are
+reported, not validated; a second run changes nothing and writes no backup;
+`config/`, `models/` and volumes are never touched. (6) **The one review-edit
+stop** (F2/F7): a freshly created `.env` opens once in `$VISUAL` / `$EDITOR`
+(else nano, vi) on a terminal and is validated after the editor closes;
+without a terminal the installer prints what to edit and exits 3; `--yes`
+accepts the generated file; `--check` writes nothing. Exit codes: 0 ready ·
+1 problems printed · 2 usage / preflight · 3 review stop. (7) **The legacy
+make entry points stay.** `make install` runs the script; `make setup` keeps
+its meaning (system packages) until PR-22 folds steps 4–8 into it; the
+installer's "next" lines name `make bootstrap` and the profile's `make up-*`
+/ `make setup-*` from the preset table (data).
+**Consequences / deferred:** PR-22 — `make setup` = `install.sh` + fetch →
+render → up → verify → report, the "Platform ready" card, `local-ezai init`
+as the fallback when seeds are missing, the class assertion passed by `make
+setup-*`; PR-23 — offline bundle, the scripted F1–F11 acceptance suite,
+onboarding under Browser QA → Accepted. Host Python remains a V1
+requirement (PR-7's departure from "no host Python").
+**PR-22 slice (2026-09-09) — the setup pipeline, the smoke, the card,
+`init`:** (1) **`make setup` is the five-step contract now.** It runs
+`install.sh` (steps 1–3; a fresh `.env` stops once for the seeds — the one
+edit) and then `local-ezai setup`, the host-only verb behind steps 4–8: the
+PR-7 bootstrap when no registry exists (models fetched, validated,
+benchmarked, generation 1 rendered), images (`docker compose pull` for the
+image services, `build` for the platform's own, with the rendered engine
+override), the RAG embedding model (one shared script), `up -d` for the
+profile, wait-ready (the active runtime descriptor's `ready` verb on the
+host port, then the daemon's health table addressed on host ports), the
+smoke, the report. Every step is idempotent, so a re-run repairs rather
+than repeats. The system-package script lives on as `make setup-system`;
+`setup-gpu|cpu|n97` pass their profile assertion through both halves. (2)
+**What "ready" means.** Engine and router healthy and one chat turn answered
+on the chat role alias — what a user's first message depends on. The RAG
+answer over a sample document (embedded with the stack's own embed script),
+`plan_only` on the bundled sample project and the evaluate-models probes are
+reported with their detail but advisory: they depend on the model the user
+chose and must not brick a working stack. Any other service down is a
+warning naming the compose logs to read. (3) **The report is a file, the
+card is a banner.** `config/first-run/report.{json,md}` and the ✔ block with
+the WebUI and Admin Center URLs (on `LAN_HOST` when set, on the relocated
+ports). The "Platform ready" card reaches the WebUI as OpenWebUI's own
+`WEBUI_BANNERS` setting through an optional compose `env_file`
+(`config/first-run/openwebui.env` — never `.env`: make exports `.env`
+verbatim and would hand compose a quoted JSON); OpenWebUI is recreated and
+probed, and the file is removed with a second recreate if it does not come
+back, so a banner can never break chat. The Orchestrator persona install is
+attempted and deferred to "after your first login: make orchestrator" when
+no account exists yet. (4) **The sample project is bundled**
+(`examples/sample-project`, a dependency-free HTTP service without
+`/health`), copied to `<checkout>/sample-project`, made a repository and
+registered, so the first autonomous task never touches a user's repository.
+(5) **`local-ezai init` is the wizard of FIRST_RUN_EXPERIENCE §3 in its
+fallback role:** hardware check, the recommended set per group from the
+catalog recommender with fit verdicts, each accepted or overridden (a
+catalog id, `hf:` or `gguf:`), written to `.env` as catalog ids — explicit,
+auditable in the generation-1 diff (F10) — then the pipeline; seeds already
+present are respected, invalid ones reported, a bootstrapped platform goes
+straight to setup. (6) **Engine models come from the registry**, so `make
+up*` no longer forces the legacy chat-model download and fetches only the
+embedding model when missing (the same script); `download-gpu` stays as the
+legacy path. (7) The CLI's platform context reads an asserted class from
+the platform's `.env` when the environment does not carry it (a shell
+instead of make) — the PR-21 decision "installer and CLI agree" completed.
+**Deferred to PR-23 (→ Accepted):** the offline bundle (`install.sh
+--offline`), the scripted F1–F11 acceptance suite, onboarding under Browser
+QA. A first-run card in the Admin Center waits for a contract operation that
+carries the report (parity or absence).
+**PR-23 slice (2026-09-09) — the offline bundle, the acceptance suite, the
+card in the console; P5 close → Accepted:** (1) **The air-gapped first run
+is the same wizard with the fetches replaced by a directory.** `local-ezai
+bundle create <dir>` on a connected, bootstrapped host saves what a first
+run fetches — every compose image (`docker save`), the registry's GGUF
+artifacts and the hub cache the engine and the embedding server mount —
+with a manifest of the seeds (GGUF seeds carry a `{weights}` placeholder),
+the images and the checksums. `install.sh --offline <dir>` consumes it after
+`.env` is written: images loaded, weights placed where the runtime
+descriptors mount them (checksums verified, present files skipped), the
+seeds written to `.env` pointing at the local files, `EZAI_OFFLINE=1`
+stamped, no review stop (the bundle's seeds are the operator's decision).
+In offline mode the pipeline verifies the images are present instead of
+pulling or building, and the bootstrap's fetchers refuse the network with
+the fix named — present, verified weights are reused, anything else fails
+loudly (F6: same steps, no egress). The bundle is a directory; transport is
+`tar`. (2) **F1–F11 are scripted** (`agentd/tests/acceptance/`, `make
+swe-accept`): one offline test per criterion over the PR-22 harness — F1 a
+fresh accelerator host to smoke green, F2 exactly one hand-edited file
+once, F3 the low-power class through the same wizard with a smaller set,
+F4 an abort at every step resumable and never half-configured (no
+generation, or exactly one, rendered and stamped), F5 the re-run repairs and
+wipes nothing, F6 the bundle with no egress, F7 zero prompts on a fully
+specified `.env`, F8 fixes before any download, F9 `auto` per group with
+the verdict shown, F10 the generation-1 diff equal to the seeds, F11 a
+legacy `.env` migrated without user action. F1's thirty minutes is a host
+measurement (the P6 soak runbook); the suite times the platform's own work
+with the downloads excluded. (3) **The suite found a defect and this slice
+fixes it:** the PR-7 bootstrap deduplicated seeds by their reference text,
+so three `auto` seeds became one model for every group; `auto` is now the
+recommender's answer per group, and a recommendation two groups share is
+installed once. (4) **Onboarding under Browser QA, in the console.** The
+contract grows additively to **1.2.0** with `GET /v1/first-run`
+(`first_run_report`, read-only) serving the report `local-ezai setup`
+wrote; the Admin Center Overview shows the "Platform ready" card (groups →
+models, the smoke tally, Start chatting · Try the Orchestrator · Models &
+routing) while a report exists — an older daemon shows no card — and the
+journey suite's sixth workflow drives it in a real Chromium: the item PR-22
+deferred.
+**As built, PR-21..23 — the decision as it stands:** the five-step contract
+of FINAL_FIRST_RUN_EXPERIENCE holds end to end. `install.sh` detects or
+asserts the class, generates or repairs `.env` with minted secrets, stops
+once for the human's edit, and validates the seeds with every fix before
+any download; `local-ezai setup` bootstraps, fetches images, starts,
+waits, smoke-tests and reports, shows the card and installs the persona —
+both behind `make setup`, with `init` as the fallback when seeds are
+missing and the offline bundle for air-gapped hosts; every step is
+idempotent; the eleven acceptance criteria are scripted. Host Python and
+Docker remain the two prerequisites; the system-package script is `make
+setup-system`. Deferred beyond P5: a one-file bundle format, bundling the
+Python environment, the OpenWebUI side under Browser QA (not in CI), F1's
+wall clock (P6 soak).

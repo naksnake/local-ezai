@@ -65,11 +65,12 @@ def evaluate_models(
     llm: LLMClient | None = None,
 ) -> ModelEvalReport:
     """Probe every routed role; persist results into <repo>/.agent/."""
-    from agentd.model_registry import apply_model_registry
+    from agentd.routing import effective_routing
     from agentd.runner import resolve_origin_root
 
     repo = Path(repo).resolve()
-    config = apply_model_registry(config, resolve_origin_root(repo))
+    # the same three routing layers a run resolves (aliases < platform < repo)
+    config, _ = effective_routing(config, resolve_origin_root(repo), project=repo)
     client = llm or build_llm(config.llm)
 
     results: list[ModelProbeResult] = []
@@ -108,6 +109,9 @@ def evaluate_models(
     # Trend data (Phase H6): fold the previous evaluation into a bounded
     # history so successive runs expose model-performance drift.
     report.history = _rolled_history(out)
+    # Per-model lifecycle benchmarks (PR-4) live in the same file and are
+    # owned by the lifecycle manager — carry them forward untouched.
+    report.models = _previous(out).get("models", {}) or {}
     out.write_text(json.dumps(report.model_dump(), indent=2) + "\n",
                    encoding="utf-8")
     log.info("benchmarks written to %s", out)
@@ -117,11 +121,18 @@ def evaluate_models(
 _HISTORY_CAP = 20
 
 
+def _previous(benchmarks_path: Path) -> dict:
+    try:
+        data = json.loads(benchmarks_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 def _rolled_history(benchmarks_path: Path) -> list[dict]:
     """Previous file's history + a compact summary of its own evaluation."""
-    try:
-        previous = json.loads(benchmarks_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    previous = _previous(benchmarks_path)
+    if not previous.get("results") and not previous.get("history"):
         return []
     summary = {
         "evaluated_at": previous.get("evaluated_at", ""),

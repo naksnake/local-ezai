@@ -22,7 +22,7 @@ tests, self-reviews, and delivers a branch/PR — entirely on local hardware.
 | M5 | Code intelligence & memory | P5 | 🟡 mostly — project memory (ADR-017) + **semantic code intelligence** (ADR-023: ast/Tree-sitter symbol index, import graph, `.agent/code-index/`, planner repo-map injection, `code_symbols` tool). Qdrant-backed similarity retrieval still open (N3′) | hybrid code retrieval live; tokens/run down vs M4; curator memory proposal merged via review |
 | M6 | Interfaces & A3 delivery | P6 | 🟡 mostly — production CLI `local-ezai` (ADR-018), **autonomous sprint execution** (ADR-019), and **PR/forge delivery** (ADR-020: forge none/gh/api, evolution PRs) shipped. Web console + chat-ops MCP tools still open | console gate approvals; chat-ops tools; PR opened on LAN forge at A3 |
 | M6.5 | Self-sustainability & governance | P7 | ✅ done (2026-08-17) — ADR-020: model registry + fallback routing + `evaluate-models` benchmarking; Documentation Agent; Evolution Agent + `evolve` pipeline (human-approval terminal); root `.agentd.yaml` self-hosting; 8 production guides; 267 offline tests. Final readiness review: [docs/FINAL_RELEASE_REPORT.md](../docs/FINAL_RELEASE_REPORT.md) | bootstrap exit viable: Human → Roadmap → Local-EZAI loop runs end-to-end |
-| M7 | v1.0 hardened release | P7 | ⬜ not started | security sign-off; 72 h soak on N97 + GPU; `v1.0.0` |
+| M7 | v1.0 hardened release | P7 | 🟡 release train delivered (PR-26, 2026-09-09): gates green (`make release-gate`), version 1.0.0, DoD checked in [docs/V1_RELEASE_REPORT.md](../docs/V1_RELEASE_REPORT.md); awaiting the 72 h soak on both host classes ([docs/SOAK_RUNBOOK.md](../docs/SOAK_RUNBOOK.md)) and the human sign-off → tag | security sign-off; 72 h soak on the low-power + accelerator classes; `v1.0.0` |
 
 ## Sequencing rules
 
@@ -49,7 +49,119 @@ installation. Execution phases **P1–P6** with exit criteria:
 [docs/V1_IMPLEMENTATION_PLAN.md](../docs/V1_IMPLEMENTATION_PLAN.md);
 product definition: [docs/TARGET_PRODUCT_V1.md](../docs/TARGET_PRODUCT_V1.md).
 P4 (web console) supersedes N4; N5′/N6′ land post-V1 on the P2 governance
-queue. Status: 📐 architecture only — no implementation started.
+queue. Status: ✅ **P1 done (2026-09-08, ADR-027 Accepted)** — PR-1
+(Registry v2 store + generations), PR-2 (capability vector/classes/fit),
+PR-3 (runtime descriptors + renderer, `engine` alias), PR-4 (lifecycle
+install / validate / benchmark, catalog + recommender), PR-5 (activate /
+upgrade / rollback / retire + governance queue, atomic apply with
+self-rollback), PR-6 (CLI namespaces, role aliases in code — CF-3 closed),
+PR-7 (bootstrap core + `.env` seed consumption + cutover) implemented
+([docs/prs/](../docs/prs/)). ✅ **P2 done (2026-09-09, ADR-028 Accepted)** —
+PR-8 (`ezaid` service skeleton: FastAPI app behind `agentd[control]`,
+service-token auth + forwarded identity, single audit log, `/v1/health`
+aggregation, OpenAPI contract artifact, opt-in compose overlay) and PR-9
+(lifecycle + governance + project endpoints over shared operations with
+CLI/API parity, idempotency keys, one error vocabulary for CLI and API,
+audited mutations) and PR-10 (run endpoints: async run registry over the
+existing pipelines — start/status/report/journal/cancel for
+run/fix/sprint/evolve/plan, cooperative cancellation, concurrency limits,
+registered projects only, never a push) and PR-11 (CLI connected mode:
+liveness auto-detect, the management verbs through the API with token +
+forwarded identity + idempotency keys, same text/JSON/errors in both
+transports, fail-fast on a requested-but-unreachable daemon, host-only
+`bootstrap`/`up`/`down`) and PR-12 (phase close: real-process
+kill-the-daemon test, two concurrent runs through the API, contract frozen
+at 1.0.0, deployment shapes `make control-up` / `make control-serve`)
+implemented. ✅ **P3 closed (ADR-029 Accepted)** — PR-13
+(`swe-server`: vendored MCP tool server behind mcpo, start + inspect only,
+thin over the frozen contract, mcpo registration), PR-14 (Orchestrator
+persona: role + alias proven as data, system preset
+`config/prompts/orchestrator.md`, tool server pre-registered in OpenWebUI,
+`make orchestrator` installs the persona) and PR-15 (boundary hardening:
+per-client policy in the control plane — the chat-ops client may read and
+start runs only, every other mutation `client_forbidden` + audited;
+negative tests through the real MCP protocol and the API; the
+prompt-injection drill with a hostile scripted model — push, workspace
+escapes and unlisted shell denied, local commit never pushed, registry and
+queue untouched; the chat-stack byte-identical baseline; `make swe-drill`)
+implemented. ✅ **P4 closed (ADR-030 Accepted)** — PR-16 (Admin
+Center opens on the monitor: `monitor/admin_center.py` as a server-side
+control-plane client — token never in the browser, monitor login forwarded
+as the audited human — with the Overview page (health, generation, roles →
+models, pending queue, recent runs) and the Runs page + deep-linkable run
+detail (report by kind, journal, cancel for admins); a daemon that is down
+is a page state; real-Chromium smoke) and PR-17 (Models page: role-first
+group panels in resolution order, fit badges from the platform recommender,
+catalog verdicts, generations, admin mutations install / benchmark /
+activate / upgrade / retire / uninstall / rollback through the daemon with
+approvals where a serving role changes; Routing page: the explain view;
+Runtime page: engine slot + per-runtime switch pre-check, no switch button
+because the contract has no runtime verb) and PR-18 (Governance page:
+pending queue + history with decisions; the approval view at
+`/governance/<id>` — diff and affected roles, host benchmarks, fit,
+capability report, runtime flag, proposer, reversibility, Reject with
+required reason / Approve & apply through the daemon as the monitor login;
+Overview/Models link to it) and PR-19 (Projects, Sprints, Evolution and
+Memory pages: the allowlist with each project's work; sprint runs with
+waves, task results and the dependency graph as mermaid source; evolution
+cycles with proposal, benchmarks and bundle; a per-project memory browser
+with curated adds — backed by the additive **contract 1.1.0** memory
+operations; console starts for sprints and evolution cycles, journeys 3–4)
+and PR-20 (identity handoff: the Basic login, else a proxy-set trusted
+header with a shared secret, else the OpenWebUI session cookie validated
+against the WebUI — opt-in, the audit trail names the person; inline
+confirmations instead of native dialogs; the Overview banner rolls back the
+last change in three clicks; the five zero-CLI journeys as one Browser-QA
+workflow file run by the platform's own harness in real Chromium against a
+launcher that serves the monitor over an in-process daemon; P4 exit
+criterion 1 proven on both surfaces) implemented. ✅ **P5 closed
+(ADR-031 Accepted)** — PR-21 (`install.sh` → `python -m agentd.installer`:
+hardware detected with the platform's own capability code or asserted with
+`--profile` / `--class` and recorded in `.env`; a fresh `.env` from the
+example with the seven secrets minted and `AI_RUNTIME` chosen from the
+descriptors' `default_for_classes` data; repair of an existing `.env` —
+backup, user values untouched, only missing or placeholder secrets minted,
+idempotent, nothing else on disk touched; the bootstrap's F8 validation with
+a class-aware hint before any download; the one review-edit stop; `make
+install`) and PR-22 (`make setup` = `install.sh` + `local-ezai setup`: the
+bootstrap when no registry exists, images with the rendered engine
+override, the embedding model, `up -d`, wait-ready by the runtime
+descriptor's `ready` verb and the health table on host ports, smoke — chat
+turn required, RAG / `plan_only` on the bundled sample project /
+evaluate-models advisory —, `config/first-run/report.{json,md}`, the
+"Platform ready" card as an OpenWebUI banner with automatic rollback, the
+persona attempted; `make setup-system` for the system packages;
+`setup-gpu|cpu|n97` assert their profile; `local-ezai init` proposes the
+catalog's recommended set when the seeds are missing) and PR-23 (offline
+bundle: `local-ezai bundle create` on a connected host, `install.sh
+--offline` + `make setup-offline` on the air-gapped one, fetchers that refuse
+the network; the F1–F11 acceptance suite, `make swe-accept`, which surfaced
+and fixed the bootstrap's `auto` dedupe; contract 1.2.0 `first_run_report`
+and the Platform-ready card on the Overview under Browser QA) implemented.
+🟡 **P6 open (the release train)** — PR-24 (parity harness as the release
+gate: `agentd/tests/parity/`, `make swe-parity` — every CLI_AND_WEBUI §3
+row on three identical worlds, CLI-direct · CLI-connected · the API as the
+console, equal response bodies, declarative state and operation audit with
+the transports' annotations normalised explicitly; absent cells asserted
+absent; the chat ceiling per row; the §3 table as a tripwire; `make
+release-gate`; acceptance + parity steps on the manual CI workflow; fixed
+`model rollback --json`) and PR-25 (agnosticism gates: `agentd/tests/gates/`,
+`make swe-gates` — the `mockengine` third-runtime drill from a fixture
+descriptor and an OpenAI-API stub, end to end through the CLI with no shipped
+code naming the runtime; the H1 word audit with its allowances as data; H2
+same seeds on two classes, H3 the 7B Q4 fit on four vectors, H4 `--profile
+n97` ≡ `--class cpu-low` end to end; fixed the resolver's default runtime
+for a source ignoring the active slot; residual: the health table's engine
+probe path) and PR-26 (the release train: the five guides refreshed for V1,
+`docs/RELEASE_NOTES.md` with the v1.0.0 entry, `docs/SOAK_RUNBOOK.md` +
+`scripts/soak.sh` / `make soak`, `docs/V1_RELEASE_REPORT.md` with the DoD
+checked item by item, version 1.0.0) implemented. **The V1 plan's
+twenty-six PRs are delivered** and await human merge on
+`claude/next-ready-pr-bnq7r3`. No PR is next ready by plan order; what
+remains is human: the 72 h soak on both host classes (SOAK_RUNBOOK), the
+sign-off (V1_RELEASE_REPORT §7), the merge, the `v1.0.0` tag. Post-V1
+candidates: N1′, N3′, N5′, N6′ below and the two PR-25 residuals (the health
+table's engine probe path; a tool-call format for day-2 installs).
 
 **Product review (ADR-026, 2026-09-01):** agnosticism audit passed with
 remediations — roles/groups become the only stable names (role aliases

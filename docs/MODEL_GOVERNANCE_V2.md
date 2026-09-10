@@ -26,6 +26,12 @@ Consequences (remediation R-1/R-6, [V1_PRODUCT_REVIEW.md](V1_PRODUCT_REVIEW.md))
 - LiteLLM serves **role aliases** (`role-chat`, `role-planner`, …);
   agentd defaults bind to aliases — **no model name lives in code**
   (completes ADR-007; fixes CF-3).
+  > **As-built (PR-6):** `agentd/config.py` defaults every role to
+  > `role-<role>` (`ROLE_ALIAS_PREFIX`, `LLM_ROLES`); the renderer emits the
+  > same aliases (PR-3) and the shipped hand-written LiteLLM profiles carry
+  > them as data until the cutover. The `local-ezai model|governance|
+  > project|status|up|down` namespaces (direct mode) are the CLI half of
+  > the two management surfaces (`platform_cli.py`).
 - OpenWebUI's selector leads with role entries; raw names behind an
   advanced toggle ([WEBUI_PRODUCT_STRATEGY.md](WEBUI_PRODUCT_STRATEGY.md) §4).
 - `.env` bootstrap uses **group seeds** (`REASONING_MODEL`, `CODING_MODEL`,
@@ -44,6 +50,25 @@ Consequences (remediation R-1/R-6, [V1_PRODUCT_REVIEW.md](V1_PRODUCT_REVIEW.md))
 | install / benchmark / retire(non-serving) / uninstall(retired) | no (audited) | doesn't change service |
 | rollback to a prior generation | no (audited, notifies) | restores an approved state; incident speed |
 | bootstrap generation 1 | implicit (the human wrote `.env`) | there is no prior state to protect |
+
+> **As-built (PR-5, `agentd/src/agentd/governance.py` +
+> `activation.py`):** the matrix is computed, not declared per verb: a
+> proposal's `requires_approval` is true iff some role's resolution chain
+> changes (`affected_roles`, before → after) or the slot runtime changes;
+> otherwise the queue approves it **by policy** on submission — recorded as
+> a decision by actor `policy`, never silent. Rejections need a reason;
+> decisions are made once. Every transition appends to
+> `config/governance/log.jsonl` (who, when, what, evidence keys). Rollback
+> bypasses the queue, is audited (`generation.rolled_back`) and notifies.
+
+> **As built (PR-18, Admin Center `/governance`):** the approval matrix is
+> what the human sees on the approval view — a request's `affected_roles`
+> (before → after per role) and its `evidence.runtime.switch` flag explain
+> *why* it waits, the evidence block (benchmarks, fit, capability report)
+> explains *whether* to approve, and a policy-approved request is shown as
+> such. The two decisions are the same daemon operations the CLI calls; a
+> rejection needs a reason, decisions are made once — the daemon's rules,
+> shown verbatim.
 
 ## 3. Role contracts (new, closes the loop with agnosticism)
 
@@ -100,6 +125,13 @@ Safeguards (mostly already shipped, now bound to this lane):
 Net effect: the platform notices its own model-quality problems, does the
 research, fills in the paperwork — and a human remains the only one
 holding the pen that signs.
+
+> **As-built (PR-5):** the queue enforces the lane's boundaries as data
+> rules on `ChangeRequest.proposed_by == "evolution"`: benchmark evidence
+> is mandatory on submission ("evidence or silence"), at most one open
+> evolution proposal exists at a time, and such requests are never
+> policy-approved. The lane that *creates* proposals is post-V1 (N6′); the
+> queue format is ready for it.
 
 ## 6. Migration note (from MODEL_ROUTING_DESIGN/MODEL_LIFECYCLE v1 docs)
 

@@ -35,11 +35,19 @@
 
 ## Current service map (existing, unchanged)
 
-openwebui:3000 · litellm:4000 (auto-RAG hook `config/litellm_custom_callbacks.py`)
-· vllm:8000 (engine slot) · embed-server:8001 · qdrant:6333 · searxng:8092
-· mcpo:8200 (filesystem/memory/fetch/qdrant-rag) · monitor:8888 (RBAC).
+openwebui:3000 · litellm:4000 (auto-RAG hook `config/litellm_custom_callbacks.py`;
+routing rendered per model generation into `config/rendered/`)
+· vllm:8000 (engine slot, network alias `engine`; materialization rendered
+per generation) · embed-server:8001 · qdrant:6333 · searxng:8092
+· mcpo:8200 (filesystem/memory/fetch/qdrant-rag + `swe` — the SWE tool
+server, PR-13) · monitor:8888 (RBAC)
+· **ezaid:8010** (V1 control plane, opt-in overlay
+`docker-compose.control.yml` — `make control-up`; bearer
+`EZAI_CONTROL_TOKEN`, contract `docs/api/ezaid-openapi.json`).
 Profiles: GPU (base) / cpu / n97 / n97-igpu via compose overrides with
-`!override` on `deploy`. Config via `.env` (`.env.example` = schema).
+`!override` on `deploy`, plus the rendered engine override on every start.
+Config via `.env` (`.env.example` = schema; model seeds read once by
+`make bootstrap`).
 
 ## Phases 1–7 — shipped (agentd/)
 
@@ -143,9 +151,307 @@ architecture (see [agentd/README.md](../agentd/README.md)):
   `swe-install`, `swe-test`, `swe-lint`, `swe-run`, `swe-plan`. Tests are
   fully offline (ScriptedLLM); CI in `.github/workflows/agentd-ci.yml`.
 
+## Productization P1 — done (ADR-025/026, ADR-027 Accepted; docs/V1_PR_PLAN.md)
+
+Live since the PR-7 cutover: `make bootstrap` consumes the `.env` seeds
+into generation 1, compose mounts the rendered LiteLLM config and every
+`make up*` adds the rendered engine override; day-2 model changes go
+through `local-ezai model …` + the governance queue. Modules:
+
+- **Registry v2** (`registry_v2.py`, PR-1): platform-scope models ×
+  lifecycle states, ordered groups, roles with pins + `requires`
+  contracts; deterministic resolution; immutable generations; reference
+  default set as packaged data (`defaults/reference_registry.yaml` — the
+  CLAUDE.md map; golden-tested against `.agent/model_registry.yaml`).
+- **Capability** (`capability.py`, PR-2): detected vector → class
+  (`accel-large|accel-small|cpu-standard|cpu-low`; legacy profiles are
+  preset aliases), pure advisory `fit()`.
+- **Runtime descriptors + renderer** (`runtime_descriptor.py`,
+  `render.py`, `config/providers/{llamacpp,vllm}.yaml`, PR-3): runtimes as
+  data (six-verb contract, image table per accelerator kind, tuning per
+  class); renderer fills templates → `litellm-config.yaml` (model +
+  `role-*` aliases → `engine:8000`), `docker-compose.engine.yml`,
+  `role_map.yaml` (ADR-020 shape), capability report, router preset;
+  render-time capability negotiation (primaries + fallbacks); one-slot
+  rule; hash manifest + drift refusal under `config/rendered/` (parallel
+  path until the PR-7 cutover). The compose slot service carries the
+  neutral network alias **`engine`** (ADR-026 R-3); `vllm:8000` still
+  works.
+- **Lifecycle install / validate / benchmark** (`lifecycle.py`,
+  `fetch.py`, `catalog.py`, `defaults/catalog.yaml`, PR-4): source
+  resolver (`hf:` · `gguf:` · catalog id · `auto`), resumable checksummed
+  GGUF fetch + delegated hub download into the descriptor's weights dir,
+  state machine as data, `validate_model`/`bench` verbs run against a
+  **side-loaded** engine (standalone compose project from the PR-3
+  materialization, ephemeral port, always torn down), tokens/sec on the
+  entry + per-model trend series in `.agent/model_benchmarks.json`
+  (coexists with `evaluate-models`), catalog as pluggable data with a
+  `fit()`-driven recommender. No CLI yet (PR-6).
+- **Activation + governance** (`governance.py`, `activation.py`, PR-5):
+  file-backed change-request queue + append-only audit log under
+  `config/governance/`; proposals (`activate`, `upgrade`) carry diff,
+  affected roles, evidence and are validated by a dry render; computed
+  approval matrix (policy-approved when no role chain/slot runtime
+  changes); bounded evolution lane; **atomic apply**: dry render → save
+  generation → write artifacts → reload changed → health → self-rollback
+  as a new generation on any failure; rollback without approval (audited,
+  notifies); reconcile for half-applied states; `retire`/`uninstall`
+  guards. Reload/health are pluggable seams, render-only until PR-7.
+- **Role aliases + platform CLI** (`routing.py`, `platform_cli.py`,
+  PR-6): agentd defaults bind to `role-<role>` aliases (no model name in
+  code; the hand-written LiteLLM profiles serve the aliases as data);
+  routing layers aliases < platform role map < per-repo ADR-020 registry
+  (repo pin = exact chain), platform found via `platform.config_dir` or
+  walk-up from the project; `local-ezai model|governance|project|status|
+  up|down` namespaces in direct mode over the PR-3/4/5 modules.
+- **Bootstrap + cutover** (`bootstrap.py`, `defaults/legacy_seeds.yaml`,
+  PR-7): `.env` seeds read once (legacy families migrated as data, served
+  name kept), F8 validation before any download, install → benchmark →
+  the one implicit approval → apply → `EZAI_SEEDS_CONSUMED` stamp;
+  `config/rendered/` is the live LiteLLM + engine config; the hand-written
+  LiteLLM variants are test fixtures.
+- **Control plane skeleton** (`control/`, `audit.py`, PR-8, ADR-028
+  Proposed): `ezaid` — FastAPI behind the `agentd[control]` extra (direct
+  mode never imports it): bearer service token + forwarded identity
+  (`X-EZAI-User`/`X-EZAI-Client` → audit actor), the **single audit log**
+  shared with the governance queue, one error envelope, `/v1/health`
+  aggregation (service table as data, engine via the `engine` alias),
+  `/v1/whoami`, `/v1/audit`, versioned OpenAPI artifact
+  `docs/api/ezaid-openapi.json` (contract-surface tripwire); opt-in
+  compose overlay + `make control-*`; `local-ezai status` probes it.
+- **Lifecycle + governance endpoints** (`control/api.py`, `control/deps.py`,
+  `control/idempotency.py`, `platform_errors.py`, PR-9): the PR-6 verbs'
+  orchestration became shared operations in `platform_cli` (CLI formats,
+  API serves — parity tested); 19 `/v1` operations (models, generations,
+  roles, catalog, governance, projects) with the forwarded identity as
+  actor; `Idempotency-Key` replay/conflict; one error vocabulary
+  (`classify()` → `{code, message, fix}` + status/exit) printed by the CLI
+  in `--json` and returned by the API; mutating calls audited as
+  `api.<operationId>`; reload refused where the daemon cannot run compose.
+- **Run endpoints** (`control/runs.py`, `control/runs_api.py`, PR-10): the
+  async run registry — `POST /v1/runs` (202) starts `run`/`fix`/`sprint`/
+  `evolve`/`plan` jobs through the existing pipelines on a bounded worker
+  pool; status with journal progress, report, bounded journal excerpt,
+  cancel (queued now; running at the next model call via a wrapped model
+  client — no core-graph change); records under `config/control/runs/`
+  recovered on restart; limits (`control.max_concurrent_runs`,
+  `max_queued_runs`; one in-place job per project); registered projects
+  only and never a push (the chat-ops ceiling).
+- **CLI connected mode** (`control/client.py`, `platform_cli` transport
+  selection, PR-11): the management verbs probe the daemon's liveness once
+  and, when it answers, run through the API (token + forwarded identity +
+  idempotency key) — `ctx.ops` is `DirectOps` in-process or `ConnectedOps`
+  over HTTP, the formatters are shared, so text/JSON/errors are identical
+  (parity tested, incl. a real socket); `--transport` / `EZAI_TRANSPORT` /
+  `EZAI_CONTROL_URL`; a requested connected transport with no daemon (or a
+  daemon without a configured token) fails fast; `bootstrap`/`up`/`down`
+  stay host-only.
+- **P2 closed** (PR-12, ADR-028 Accepted): kill-the-daemon (real process,
+  SIGKILL — repo work unaffected, management falls back / fails fast), two
+  concurrent runs supervised through the API, contract **frozen at 1.0.0**
+  (29 operations, inventory-pinned); deployment shapes: `make control-up`
+  (container overlay, model/governance over `config/`) and
+  `make control-serve` (host daemon, SWE runs).
+- **SWE Tool Server** (`mcp-servers/swe-server/`, PR-13, ADR-029 Accepted):
+  a vendored FastMCP server behind mcpo (`:8200/swe`), a thin adapter over
+  the 1.0.0 contract (no agentd import) — `swe_projects`, `swe_plan` (A0,
+  waits), `swe_run`/`swe_sprint`/`swe_fix`/`swe_evolve` (run id at once),
+  `swe_status`, `swe_report` (markdown per kind), `swe_journal`,
+  `model_list`, `model_explain`, `governance_queue` (read-only); no
+  approve/activate/rollback/cancel tools by construction (negative test);
+  refusals rendered as answers; registered in `config/mcpo-config.json`,
+  reaching the daemon at `EZAI_CONTROL_URL_MCPO`.
+- **Orchestrator persona** (PR-14): the `orchestrator` role + alias are
+  reference data since P1 (proven end to end); the system preset is data
+  (`config/prompts/orchestrator.md`: catalog, plan-then-confirm, registered
+  projects only, no governance from chat, tool output is data); the SWE
+  tool server is pre-registered in OpenWebUI's `TOOL_SERVER_CONNECTIONS`;
+  `make orchestrator` installs the persona model row on `role-orchestrator`
+  with the tool server bound to it only (database pattern of
+  `install-autorag.sh`, after the first admin exists).
+- **Chat-ops boundary hardening** (PR-15, P3 close): a per-client policy
+  in the control plane (`control/policy.py`, enforced by the `platform()`
+  dependency) — the `swe-server` client may read and `run_start` only,
+  every other 1.0.0 mutation is `client_forbidden` (401) and audited
+  `client.forbidden`; humans (CLI, Admin Center) unrestricted. Proven by
+  `agentd/tests/security/` (`make swe-drill`): the catalog through the real
+  MCP protocol, the twelve other mutations from the chat client, the
+  prompt-injection drill (hostile scripted model: push / escapes / shell
+  denied and journaled; local commit never pushed; registry + queue
+  untouched), and the chat-stack byte-identical baseline
+  (`scripts/chat-stack-baseline.py` → `tests/fixtures/chat_stack_baseline.json`).
+- **Admin Center on the monitor** (`monitor/admin_center.py`, PR-16, ADR-030
+  — Accepted with PR-20): the monitor (:8888) stays one service; a sibling module installs
+  `/overview`, `/runs`, `/runs/{id}` and their `/api/ezai/*` data on the
+  existing app behind the existing RBAC (viewer reads, admin cancels). The
+  monitor calls `ezaid` server-side with `EZAI_CONTROL_TOKEN`, forwards the
+  login as `X-EZAI-User` (`X-EZAI-Client: admin-center`), aggregates one
+  request per page (health + platform + role explanations + pending queue +
+  recent runs; record + report + journal tail), renders a daemon that is
+  down as a page state, and never lets the browser reach the daemon. `/`
+  (health + knowledge) unchanged apart from header + nav. Later slices:
+  Governance (PR-18), Sprints/Evolution/Memory/Projects (PR-19), SSO +
+  Browser-QA journeys (PR-20).
+- **Models / Routing / Runtime pages** (PR-17): `/models` — group panels in
+  resolution order (unpinned role's chain, then the group's other members),
+  fit badges only from `GET /v1/catalog/recommendations` (a user source
+  shows "no verdict" + measured tok/s), catalog with per-variant verdicts,
+  generations, queue; admin mutations install · benchmark · activate ·
+  upgrade · retire · uninstall · rollback proxied to the daemon (same-origin
+  header, daemon refusals passed through). `/routing` — the MODEL_ROUTING
+  §7 explain view (source, chain, reasons, contract, per-model checks,
+  generation; undefined roles listed). `/runtime` — the engine slot and a
+  per-runtime switch pre-check (blockers = active models without a variant,
+  candidates per group with fit + contract verdicts); a switch is an
+  activation flagged `runtime.switch`, no runtime verb exists. Snapshot
+  enrichment: per-model `groups` / `context` / `format` / `license`
+  (contract artifact unchanged).
+- **Governance page** (PR-18): `/governance` — pending queue + history with
+  a status filter, every row carrying the decision (by / when / reason /
+  resulting generation); `/governance/{id}` — the approval view: diff +
+  affected roles before → after, evidence (host benchmarks, fit of newly
+  active models, capability report, runtime before → after + switch flag,
+  class), proposed by, reversibility (the generation a rollback restores),
+  Reject (reason required) / Approve & apply → `POST /v1/governance/{id}/
+  approve|reject` as `admin via admin-center` (same-origin header; daemon
+  refusals verbatim: reason required, decisions made once). The proposed
+  registry dump stays on the daemon. Only activation/upgrade requests
+  enter the queue today — the page says so.
+- **Projects · Sprints · Evolution · Memory pages** (PR-19): `/projects`
+  (the allowlist with per-project work; register / remove via `POST|DELETE
+  /v1/projects`), `/sprints` and `/evolution` (views over `GET
+  /v1/runs?kind=…` + reports; the dependency graph as mermaid source from
+  the plan; console starts of **sprint and evolve only** via `POST
+  /v1/runs` — the parity matrix's amendment for journeys 3–4), `/memory`
+  (browse by kind / search, remember a curated rule / style / decision).
+  **Contract 1.1.0 (additive):** `GET|POST /v1/projects/{name}/memory`
+  (`project_memory`, `project_memory_add`) over `agentd.memory.MemoryStore`
+  in the registered project's `.agent/`; the 29 frozen 1.0.0 operations
+  unchanged; chat may read memory, never write it (PR-15 client policy).
+- **Identity handoff + the journey suite** (PR-20, P4 close → ADR-030
+  Accepted): `monitor.py` resolves an `Identity` (role + person) from, in
+  order, the Basic login → a trusted proxy header
+  (`MONITOR_SSO_TRUSTED_HEADER`, only with `X-EZAI-Proxy-Secret` =
+  `MONITOR_SSO_TRUSTED_SECRET`; `MONITOR_SSO_ADMINS` are admins) → the
+  OpenWebUI `token` cookie validated at `MONITOR_SSO_OPENWEBUI_URL`
+  `/api/v1/auths/` (admin → admin, user → viewer, pending → not signed in;
+  60 s cache) → the Basic challenge. Opt-in; dashboard, bearer and
+  `MONITOR_AUTH=false` unchanged; the Admin Center forwards the person as
+  `X-EZAI-User`. Inline confirmations replace native dialogs (the Browser
+  QA harness has no dialog step); the Overview banner rolls back the last
+  generation (`/generations?limit=2` → the PR-17 rollback route).
+  `agentd/examples/browser-qa.admin-center.yaml` (five workflows, seven
+  screenshots) + `agentd/tests/fixtures/admin_center_app.py` (the monitor
+  over an in-process daemon on a scratch platform, seams faked) run under
+  `BrowserQAHarness` as a CI test. Compose: four `MONITOR_SSO_*` keys on the
+  monitor, additive to the chat-stack baseline.
+- **Setup pipeline, steps 4–8 of the first run + `init`**
+  (`agentd/src/agentd/setup_pipeline.py`, PR-22, ADR-031): `make setup` =
+  `install.sh` → `local-ezai setup` (host-only verb). `SetupPipeline`: the
+  PR-7 bootstrap via `platform_cli.run_bootstrap` when no registry exists →
+  `docker compose pull <image services>` + `build` with `compose_files(…,
+  rendered=True)` → `scripts/download-embed.sh` → `up -d` → wait-ready (the
+  active runtime descriptor's `verbs.ready` path/timeout on the host port,
+  then `control/health.DEFAULT_TARGETS` remapped to host ports through
+  `HOST_PORTS`) → smoke (`chat` on the chat role alias, required; `RAG` via
+  `scripts/embed-documents.sh` + a sample document; `swe_plan` = `plan_only`
+  on the bundled `examples/sample-project` copied, git-initialised and
+  registered; `models` = `evaluate_models`; the last three advisory) →
+  report (`config/first-run/report.{json,md}`, the WebUI banner as
+  `WEBUI_BANNERS` in the optional compose env_file
+  `config/first-run/openwebui.env`, recreate + probe + rollback, the persona
+  attempt). Seams: runner, `Http`, `plan_fn`, `evaluate_fn`, sleep/clock,
+  environ. `run_init`: hardware check → `recommended_set` (catalog
+  recommender per group with role contracts) → accept/override → seeds as
+  catalog ids via `EnvText` → the pipeline. `build_context` also reads an
+  asserted class from the platform's `.env`. Makefile: `setup`,
+  `setup-system`, `setup-*` re-pointed, `up*` → `download-embed.sh`, `embed`
+  → `embed-documents.sh`; baseline treats the openwebui `env_file` as
+  additive.
+- **Offline bundle + acceptance suite + the console card** (PR-23, P5 close
+  → ADR-031 Accepted): `agentd/bundle.py` — `create_bundle` (compose
+  `config --images` → `docker save`, the registry's GGUF artifacts, the hub
+  cache `models--*`, `bundle.json` with `{weights}`-placeholder seeds and
+  checksums) / `consume_bundle` (`docker load`, weights into the
+  descriptors' mount dirs via `gguf_weights_dir` + the hub cache, seeds +
+  `EZAI_OFFLINE=1` through `EnvText`); `lifecycle.offline_fetcher` refuses
+  the network (`OFFLINE_KEY`), `run_bootstrap(offline=…)` and the
+  pipeline's images step honor it; `install.sh --offline`, `local-ezai
+  bundle create|consume`, `make bundle` / `setup-offline`.
+  `tests/acceptance/` (`make swe-accept`): F1–F11 over the PR-22 harness
+  (`BundleDocker`, `PretendFetcherFactory`). Contract **1.2.0**: `GET
+  /v1/first-run` (`first_run_report`; `platform_cli.first_run_report` reads
+  `config/first-run/report.json`); the Overview's `first_run` → the
+  `#first-run` card; journey `j0-first-run-card`; the launcher writes a
+  report. Bootstrap fix: `auto` seeds dedupe per group (`_recommended_for`).
+- **Parity harness, the P6 release gate** (PR-24, ADR-026 P6 slice):
+  `agentd/tests/parity/` — `harness.py` (`Arena` wires the seams once and
+  routes every connected call to the world its URL names; `make_world`
+  builds one identical bootstrapped world per surface: platform + sample
+  repository + local weights + the daemon in-process behind the CLI's
+  `client_factory` seam; `Step` = CLI argv ↔ API call; `scrub` normalises
+  `DROP_KEYS` / `PATTERNS` and each world's paths; `state()` = registry ·
+  rendered generation · generations · queue · projects · memory; `audit()`
+  splits operation events from the daemon-side `api.*` / `run.*` /
+  `control.*` / `auth.*`) and `test_parity_matrix.py` (one test per
+  CLI_AND_WEBUI §3 row, `CHAT_CEILING` and `ROW_TESTS` as data, tripwires on
+  the doc table, the Make/CI wiring and the normaliser). `make swe-parity`,
+  `make release-gate`; acceptance + parity steps on the manual CI workflow.
+  Fix: `cmd_model_rollback` passes `notify` in text mode only, so `--json`
+  is one document.
+- **Agnosticism gates** (PR-25, ADR-026 P6 slice): `agentd/tests/gates/` —
+  `test_third_runtime_drill.py` (`MockEngine`: a `ThreadingHTTPServer`
+  answering the fixture's readiness path and `/v1/chat/completions` with a
+  usage block and the fixture's timing keys; the `drill` fixture copies
+  `tests/fixtures/providers/mockengine.yaml` into a checkout, routes every
+  side-load to the stub through `lifecycle.free_port`, builds the real
+  `SideLoadValidator` over `FakeRunner` with a fake clock, and drives
+  bootstrap → install → benchmark → activate → approve → rollback → pipeline
+  wait-ready → `up --rendered` via `main()`; tripwire: the runtime id is in
+  no shipped file), `test_h1_word_audit.py` (`TOKENS`, `SCOPE`, `SANCTIONED`,
+  `ALLOWED` as data; violations, stale allowances, token edge cases),
+  `test_h2_h3_h4_fixtures.py` (over the acceptance harness: two-class
+  pipeline run with `recommended_set` picks; `fit()` on four fixture vectors
+  + edges; `--profile n97` vs `--class cpu-low` byte-identical artifacts).
+  `make swe-gates`, `release-gate` extended, CI step. Fix:
+  `lifecycle.slot_runtime_for` — `resolve_target` prefers the active slot's
+  runtime for a `gguf:`/`hf:` source when it serves the format.
+- **Release train** (PR-26, ADR-026 P6 slice): `scripts/soak.sh` (`make
+  soak HOURS=72 [SOAK_ARGS="--dry-run"]`; schedule constants `EVERY_*` in
+  ticks, `actions_at`, `step` records `{ts, tick, action, ok, seconds,
+  detail}` to `config/soak/<stamp>/log.jsonl`, a Python summary writes
+  `results.md`; `do_churn` = `model benchmark <chat primary>` → `model
+  rollback`), `docs/SOAK_RUNBOOK.md`, `docs/RELEASE_NOTES.md`,
+  `docs/V1_RELEASE_REPORT.md`, the five guides refreshed, version 1.0.0 in
+  `agentd/src/agentd/__init__.py` and `agentd/pyproject.toml`;
+  `tests/integration/test_release_train.py` pins the version everywhere, the
+  release-notes order, the DoD coverage of TARGET_PRODUCT_V1 §8, the soak
+  schedule (dry run), the guides' anchors and the absence of a machine tag.
+- **Installer, steps 1–3 of the first run** (`install.sh` →
+  `agentd/src/agentd/installer.py`, PR-21, ADR-031 Proposed): preflight
+  (python3 ≥ 3.10, the agentd venv via `make swe-install`, Docker present or
+  the fix printed) → detect (`capability.detect_vector` / `classify`) or
+  assert (`--profile` via `PROFILE_PRESETS`, `--class`; written as
+  `EZAI_CAPABILITY_CLASS`, honored by `platform_cli.build_context`) → `.env`:
+  fresh from `.env.example` with the seven placeholder secrets minted
+  (`mint()`), `AI_RUNTIME` uncommented from the descriptors'
+  `default_for_classes` (new optional field; candidates = descriptors with
+  an image for the accelerator kind), the hardware recorded as a stable
+  comment block; or repaired (`.env.bak.<ts>` backup, `EnvText` replaces /
+  uncomments / appends — user lines untouched, only missing or placeholder
+  secrets minted, runtime only when unset and seeds not consumed,
+  idempotent) → `bootstrap.read_seeds` + `validate_seeds` (F8) + a
+  class-aware hint, nothing fetched → the review-edit stop (`$VISUAL` /
+  `$EDITOR` on a TTY; exit 3 without one; `--yes`; `--check`). Exit codes
+  0/1/2/3. `make install`; `scripts/check-ports.sh` reused. The module names
+  no runtime, model or vendor; the installer never picks models.
+
 ## Target additions (control/execution/knowledge planes)
 
 - **agentd** — agent runtime + workflow engine + permission engine (FastAPI).
+  As built (ADR-028, PR-8): the served control plane is `ezaid`
+  (`agentd.control`), an opt-in overlay over the same package; the runtime
+  itself stays an in-process library behind the CLI.
 - **toolgw** — tool gateway: registry, risk tiers T0–T4, per-run scoping,
   audit (mcpo stays for chat).
 - **sandboxd** — per-run runner containers + git worktrees
@@ -156,8 +462,10 @@ architecture (see [agentd/README.md](../agentd/README.md)):
 - **memoryd** — layered memory: working / episodic (SQLite+JSONL journal) /
   semantic (Qdrant) / procedural (CLAUDE.md-style files, T3-gated writes).
 - **ezai CLI** + web console page + chat-ops MCP tools.
-- Model **role aliases** in LiteLLM: `swe-planner / swe-coder / swe-reviewer /
-  swe-fast / swe-embed` — agents bind to roles, never model names. (ADR-007)
+- Model **role aliases** in LiteLLM — agents bind to roles, never model
+  names (ADR-007). As built (ADR-026 R-1, PR-3/PR-6): the aliases are
+  `role-<role>` (`role-planner`, `role-coder`, …), rendered from Registry v2
+  and carried by the shipped LiteLLM profiles.
 
 ## Workflow (summary)
 
