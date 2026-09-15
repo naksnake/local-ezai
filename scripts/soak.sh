@@ -122,9 +122,12 @@ do_status() { "$CLI" status --json; }
 do_bench() { ( cd "$ROOT" && bash scripts/bench.sh ); }
 do_run() { "$CLI" "$PROJECT" run "$TASK" --json; }
 do_churn() { # rollback under load: a new generation (benchmark), then rollback — no approval needed
+    # The benchmark side-loads a second engine, which needs the docker CLI on the host: it
+    # runs direct (the container overlay's daemon refuses it, by design); the rollback goes
+    # through the control plane when it answers, so the audit trail shows it there.
     local primary
     primary="$(chat_primary)" || return 1
-    "$CLI" model benchmark "$primary" --json && "$CLI" model rollback --reason "soak churn tick $TICK_NO" --json
+    EZAI_TRANSPORT=direct "$CLI" model benchmark "$primary" --json && "$CLI" model rollback --reason "soak churn tick $TICK_NO" --json
 }
 do_evolve() { "$CLI" "$PROJECT" evolve --json; }
 do_stats() { docker stats --no-stream --format '{{.Name}} cpu={{.CPUPerc}} mem={{.MemUsage}}'; }

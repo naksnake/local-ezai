@@ -39,6 +39,12 @@ SSO_ENV = {"MONITOR_SSO_TRUSTED_HEADER": "X-Forwarded-Email",
 PROXY_ADMIN = {"X-Forwarded-Email": "nita@example.com", "X-EZAI-Proxy-Secret": "proxy-secret"}
 PROXY_GUEST = {"X-Forwarded-Email": "guest@example.com", "X-EZAI-Proxy-Secret": "proxy-secret"}
 
+
+def jwt(who: str) -> str:
+    """A cookie shaped like OpenWebUI's `token` (header.payload.signature) —
+    the only shape the monitor bothers OpenWebUI about."""
+    return f"eyJhbGciOiJIUzI1NiJ9.{who}.c2lnbmF0dXJl"
+
 #: The PR-17 fixture (daemon with faked lifecycle seams, monitor without SSO).
 center = models_tests.center
 
@@ -81,9 +87,9 @@ def test_trusted_header_handoff_names_the_human_and_needs_the_proxy_secret(sso):
 
 def test_openwebui_session_handoff_is_validated_against_openwebui_and_cached(sso):
     calls: list[str] = []
-    users = {"t-admin": {"email": "nita@example.com", "role": "admin"},
-             "t-user": {"email": "guest@example.com", "role": "user"},
-             "t-pending": {"email": "new@example.com", "role": "pending"}}
+    users = {jwt("t-admin"): {"email": "nita@example.com", "role": "admin"},
+             jwt("t-user"): {"email": "guest@example.com", "role": "user"},
+             jwt("t-pending"): {"email": "new@example.com", "role": "pending"}}
 
     def openwebui(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/api/v1/auths/" and request.url.host == "openwebui.test"
@@ -95,20 +101,26 @@ def test_openwebui_session_handoff_is_validated_against_openwebui_and_cached(sso
         return httpx.Response(401, json={"detail": "invalid token"})
 
     sso.monitor.SSO_TRANSPORT = httpx.MockTransport(openwebui)
-    sso.web.cookies.set("token", "t-admin")
+    sso.web.cookies.set("token", jwt("t-admin"))
     data = sso.web.get("/api/ezai/overview").json()
     assert data["connected"] and data["role"] == "admin"
     assert sso.wire.requests[-1].headers["X-EZAI-User"] == "nita@example.com"
     sso.web.get("/api/ezai/models")  # a second page: the lookup is cached
-    assert calls == ["t-admin"]
-    sso.web.cookies.set("token", "t-user")
+    assert calls == [jwt("t-admin")]
+    sso.web.cookies.set("token", jwt("t-user"))
     assert sso.web.get("/api/ezai/overview").json()["role"] == "viewer"
     assert sso.web.post("/api/ezai/models/gamma/benchmark", headers=PAGE).status_code == 403
-    sso.web.cookies.set("token", "t-pending")
+    sso.web.cookies.set("token", jwt("t-pending"))
     assert sso.web.get("/api/ezai/overview").status_code == 401  # not yet activated in OpenWebUI
-    sso.web.cookies.set("token", "t-forged")
+    sso.web.cookies.set("token", jwt("t-forged"))
     forged = sso.web.get("/api/ezai/overview")
     assert forged.status_code == 401 and forged.headers["www-authenticate"].startswith("Basic")
+    sso.web.get("/api/ezai/overview")  # the forgery is remembered too: looked up once
+    assert calls.count(jwt("t-forged")) == 1
+    # a cookie that is not even shaped like OpenWebUI's JWT never reaches OpenWebUI
+    sso.web.cookies.set("token", "t-forged")
+    assert sso.web.get("/api/ezai/overview").status_code == 401
+    assert calls == [jwt(who) for who in ("t-admin", "t-user", "t-pending", "t-forged")]
     # Basic stays the fallback next to the cookie; the dashboard is unchanged
     sso.web.cookies.clear()
     assert sso.web.get("/api/ezai/overview", auth=VIEWER).json()["role"] == "viewer"

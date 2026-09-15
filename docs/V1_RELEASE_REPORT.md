@@ -46,6 +46,15 @@ tests, behavior notes, verification boundary, rollback and self-review.
 Golden renders per legacy profile (`agentd/tests/fixtures/rendered/`) and
 the ADR-020 role-map golden are unchanged since PR-3.
 
+**Post-merge review (PR-27, 2026-09-15).** A code review of the merged train
+confirmed fourteen defects the suite did not cover — three on the soak's
+path (model install/benchmark through the container overlay's daemon could
+not succeed; the mutation lock was held across downloads; cancelled runs were
+recorded as failed) — plus two found while fixing. All are fixed with
+regression tests and no contract or state change; the soak should run on a
+build that includes them ([prs/PR-27-review-fixes.md](prs/PR-27-review-fixes.md),
+[RELEASE_NOTES.md](RELEASE_NOTES.md)).
+
 ## 3. Definition of Done (TARGET_PRODUCT_V1 §8), item by item
 
 | ✔ | Item | Evidence |

@@ -58,7 +58,7 @@ failure is a data point to explain.
 | 15 min | `health`, `status` | the eight services, engine/router/control, generation vs rendered |
 | 1 h | `bench` | tokens/s on the live engine (drift over the window) |
 | 2 h | `run` | a scripted SWE task on the bundled sample project (plan → code → validate → review → commit on `swe/<id>`) |
-| 6 h | `churn` | `model benchmark <chat primary>` (a side-loaded second engine + a new generation) then `model rollback` — **rollback under load**, through the control plane when it answers |
+| 6 h | `churn` | `model benchmark <chat primary>` (a side-loaded second engine + a new generation; runs direct on the host because the side-load needs the docker CLI, which the container overlay's daemon does not have) then `model rollback` — **rollback under load**, through the control plane when it answers |
 | 24 h | `evolve` | an evolution cycle on the sample project (ends at a proposal bundle, never a merge) |
 | 24 h | `stats` | `docker stats --no-stream`: memory and CPU per container |
 

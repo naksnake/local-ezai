@@ -52,6 +52,7 @@ from agentd.control import (
     USER_HEADER,
 )
 from agentd.control.api import router as v1_router
+from agentd.control.auth import AuthError, Caller, authenticate
 from agentd.control.deps import (  # noqa: F401 — ApiError/ErrorEnvelope re-exported
     UNAUTHORIZED,
     ApiError,
@@ -72,6 +73,7 @@ from agentd.control.health import (
 from agentd.control.idempotency import DIRNAME as IDEMPOTENCY_DIRNAME
 from agentd.control.idempotency import HEADER as IDEMPOTENCY_HEADER
 from agentd.control.idempotency import MAX_KEY_LENGTH, REPLAYED_HEADER, IdempotencyStore
+from agentd.control.policy import client_may
 from agentd.control.runs import DIRNAME as RUNS_DIRNAME
 from agentd.control.runs import REFUSAL_STATUS, RunRefused, RunRegistry
 from agentd.control.runs_api import router as runs_router
@@ -185,6 +187,9 @@ def create_app(settings: ControlConfig, ctx: PlatformContext | None = None, *,
     app.state.started_at = time.strftime("%Y-%m-%dT%H:%M:%S")
     app.state.started_mono = time.monotonic()
     app.state.mutation_lock = threading.Lock()
+    #: Downloads change no state and can take many minutes: they serialize
+    #: among themselves only, never behind (or in front of) an approval.
+    app.state.fetch_lock = threading.Lock()
     app.state.idempotency = (
         IdempotencyStore(ctx.config_dir / CONTROL_DIRNAME / IDEMPOTENCY_DIRNAME)
         if ctx is not None else None)
@@ -238,6 +243,19 @@ def create_app(settings: ControlConfig, ctx: PlatformContext | None = None, *,
 
     # ── mutating calls: idempotency + audit ──────────────────────────────
 
+    def replay_caller(request: Request, operation: str) -> Caller | None:
+        """A replay is still a call: the same token and the same client
+        policy as the stored operation's route — which never runs on the
+        replay path, so they are checked here. None = let the route reject
+        (and audit) the caller."""
+        try:
+            who = authenticate(settings.token or "", request.headers.get("authorization"),
+                               user=request.headers.get(USER_HEADER),
+                               client=request.headers.get(CLIENT_HEADER))
+        except AuthError:
+            return None
+        return who if client_may(who.client, operation, request.method) else None
+
     @app.middleware("http")
     async def govern_mutations(request: Request, call_next):
         if request.method not in MUTATING_METHODS:
@@ -255,12 +273,19 @@ def create_app(settings: ControlConfig, ctx: PlatformContext | None = None, *,
                                                        request.url.query, body)
             stored = store.get(key)
             if stored is not None:
-                if stored.fingerprint != fingerprint:
+                who = replay_caller(request, stored.operation)
+                if who is None:
+                    return await call_next(request)
+                if stored.fingerprint != fingerprint or (
+                        stored.client and stored.client != who.client):
                     return envelope(409, "idempotency_conflict",
                                     f"{IDEMPOTENCY_HEADER} {key!r} was already used for a "
-                                    "different request",
+                                    "different request or by another client",
                                     "use a new key for every new operation; reuse a key only "
                                     "to retry the same one")
+                record(app, "api.replayed", who.actor, operation=stored.operation,
+                       method=request.method, path=request.url.path, status=stored.status,
+                       client=who.client, idempotency_key=key)
                 return Response(content=stored.body, status_code=stored.status,
                                 media_type=stored.media_type,
                                 headers={REPLAYED_HEADER: "true", IDEMPOTENCY_HEADER: key})
@@ -269,11 +294,16 @@ def create_app(settings: ControlConfig, ctx: PlatformContext | None = None, *,
         headers = {k: v for k, v in response.headers.items() if k.lower() != "content-length"}
         replay = Response(content=raw, status_code=response.status_code, headers=headers)
         operation = _operation_id(request)
-        if key and store is not None and fingerprint is not None and response.status_code < 500:
-            store.put(key, fingerprint, response.status_code, raw,
-                      response.headers.get("content-type", "application/json"), operation)
-            replay.headers[IDEMPOTENCY_HEADER] = key
         who = getattr(request.state, "caller", None)
+        # Stored: outcomes and refusals of an authenticated call. Never a
+        # rejected credential or client (401) — the corrected retry with the
+        # same key must reach the route, not a cached rejection.
+        if (key and store is not None and fingerprint is not None
+                and response.status_code < 500 and response.status_code != 401):
+            store.put(key, fingerprint, response.status_code, raw,
+                      response.headers.get("content-type", "application/json"), operation,
+                      client=who.client if who is not None else "")
+            replay.headers[IDEMPOTENCY_HEADER] = key
         if who is not None:  # rejected calls are already audited as auth.rejected
             record(app, f"api.{operation}", who.actor, method=request.method,
                    path=request.url.path, status=response.status_code, client=who.client,
@@ -319,7 +349,8 @@ def create_app(settings: ControlConfig, ctx: PlatformContext | None = None, *,
         if audit_log is None:
             raise ApiError(503, "audit_unavailable", "ezaid has no audit log attached",
                            "start ezaid inside a platform")
-        return AuditPage(total=audit_log.count(), records=audit_log.tail(limit))
+        total, records = audit_log.page(limit)  # one read of the log per request
+        return AuditPage(total=total, records=records)
 
     app.include_router(v1_router)  # PR-9: lifecycle · governance · projects
     app.include_router(runs_router)  # PR-10: async run registry

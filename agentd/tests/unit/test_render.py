@@ -529,3 +529,24 @@ def test_renderer_code_carries_no_runtime_or_vendor_knowledge():
                           "/dev/kfd", "--gpu-layers", "--tool-call-parser",
                           "--models-preset", "--served-model-name"):
             assert forbidden not in text, f"{module} mentions {forbidden!r}"
+
+
+def test_write_rendered_reclaims_the_directory_docker_leaves_for_a_missing_mount(
+        tmp_path, descriptors):
+    """A stack started before the first render: compose bind-mounts the
+    LiteLLM config, docker creates a DIRECTORY at the missing source. An
+    empty one is docker's and is removed so the render goes through; one
+    with content is refused with the fix, never an IsADirectoryError."""
+    result = render(registry("llamacpp", 3), descriptors, accel_large_vector())
+    out = tmp_path / "rendered"
+    (out / LITELLM_FILENAME).mkdir(parents=True)
+    written = write_rendered(result, out)
+    assert (out / LITELLM_FILENAME).is_file() and (out / LITELLM_FILENAME) in written
+    assert check_drift(out) == []
+
+    stray = tmp_path / "rendered-2" / LITELLM_FILENAME
+    stray.mkdir(parents=True)
+    (stray / "leftover").write_text("x", encoding="utf-8")
+    with pytest.raises(RenderError, match="is a directory, not a file") as err:
+        write_rendered(result, tmp_path / "rendered-2")
+    assert "stop the stack, remove that directory" in str(err.value)

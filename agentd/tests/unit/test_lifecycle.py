@@ -742,3 +742,112 @@ def test_lifecycle_code_carries_no_runtime_or_vendor_knowledge():
         for forbidden in ("nvidia", "ghcr.io", "vllm/", "llama.cpp", "/dev/dri",
                           "predicted_per_second", "--served-model-name", "qwen", "hermes"):
             assert forbidden not in text, f"{module} mentions {forbidden!r}"
+
+
+# ── review fixes (PR-27): preflight before download · prefetch · re-install of a serving model ──
+
+
+class PreflightValidator:
+    """A validator that can (or cannot) side-load where the test runs."""
+
+    def __init__(self, available: bool) -> None:
+        self.available, self.preflights, self.probes = available, 0, 0
+
+    def preflight(self) -> None:
+        from agentd.lifecycle import require_compose
+
+        self.preflights += 1
+        require_compose(FakeRunner(no_compose=not self.available))
+
+    def __call__(self, descriptor, name, entry) -> ProbeResult:
+        self.probes += 1
+        return ProbeResult(True, "", 0.1, name)
+
+
+def test_install_refuses_before_any_download_when_it_cannot_side_load(descriptors, platform):
+    """The shipped control-plane container has no docker CLI: the refusal
+    comes BEFORE the fetch, with the fix named — never a multi-GB download
+    that can only end in a failed probe, and never a traceback."""
+    from agentd.lifecycle import require_compose
+
+    factory = FakeFetcherFactory(b"w" * 64)
+    validator = PreflightValidator(available=False)
+    with pytest.raises(LifecycleError, match="docker compose is not available") as err:
+        install(base_registry(), "gguf:https://example.invalid/w/never.gguf",
+                descriptors=descriptors, vector=CPU_LOW, platform_root=platform,
+                validator=validator, fetcher_factory=factory, env=env_for(platform))
+    assert "EZAI_TRANSPORT=direct" in str(err.value) and "control-serve" in str(err.value)
+    assert factory.log == [] and validator.probes == 0 and validator.preflights == 1
+
+    def no_binary(command):  # the runner's FileNotFoundError when docker is absent
+        raise FileNotFoundError("docker")
+
+    with pytest.raises(LifecycleError, match="docker compose is not available"):
+        require_compose(no_binary)
+    require_compose(FakeRunner())  # present: silent
+
+
+def test_prefetch_downloads_without_state_change_and_install_reuses_it(descriptors, platform):
+    """The control plane runs the download outside its mutation lock: no
+    registry change, then `install(fetched=…)` validates and persists
+    without a second download — and says "downloaded", as the CLI would."""
+    from agentd.lifecycle import offline_fetcher, prefetch
+
+    factory = FakeFetcherFactory(b"weights" * 100)
+    registry = base_registry()
+    fetched = prefetch(registry, "gguf:https://example.invalid/w/pre.gguf",
+                       descriptors=descriptors, vector=CPU_LOW, platform_root=platform,
+                       validator=PreflightValidator(True), fetcher_factory=factory,
+                       env=env_for(platform))
+    assert fetched is not None and not fetched.reused
+    assert "pre" not in registry.models  # nothing registered, nothing persisted
+    assert factory.log.count("GET range=none → 200") == 1
+    result = install(registry, "gguf:https://example.invalid/w/pre.gguf", descriptors=descriptors,
+                     vector=CPU_LOW, platform_root=platform, validator=ok_validator,
+                     fetcher_factory=factory, env=env_for(platform), fetched=fetched)
+    assert result.ok and result.registry.models["pre"].state == "installed"
+    assert factory.log.count("GET range=none → 200") == 1  # no second download
+    assert "downloaded" in result.message
+    # a failed download is None — install repeats the fetch and records the reason itself
+    assert prefetch(registry, "gguf:https://example.invalid/w/bad.gguf", descriptors=descriptors,
+                    vector=CPU_LOW, platform_root=platform, fetcher_factory=offline_fetcher,
+                    env=env_for(platform)) is None
+    # resolution failures raise exactly as install's do (before any download)
+    with pytest.raises(LifecycleError, match="already exists"):
+        prefetch(result.registry, "gguf:https://example.invalid/other/pre.gguf",
+                 descriptors=descriptors, vector=CPU_LOW, platform_root=platform,
+                 fetcher_factory=factory, env=env_for(platform))
+
+
+def test_reinstall_of_a_serving_model_keeps_it_serving(descriptors, platform):
+    """`model install <active> --refetch` re-fetches and re-validates: the
+    model stays ACTIVE (not demoted to installed), and a failed
+    re-validation records the reason without demoting — the registry keeps
+    resolving. A retired entry is kept the same way."""
+    from agentd.lifecycle import offline_fetcher
+
+    factory = FakeFetcherFactory(b"w" * 64)
+    active = base_registry_with("active", platform)
+    ok = install(active, "alpha", descriptors=descriptors, vector=CPU_LOW, platform_root=platform,
+                 validator=ok_validator, fetcher_factory=factory, env=env_for(platform),
+                 refetch=True)
+    assert ok.ok and ok.state == "active" and ok.registry.models["alpha"].error == ""
+    assert "install alpha: active (" in ok.message
+
+    failed = install(active, "alpha", descriptors=descriptors, vector=CPU_LOW,
+                     platform_root=platform, validator=failing_validator, fetcher_factory=factory,
+                     env=env_for(platform), refetch=True)
+    assert not failed.ok and failed.state == "active"
+    assert failed.error.startswith("validate_model:") and "stays active" in failed.message
+    assert failed.registry.models["alpha"].state == "active"
+    failed.registry.resolve_all()  # still servable
+
+    retired = base_registry_with("retired", platform)
+    kept = install(retired, "alpha", descriptors=descriptors, vector=CPU_LOW,
+                   platform_root=platform, validator=ok_validator, fetcher_factory=offline_fetcher,
+                   env=env_for(platform), refetch=True)
+    assert not kept.ok and kept.state == "retired" and kept.error.startswith("fetch:")
+    revived = install(retired, "alpha", descriptors=descriptors, vector=CPU_LOW,
+                      platform_root=platform, validator=ok_validator, fetcher_factory=factory,
+                      env=env_for(platform), refetch=True)
+    assert revived.ok and revived.state == "installed"  # retired → installed, as the table allows

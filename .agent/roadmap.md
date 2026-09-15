@@ -156,12 +156,20 @@ probe path) and PR-26 (the release train: the five guides refreshed for V1,
 `docs/RELEASE_NOTES.md` with the v1.0.0 entry, `docs/SOAK_RUNBOOK.md` +
 `scripts/soak.sh` / `make soak`, `docs/V1_RELEASE_REPORT.md` with the DoD
 checked item by item, version 1.0.0) implemented. **The V1 plan's
-twenty-six PRs are delivered** and await human merge on
-`claude/next-ready-pr-bnq7r3`. No PR is next ready by plan order; what
+twenty-six PRs are delivered and merged** (PR #5, 2026-09-10). 🟡 **PR-27
+(review hardening, 2026-09-15)** — the code review of the merged train
+confirmed fourteen defects the suite did not cover (three on the soak's
+path: install/benchmark through the container daemon, the mutation lock
+held across downloads, cancelled runs recorded as failed) plus two found
+while fixing; every fix carries its regression test, no contract or state
+change; and `make swe-demo` — the pipeline offline with a scripted model —
+with `docs/SWE_DEMO.md` as the newcomer's guide
+([docs/prs/PR-27-review-fixes.md](../docs/prs/PR-27-review-fixes.md)).
+Implemented on `claude/friendly-thompson-qhmslv`, awaiting human merge. What
 remains is human: the 72 h soak on both host classes (SOAK_RUNBOOK), the
-sign-off (V1_RELEASE_REPORT §7), the merge, the `v1.0.0` tag. Post-V1
-candidates: N1′, N3′, N5′, N6′ below and the two PR-25 residuals (the health
-table's engine probe path; a tool-call format for day-2 installs).
+sign-off (V1_RELEASE_REPORT §7), the `v1.0.0` tag. Post-V1 candidates: N1′,
+N3′, N5′, N6′ below and the two PR-25 residuals (the health table's engine
+probe path; a tool-call format for day-2 installs).
 
 **Product review (ADR-026, 2026-09-01):** agnosticism audit passed with
 remediations — roles/groups become the only stable names (role aliases

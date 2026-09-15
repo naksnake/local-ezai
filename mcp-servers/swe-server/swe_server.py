@@ -36,9 +36,10 @@ import os
 import sys
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Any
 
+import anyio
 import httpx
 
 CLIENT_NAME = "swe-server"
@@ -469,6 +470,19 @@ class SweTools:
 # ── MCP wiring ───────────────────────────────────────────────────────────────
 
 
+def threaded(fn: Callable[..., str]) -> Callable[..., Awaitable[str]]:
+    """FastMCP runs a sync tool inline on its event loop, and mcpo shares this
+    one process across every chat — so swe_plan's wait would stall every
+    other tool call. Each tool therefore runs on a worker thread; the wrapper
+    keeps the signature, annotations and docstring FastMCP reads."""
+
+    @functools.wraps(fn)
+    async def wrapper(*args: Any, **kwargs: Any) -> str:
+        return await anyio.to_thread.run_sync(functools.partial(fn, *args, **kwargs))
+
+    return wrapper
+
+
 def build_server(tools: SweTools):
     """Register the catalog with FastMCP (stdio server for mcpo)."""
     from mcp.server.fastmcp import FastMCP
@@ -481,7 +495,7 @@ def build_server(tools: SweTools):
                       "Center or the CLI for governance. Always show swe_plan's plan and get "
                       "the user's confirmation before swe_run."))
     for name in TOOLS:
-        server.tool(name=name)(getattr(tools, name))
+        server.tool(name=name)(threaded(getattr(tools, name)))
     return server
 
 
@@ -492,7 +506,7 @@ def main() -> int:
               file=sys.stderr)
         return 2
     url = os.environ.get("EZAI_CONTROL_URL", DEFAULT_CONTROL_URL).rstrip("/")
-    plane = ControlPlane(httpx.Client(base_url=url, timeout=httpx.Timeout(None, connect=5.0)),
+    plane = ControlPlane(httpx.Client(base_url=url, timeout=httpx.Timeout(30.0, connect=5.0)),
                          token, url=url)
     tools = SweTools(plane, admin_url=os.environ.get("EZAI_ADMIN_URL", DEFAULT_ADMIN_URL),
                      plan_wait_s=float(os.environ.get("EZAI_PLAN_WAIT_S", DEFAULT_PLAN_WAIT_S)))

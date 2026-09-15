@@ -103,6 +103,10 @@ class GovernanceQueue:
         self.queue_dir = self.root / QUEUE_DIRNAME
         self.log_path = self.root / LOG_FILENAME
         self.audit_log = AuditLog(self.log_path)
+        #: file name → (mtime_ns, size, parsed request): a request carries a
+        #: full proposed registry, and the health endpoint and every console
+        #: page list the queue — parse each file version once.
+        self._parsed: dict[str, tuple[int, int, ChangeRequest]] = {}
 
     # ── storage ──────────────────────────────────────────────────────────
 
@@ -125,13 +129,23 @@ class GovernanceQueue:
         path = self._path(request_id)
         if not path.is_file():
             raise GovernanceError(f"no change request '{request_id}' in {self.queue_dir}")
-        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        return ChangeRequest.model_validate(data)
+        return self._load(path)
+
+    def _load(self, path: Path) -> ChangeRequest:
+        """The file's current version, parsed once; callers get their own
+        copy (a request is mutated in place before ``_write`` persists it)."""
+        stat = path.stat()
+        cached = self._parsed.get(path.name)
+        if cached is None or cached[0] != stat.st_mtime_ns or cached[1] != stat.st_size:
+            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            cached = (stat.st_mtime_ns, stat.st_size, ChangeRequest.model_validate(data))
+            self._parsed[path.name] = cached
+        return cached[2].model_copy(deep=True)
 
     def list(self, status: str | None = None) -> list[ChangeRequest]:
         if not self.queue_dir.is_dir():
             return []
-        requests = [self.get(path.stem) for path in sorted(self.queue_dir.glob("cr-*.yaml"))]
+        requests = [self._load(path) for path in sorted(self.queue_dir.glob("cr-*.yaml"))]
         return [r for r in requests if status is None or r.status == status]
 
     # ── audit log (append-only) ──────────────────────────────────────────

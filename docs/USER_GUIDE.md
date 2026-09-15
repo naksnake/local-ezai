@@ -84,6 +84,11 @@ Point the `local-ezai` CLI at any git repository and let the agents work.
 Install: [agentd/INSTALL.md](../agentd/INSTALL.md); all commands:
 [CLI_REFERENCE.md](CLI_REFERENCE.md).
 
+New here? `make swe-demo` runs the whole pipeline — plan → code → validate →
+review → commit on a branch — on a scratch copy of the sample project in about
+a minute, with a scripted model and no stack, GPU or download:
+[SWE_DEMO.md](SWE_DEMO.md) walks through it and on to the real first run.
+
 ### Everyday flows
 
 ```bash

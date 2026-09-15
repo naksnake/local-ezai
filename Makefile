@@ -33,20 +33,21 @@ COMPOSE_CPU = docker compose -f docker-compose.yml -f docker-compose.cpu.yml
 RENDERED_DIR     = config/rendered
 RENDERED_ENGINE  = $(RENDERED_DIR)/docker-compose.engine.yml
 COMPOSE_RENDERED = -f $(RENDERED_ENGINE)
-AGENTD_CLI      ?= $(if $(wildcard .venv-agentd/bin/local-ezai),.venv-agentd/bin/local-ezai,local-ezai)
 
 # V1 P2 (ADR-028): the ezaid control plane is an OPT-IN compose overlay
 # (ADR-002 — rollback = don't start it) until CLI connected mode lands.
 COMPOSE_CONTROL  = -f docker-compose.control.yml
-EZAID_CLI       ?= $(if $(wildcard .venv-agentd/bin/ezaid),.venv-agentd/bin/ezaid,ezaid)
 EZAID_SPEC       = docs/api/ezaid-openapi.json
 
 # V1 P5 (ADR-031): the first run. `make setup` is the five-step contract of
 # FINAL_FIRST_RUN_EXPERIENCE — install.sh (detect, .env, secrets; stops once
 # for the model seeds when .env is new) then `local-ezai setup` (bootstrap,
 # images, up, wait-ready, smoke, report). The CLI lives in the venv install.sh
-# creates, so it is resolved when the recipe runs, not when make parses.
+# creates, so it is resolved when the recipe runs, not when make parses — a
+# $(wildcard) form is fixed before the `$(MAKE) swe-install` line of the same
+# recipe creates the venv (bootstrap, control-serve). Same for ezaid.
 EZAI_CLI_RUN = CLI=$$( [ -x .venv-agentd/bin/local-ezai ] && echo .venv-agentd/bin/local-ezai || echo local-ezai ); $$CLI
+EZAID_CLI_RUN = CLI=$$( [ -x .venv-agentd/bin/ezaid ] && echo .venv-agentd/bin/ezaid || echo ezaid ); $$CLI
 EZAI_SETUP = $(EZAI_CLI_RUN) setup
 # Offline bundle (PR-23): make bundle BUNDLE=<dir> on a connected host; on the
 # air-gapped host make setup-offline BUNDLE=<dir> (no egress).
@@ -110,7 +111,7 @@ setup-gpu: ## First run asserting an accelerator: install.sh --profile gpu → l
 
 bootstrap: ## Consume the .env model seeds ONCE into model generation 1 and render LiteLLM + engine config (V1)
 	@test -x .venv-agentd/bin/local-ezai || command -v local-ezai >/dev/null 2>&1 || $(MAKE) swe-install
-	$(AGENTD_CLI) bootstrap --env .env
+	$(EZAI_CLI_RUN) bootstrap --env .env
 
 require-rendered:
 	@if [ ! -f "$(RENDERED_DIR)/litellm-config.yaml" ] || [ ! -f "$(RENDERED_ENGINE)" ]; then \
@@ -282,8 +283,8 @@ clean: ## Remove all containers, images, and volumes (WARNING: deletes data)
 # Autonomous SWE runtime (agentd) — additive targets, see agentd/README.md
 # ═══════════════════════════════════════════════════════════════════════════
 .PHONY: swe-install swe-browsers swe-test swe-lint swe-drill swe-accept swe-parity swe-gates \
-        release-gate soak swe-run swe-plan control-up control-down control-logs control-spec \
-        control-serve
+        swe-demo release-gate soak swe-run swe-plan control-up control-down control-logs \
+        control-spec control-serve
 
 swe-install: ## Install the agentd runtime into ./.venv-agentd (editable, dev + browser + control extras)
 	python3 -m venv .venv-agentd
@@ -308,11 +309,11 @@ control-logs: ## Follow the ezaid control plane logs
 	docker compose -f docker-compose.yml $(COMPOSE_CONTROL) logs -f ezaid
 
 control-spec: ## Regenerate the versioned OpenAPI contract artifact ($(EZAID_SPEC)) from the app
-	$(EZAID_CLI) --write-spec $(EZAID_SPEC)
+	$(EZAID_CLI_RUN) --write-spec $(EZAID_SPEC)
 
 control-serve: ## Run the ezaid control plane ON THIS HOST (foreground) — sees your repositories, so SWE runs through the API work
 	@test -x .venv-agentd/bin/ezaid || command -v ezaid >/dev/null 2>&1 || $(MAKE) swe-install
-	$(EZAID_CLI) --platform config --host $(or $(EZAI_CONTROL_HOST),127.0.0.1) --port $(or $(EZAI_CONTROL_PORT),8010)
+	$(EZAID_CLI_RUN) --platform config --host $(or $(EZAI_CONTROL_HOST),127.0.0.1) --port $(or $(EZAI_CONTROL_PORT),8010)
 
 swe-browsers: ## Download the Playwright Chromium used by Browser QA
 	.venv-agentd/bin/playwright install chromium
@@ -334,6 +335,10 @@ swe-parity: ## Parity harness (P6 release gate): every CLI_AND_WEBUI_STRATEGY §
 
 swe-gates: ## Agnosticism gates (P6): the third-runtime drill (a mock runtime from descriptor data alone), the H1 word audit, the H2–H4 class fixtures (offline)
 	cd agentd && ../.venv-agentd/bin/python -m pytest tests/gates -v
+
+swe-demo: ## The Autonomous SWE pipeline offline in a minute: scripted model, real worktree/validation/review/commit (docs/SWE_DEMO.md; DEMO_DIR=… keeps it)
+	test -x .venv-agentd/bin/local-ezai || command -v local-ezai >/dev/null 2>&1 || $(MAKE) swe-install
+	bash scripts/swe-demo.sh $(if $(DEMO_DIR),--dir $(DEMO_DIR),)
 
 release-gate: ## The P6 release gate in one command: lint · chat-stack baseline · boundary drill · F1–F11 acceptance · parity harness · agnosticism gates · the full suite
 	$(MAKE) swe-lint

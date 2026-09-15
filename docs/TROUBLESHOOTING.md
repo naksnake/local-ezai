@@ -41,7 +41,11 @@ Preventive care: [MAINTENANCE_GUIDE.md](MAINTENANCE_GUIDE.md).
 | `no registered project named or located at …` (404) when starting a run from chat or the API | the project is not on the allowlist, or the daemon cannot see its path | `local-ezai project add <path>`; run `ezaid` on the host (`make control-serve`) or mount the projects directory into the container at the same path |
 | `too_many_runs` (429) / `project_busy` (409) | concurrency limits; one in-place job per project | wait, cancel one (`POST /v1/runs/{id}/cancel`, Admin Center Runs), or raise `control.max_concurrent_runs` |
 | a run ended `failed: control plane restarted while the run was …` | the daemon restarted mid-run | resubmit; the journal on disk shows how far it got |
-| `idempotency_conflict` (409) | the same `Idempotency-Key` reused for a different request | a new key per operation; reuse only to retry the same one |
+| `idempotency_conflict` (409) | the same `Idempotency-Key` reused for a different request, or by another client | a new key per operation; reuse only to retry the same one, from the same surface |
+| a retry with the same `Idempotency-Key` is rejected 401 although the first call was too | a rejection is never stored: the retry runs for real once the token is right | send the token; the stored answer is handed back only to an authenticated caller of the same client |
+| `mutation_busy` (409) | another mutation (a model validation, benchmark or apply) has held the daemon's lock for 30 s | retry in a moment — nothing was changed by the refused call |
+| `lifecycle_refused` (409): `docker compose is not available where this runs` on `model install` / `model benchmark` through the daemon | the container overlay's daemon cannot side-load an engine (no docker CLI); the refusal comes before any download | run the verb from the host CLI (`EZAI_TRANSPORT=direct local-ezai model install …`), or serve the daemon on the host (`make control-serve`) |
+| a cancelled run shows `cancelled` in the Admin Center but has no report | expected: a cancellation stops at the next model call, before a report exists | the journal (`GET /v1/runs/{id}/journal`, Runs page) ends with `RUN_TERMINAL status=cancelled` |
 | audit actor reads `nita via cli` / `via admin-center` / `via swe-server` | the forwarded identity: the human and the surface | normal — one audit log for every surface |
 
 ## 4. Admin Center (`http://<host>:8888`)
@@ -62,6 +66,8 @@ Preventive care: [MAINTENANCE_GUIDE.md](MAINTENANCE_GUIDE.md).
 | `a rejection needs a reason` | — | `--reason "…"` (recorded; evolution proposals remember it) |
 | `'x' is the primary of role(s) … — retiring it changes what serves users` | a serving primary cannot be retired | activate a replacement first (approval-gated), then retire |
 | `refusing to render into config/rendered` (drift) | a rendered file was edited by hand | rendered files are outputs: revert the edit and change state through `local-ezai model …`, or pass `--force` deliberately |
+| `config/rendered/litellm-config.yaml is a directory, not a file` (render refused) / LiteLLM crash-loops on a directory config | the stack was started before the first render: docker created a directory for the missing bind-mount source | an empty one is reclaimed by the next render automatically; otherwise stop the stack, remove the directory, `make bootstrap`, `make up` — `local-ezai up` and `make up` now refuse to start without the rendered config |
+| `local-ezai up` says `run local-ezai bootstrap first` | no rendered LiteLLM config yet (the compose file bind-mounts it) | `make bootstrap` (or `make setup`), then `up` |
 | activation refused: `missing capability tool_calling` / `min_context` / `json_output` | negotiation: (model × runtime) does not meet the role's contract on this class | declare the model's `tool_call_format` / context (catalog entry, or `<SEED>_TOOL_FORMAT` at bootstrap), pick a runtime that parses it, or activate into a group whose roles need less |
 | `… is gguf but AI_RUNTIME=… serves hf` | format × runtime mismatch | install the served variant of the model, or set the runtime that serves the format |
 | `serves one model per engine slot but … distinct models` | the selected runtime hosts one model | seed the three groups with one model, or a runtime with `parallel_models` |

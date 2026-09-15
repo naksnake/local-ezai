@@ -14,6 +14,7 @@ import pytest
 import yaml
 
 from agentd import platform_cli
+from agentd.capability import CapabilityVector
 from agentd.main_cli import main
 from agentd.registry_v2 import load_registry, save_generation
 from agentd.render import write_rendered
@@ -22,6 +23,8 @@ from tests.unit.test_activation import seed_registry
 from tests.unit.test_lifecycle import FakeEngineHTTP, FakeRunner
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+#: This host as the CLI detects it: class cpu-low, no accelerator → profile n97.
+CPU_LOW = CapabilityVector(system_memory_gb=15.5, cpu_cores=4)
 
 
 @pytest.fixture
@@ -34,11 +37,9 @@ def platform_root(tmp_path: Path) -> Path:
     (root / "docker-compose.n97.yml").write_text("services: {}\n")
     saved = save_generation(seed_registry(), root / "config", note="bootstrap")
     from agentd.activation import Platform
-    from agentd.capability import CapabilityVector
 
     platform = Platform(config_dir=root / "config", platform_root=root,
-                        descriptors=load_descriptors(root / "config"),
-                        vector=CapabilityVector(system_memory_gb=15.5, cpu_cores=4),
+                        descriptors=load_descriptors(root / "config"), vector=CPU_LOW,
                         capability_class="cpu-low", accelerator="none")
     write_rendered(platform.render(saved), platform.rendered)
     return root
@@ -49,6 +50,7 @@ def cli(tmp_path, monkeypatch, platform_root):
     """invoke(*argv) → (exit_code, stdout); docker + HTTP seams faked."""
     monkeypatch.delenv("AGENTD_CONFIG", raising=False)
     runner = FakeRunner()
+    monkeypatch.setattr(platform_cli, "detect_vector", lambda: CPU_LOW)
     monkeypatch.setattr(platform_cli, "default_runner", runner)
     monkeypatch.setattr(platform_cli, "http_probe", lambda url: 200)
     monkeypatch.setattr(platform_cli, "engine_http", lambda: FakeEngineHTTP(
@@ -244,14 +246,39 @@ def test_up_and_down_wrap_compose_profiles(cli, platform_root, capsys):
     assert command[:2] == ["docker", "compose"] and command[-2:] == ["up", "-d"]
     assert str(platform_root / "docker-compose.yml") in command
     assert str(platform_root / "docker-compose.n97.yml") in command
-    code, out = cli("up", "--rendered", capsys=capsys)  # gpu profile + rendered engine
+    # no --profile: this host's profile (class cpu-low → n97, as `setup` picks) + rendered engine
+    code, out = cli("up", "--rendered", capsys=capsys)
     command = cli.runner.calls[-1]
+    assert code == 0
     assert str(platform_root / "config" / "rendered" / "docker-compose.engine.yml") in command
-    assert str(platform_root / "docker-compose.n97.yml") not in command
+    assert str(platform_root / "docker-compose.n97.yml") in command
+    code, out = cli("up", "--profile", "gpu", capsys=capsys)  # an explicit profile still wins
+    assert code == 0 and str(platform_root / "docker-compose.n97.yml") not in cli.runner.calls[-1]
     code, out = cli("down", capsys=capsys)
     assert code == 0 and cli.runner.calls[-1][-1] == "down"
+    assert str(platform_root / "docker-compose.n97.yml") in cli.runner.calls[-1]  # same default
     code, out = cli("up", "--profile", "rack42", capsys=capsys)
     assert code == 2
+
+
+def test_up_refuses_without_the_rendered_litellm_config_down_does_not(cli, platform_root, capsys):
+    """docker-compose.yml bind-mounts config/rendered/litellm-config.yaml; a
+    missing file makes Docker create a directory there, which then breaks
+    every render — so `up` stops before compose, with the fix, whatever
+    --rendered says. `down` keeps working without rendered artifacts."""
+    litellm = platform_root / "config" / "rendered" / "litellm-config.yaml"
+    litellm.unlink()
+    before = len(cli.runner.calls)
+    for flags in ((), ("--rendered",)):
+        code, out = cli("up", "--profile", "n97", *flags, capsys=capsys)
+        assert code == 2 and len(cli.runner.calls) == before  # nothing reached docker
+    code, out = cli("up", "--json", capsys=capsys)
+    error = json.loads(out)["error"]
+    assert error["code"] == "platform_unavailable" and str(litellm) in error["message"]
+    assert "local-ezai bootstrap" in error["message"] and "make bootstrap" in error["message"]
+    assert len(cli.runner.calls) == before
+    code, out = cli("down", "--profile", "n97", capsys=capsys)
+    assert code == 0 and cli.runner.calls[-1][-1] == "down"
 
 
 def test_compose_files_profile_chain(platform_root):

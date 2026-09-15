@@ -17,6 +17,7 @@ Polls all 7 services on a background thread and serves:
 import asyncio
 import json
 import os
+import re
 import secrets
 import time
 import uuid
@@ -79,9 +80,16 @@ SSO_ADMINS = {a.strip().lower() for a in os.getenv("MONITOR_SSO_ADMINS", "").spl
 SSO_OPENWEBUI_URL = os.getenv("MONITOR_SSO_OPENWEBUI_URL", "").rstrip("/")
 SSO_PROXY_SECRET_HEADER = "X-EZAI-Proxy-Secret"
 SSO_CACHE_TTL_S = 60.0
-#: Test seam: an httpx transport for the OpenWebUI lookup (None = real network).
+SSO_CACHE_MAX = 512        # entries; beyond it the expired go first, then the oldest
+SSO_TOKEN_MAX_LEN = 4096   # OpenWebUI's `token` cookie is a JWT — anything else never leaves
+SSO_MAX_INFLIGHT = 8       # concurrent OpenWebUI lookups (the LAN cannot fan them out)
+_JWT_SHAPE = re.compile(r"[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+")
+#: Test seam: an httpx transport for the OpenWebUI lookup (None = real network);
+#: read when the shared client is first built.
 SSO_TRANSPORT: Optional[httpx.AsyncBaseTransport] = None
 _sso_cache: dict[str, tuple[float, Optional["Identity"]]] = {}
+_sso_client: Optional[httpx.AsyncClient] = None
+_sso_gate = asyncio.Semaphore(SSO_MAX_INFLIGHT)
 
 
 class Identity(str):
@@ -131,34 +139,67 @@ def _trusted_header_identity(request: Request) -> Optional[Identity]:
     return Identity(role, user, "trusted-header")
 
 
+def _sso_token_shape_ok(token: Optional[str]) -> bool:
+    """Three dot-separated base64url segments, bounded — the shape of a JWT."""
+    return (isinstance(token, str) and 0 < len(token) <= SSO_TOKEN_MAX_LEN
+            and _JWT_SHAPE.fullmatch(token) is not None)
+
+
+def _sso_cached(token: str, now: float) -> Optional[tuple[float, Optional["Identity"]]]:
+    cached = _sso_cache.get(token)
+    return cached if cached and cached[0] > now else None
+
+
+def _sso_remember(token: str, identity: Optional["Identity"], now: float) -> None:
+    _sso_cache.pop(token, None)
+    _sso_cache[token] = (now + SSO_CACHE_TTL_S, identity)
+    if len(_sso_cache) > SSO_CACHE_MAX:  # bounded: the expired go first, then the oldest
+        for key in [k for k, (expiry, _) in _sso_cache.items() if expiry <= now]:
+            del _sso_cache[key]
+        excess = len(_sso_cache) - SSO_CACHE_MAX
+        for key in sorted(_sso_cache, key=lambda k: _sso_cache[k][0])[:max(excess, 0)]:
+            del _sso_cache[key]
+
+
+def _sso_http() -> httpx.AsyncClient:
+    """One shared client for the lookups (built on first use, so the test seam
+    above is honoured)."""
+    global _sso_client
+    if _sso_client is None:
+        _sso_client = httpx.AsyncClient(timeout=3.0, transport=SSO_TRANSPORT)
+    return _sso_client
+
+
 async def _openwebui_identity(token: Optional[str]) -> Optional[Identity]:
     """Validate OpenWebUI's session token against OpenWebUI itself (cached
-    briefly). Any failure means "not signed in here" — never an error."""
-    if not (SSO_OPENWEBUI_URL and token):
+    briefly, a bogus token too). Any failure means "not signed in here" —
+    never an error. A cookie that is not even shaped like a JWT is refused
+    without a lookup, and at most SSO_MAX_INFLIGHT lookups run at once."""
+    if not (SSO_OPENWEBUI_URL and _sso_token_shape_ok(token)):
         return None
-    now = time.time()
-    cached = _sso_cache.get(token)
-    if cached and cached[0] > now:
+    cached = _sso_cached(token, time.time())
+    if cached:
         return cached[1]
-    identity: Optional[Identity] = None
-    try:
-        async with httpx.AsyncClient(timeout=3.0, transport=SSO_TRANSPORT) as client:
-            response = await client.get(f"{SSO_OPENWEBUI_URL}/api/v1/auths/",
-                                        headers={"Authorization": f"Bearer {token}"})
-        if response.status_code == 200:
-            data = response.json()
-            role = data.get("role")
-            user = data.get("email") or data.get("name") or data.get("id") or ""
-            if user and role == "admin":
-                identity = Identity("admin", user, "openwebui")
-            elif user and role == "user":
-                identity = Identity("viewer", user, "openwebui")
-    except (httpx.HTTPError, ValueError):
-        identity = None
-    _sso_cache[token] = (now + SSO_CACHE_TTL_S, identity)
-    if len(_sso_cache) > 512:  # bounded: drop the expired entries
-        for key in [k for k, (expiry, _) in _sso_cache.items() if expiry <= now]:
-            _sso_cache.pop(key, None)
+    async with _sso_gate:
+        now = time.time()
+        cached = _sso_cached(token, now)  # a request ahead in the queue may have done it
+        if cached:
+            return cached[1]
+        identity: Optional[Identity] = None
+        try:
+            response = await _sso_http().get(f"{SSO_OPENWEBUI_URL}/api/v1/auths/",
+                                             headers={"Authorization": f"Bearer {token}"})
+            if response.status_code == 200:
+                data = response.json()
+                role = data.get("role")
+                user = data.get("email") or data.get("name") or data.get("id") or ""
+                if user and role == "admin":
+                    identity = Identity("admin", user, "openwebui")
+                elif user and role == "user":
+                    identity = Identity("viewer", user, "openwebui")
+        except (httpx.HTTPError, ValueError):
+            identity = None
+        _sso_remember(token, identity, now)
     return identity
 
 

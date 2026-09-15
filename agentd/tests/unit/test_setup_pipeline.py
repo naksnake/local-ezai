@@ -23,11 +23,15 @@ from agentd import platform_cli
 from agentd import setup_pipeline as sp
 from agentd.bootstrap import RUNTIME_KEY, parse_env
 from agentd.capability import CapabilityVector
+from agentd.catalog import CatalogError
 from agentd.config import load_config
 from agentd.control.health import DEFAULT_TARGETS
+from agentd.governance import GovernanceError
 from agentd.main_cli import main
-from agentd.platform_cli import build_context
-from agentd.registry_v2 import load_registry, registry_path
+from agentd.platform_cli import PlatformError, build_context
+from agentd.registry_v2 import RegistryError, load_registry, registry_path
+from agentd.render import RenderError
+from agentd.runtime_descriptor import DescriptorError
 from agentd.schemas import ModelEvalReport, ModelProbeResult, Plan, PlanTask
 from agentd.setup_pipeline import (
     BANNER_KEY,
@@ -299,6 +303,33 @@ def test_seed_problems_stop_before_any_docker_command(platform):
     assert report.banner == "not shown (platform not ready)"
     assert (platform.root / "config" / "first-run" / "report.md").is_file()
     assert report.card()[0].startswith("✗ Platform not ready yet")
+
+
+@pytest.mark.parametrize("error", [RegistryError, RenderError, CatalogError, GovernanceError,
+                                   DescriptorError])
+def test_every_platform_error_is_a_failed_step_and_the_report_is_still_written(platform, error):
+    """The registry/render/catalog/governance/descriptor errors subclass
+    ValueError, not PlatformError — they must end as a failed step result
+    with their fix, and the report step must still write its files."""
+    assert not issubclass(error, PlatformError)
+    run, docker, http, said = pipeline(platform)
+
+    def broken() -> tuple[str, str]:
+        raise error("role chat pins 'ghost' which is not a model — fix the registry")
+
+    run.step_bootstrap = broken
+    report = run.run()
+    assert steps(report) == {"bootstrap": "failed", "report": "ok"}
+    assert "not a model — fix the registry" in report.steps[0].detail
+    assert report.exit_code == EXIT_FAILED and not report.ready
+    assert docker.calls == [] and http.posts == []
+    first_run = platform.root / "config" / "first-run"
+    data = json.loads((first_run / "report.json").read_text(encoding="utf-8"))
+    assert data["ready"] is False and data["steps"][0]["status"] == "failed"
+    # the outcome is decided before the file is written — the card reads the truth
+    assert data["ok"] is False and data["exit_code"] == 1
+    assert "- bootstrap: ✗" in (first_run / "report.md").read_text(encoding="utf-8")
+    assert any(line.startswith("  ✗ bootstrap:") for line in said)
 
 
 def test_image_pull_failure_stops_before_up_and_skip_flags_skip(platform):

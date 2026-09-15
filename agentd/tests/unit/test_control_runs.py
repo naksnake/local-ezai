@@ -406,3 +406,56 @@ def test_run_operations_are_in_the_contract(daemon):
     assert "409" in operations["run_report"][1]["responses"]
     assert all(op["security"] == [{"serviceToken": []}] for _, op in operations.values())
     assert "CLI: local-ezai run" in operations["run_start"][1]["summary"]
+
+
+class FirstCallGate:
+    """Wraps the scripted client: the FIRST model call blocks until released
+    (the run is then inside the planner node), every later call flows."""
+
+    def __init__(self, inner, started: threading.Event, release: threading.Event) -> None:
+        self._inner, self.started, self.release = inner, started, release
+        self.calls = 0
+
+    def chat(self, role, messages, *args, **kwargs):
+        self.calls += 1
+        if self.calls == 1:
+            self.started.set()
+            assert self.release.wait(30), "gate never released"
+        return self._inner.chat(role, messages, *args, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+
+def test_cancel_during_a_real_graph_run_ends_cancelled_not_failed(daemon):
+    """The graph nodes turn every Exception into a *failed* report; a
+    cancellation must pass through them as what it is: the record, the
+    audit and the journal all end `cancelled`."""
+    from agentd.llm import build_llm
+
+    started, release, gates = threading.Event(), threading.Event(), []
+
+    def factory(cfg):
+        gates.append(FirstCallGate(build_llm(cfg.llm), started, release))
+        return gates[-1]
+
+    registry = RunRegistry(daemon.ctx.config, daemon.records_dir, audit=daemon.ctx.queue.audit_log,
+                           max_concurrent=1, max_queued=1, llm_factory=factory)
+    with make_client(daemon, runs=registry) as client:
+        run_id = client.post(f"{V1}/runs", headers=AUTH,
+                             json={"kind": "run", "project": "repo",
+                                   "task": "fix the add bug"}).json()["run_id"]
+        assert started.wait(60)  # inside the planner's model call
+        requested = client.post(f"{V1}/runs/{run_id}/cancel", headers=AUTH).json()
+        assert requested["status"] == "running" and requested["cancel_requested"]
+        release.set()  # the planner answers; the coder's call is the cancellation point
+        final = wait_terminal(client, run_id)
+    assert final["status"] == "cancelled", final
+    assert "next model call" in final["error"]
+    assert gates[0].calls == 1  # the coder never reached the model
+    journal = [json.loads(line) for line in Path(final["journal_path"]).read_text().splitlines()
+               if line.strip()]
+    assert journal[-1]["type"] == "RUN_TERMINAL"
+    assert journal[-1]["payload"]["status"] == "cancelled"
+    finished = [r for r in daemon.ctx.queue.audit() if r.event == "run.finished"]
+    assert finished and finished[-1].details["status"] == "cancelled"

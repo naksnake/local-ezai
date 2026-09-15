@@ -12,9 +12,11 @@ import importlib.util
 import json
 import re
 import shutil
+import threading
 import time
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import httpx
 import pytest
@@ -140,6 +142,67 @@ def test_catalog_is_start_and_inspect_only_by_construction():
     plan_tool = next(t for t in registered if t.name == "swe_plan")
     assert set(plan_tool.inputSchema["properties"]) == {"project", "task"}
     assert "confirmation" in plan_tool.description
+
+
+# ── the event loop stays free: every tool runs on a worker thread ────────────
+
+
+class WaitingPlane:
+    """A control plane whose one plan job stays `running` until the test
+    releases it — what swe_plan waits on."""
+
+    def __init__(self, released: threading.Event) -> None:
+        self.released = released
+
+    def post(self, path: str, **body: Any) -> dict:
+        return {"run_id": "r1", "kind": "plan", "status": "queued",
+                "project_name": body["project"]}
+
+    def get(self, path: str, **params: Any) -> dict:
+        if path.endswith("/report"):
+            return {"report": {"goal": "look around", "tasks": []}}
+        return {"run_id": "r1", "kind": "plan", "project_name": "repo", "request": "x",
+                "submitted_at": "2026-09-15T00:00:00",
+                "status": "completed" if self.released.is_set() else "running"}
+
+
+def text_of(result) -> str:
+    content = result[0] if isinstance(result, tuple) else result
+    return "".join(getattr(block, "text", "") for block in content)
+
+
+def test_every_tool_is_async_and_a_waiting_plan_blocks_no_other_call():
+    """mcpo shares one server process across every chat: a plan waiting on
+    the daemon must not stall the next swe_status. FastMCP runs sync tools
+    inline on its loop, so the catalog is registered through async wrappers
+    that hand the work to a thread — same names, same schemas."""
+    released = threading.Event()
+    waits: list[bool] = []
+    tools = swe.SweTools(WaitingPlane(released), admin_url=ADMIN, plan_wait_s=3,
+                         sleep=lambda seconds: waits.append(released.wait(2.0)))
+    server = swe.build_server(tools)
+    assert all(t.is_async for t in server._tool_manager.list_tools())
+    assert [t.name for t in asyncio.run(server.list_tools())] == list(swe.TOOLS)
+
+    async def both() -> tuple[list[str], dict[str, str]]:
+        order: list[str] = []
+        answers: dict[str, str] = {}
+
+        async def call(name: str, arguments: dict) -> None:
+            answers[name] = text_of(await server.call_tool(name, arguments))
+            order.append(name)
+            if name == "swe_status":
+                released.set()  # the plan may finish once another call got through
+
+        await asyncio.gather(call("swe_plan", {"project": "repo", "task": "x"}),
+                             call("swe_status", {"run_id": "r1"}))
+        return order, answers
+
+    order, answers = asyncio.run(both())
+    assert order == ["swe_status", "swe_plan"]
+    assert waits == [True]  # released by the status call, not by the timeout
+    assert "status **running**" in answers["swe_status"]
+    assert answers["swe_plan"].startswith("## Plan `r1`") and "look around" in answers["swe_plan"]
 
 
 # ── the loop: projects → plan → confirm → run → report ───────────────────────

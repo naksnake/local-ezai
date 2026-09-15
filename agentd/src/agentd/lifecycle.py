@@ -218,6 +218,26 @@ def free_port() -> int:
         return int(sock.getsockname()[1])
 
 
+COMPOSE_UNAVAILABLE = (
+    "docker compose is not available where this runs — model validation and benchmarking "
+    "side-load the engine through it; run the verb from the local-ezai CLI on the host "
+    "(EZAI_TRANSPORT=direct), or serve the control plane on the host (`make control-serve`) "
+    "instead of the container overlay")
+
+
+def require_compose(runner: Runner) -> None:
+    """The side-load's precondition, checked the same way everywhere: a
+    missing binary (the shipped ``ezaid`` image has none) and a failing
+    ``docker compose version`` are one refusal with the fix — never a
+    traceback, and never after a download."""
+    try:
+        version = runner(["docker", "compose", "version"])
+    except FileNotFoundError:
+        raise LifecycleError(COMPOSE_UNAVAILABLE) from None
+    if version.returncode != 0:
+        raise LifecycleError(COMPOSE_UNAVAILABLE)
+
+
 @dataclass
 class ProbeResult:
     ok: bool
@@ -301,11 +321,7 @@ class SideLoad:
         return document, preset
 
     def __enter__(self) -> SideLoad:
-        version = self._run(["docker", "compose", "version"])
-        if version.returncode != 0:
-            raise LifecycleError(
-                "docker compose is not available — model validation and "
-                "benchmarking side-load the engine through it")
+        require_compose(self._run)
         document, preset = self.compose_document()
         self.workdir.mkdir(parents=True, exist_ok=True)
         if preset is not None:
@@ -501,10 +517,15 @@ class InstallResult:
     #: servable (pre-bootstrap: no activation exists) — the in-memory
     #: result is complete; the caller persists after activation.
     persisted: bool = False
+    #: The entry's recorded reason after the operation ("" when it succeeded).
+    error: str = ""
 
     @property
     def ok(self) -> bool:
-        return self.state == "installed"
+        # A re-install of a serving model ends `active`, not `installed`; a
+        # failed one over an active/retired entry keeps the state and carries
+        # the reason — so "ok" is "not failed and nothing recorded against it".
+        return self.state != "failed" and not self.error
 
 
 UNSERVABLE_HINT = ("registry not persisted: no generation can be written before a "
@@ -536,6 +557,11 @@ class SideLoadValidator:
         self.platform_root, self.workdir = Path(platform_root), Path(workdir)
         self.runner, self.http, self.env, self.sleep, self.clock = runner, http, env, sleep, clock
 
+    def preflight(self) -> None:
+        """``install`` asks before it downloads anything: can this process
+        side-load at all? (The container overlay's daemon cannot.)"""
+        require_compose(self.runner)
+
     def __call__(self, descriptor: RuntimeDescriptor, name: str, entry: ModelEntry) -> ProbeResult:
         served = served_id_for(descriptor, name, entry, self.capability_class, self.accelerator)
         try:
@@ -551,6 +577,81 @@ class SideLoadValidator:
             return ProbeResult(False, str(exc), served_id=served)
 
 
+#: States a failed re-fetch or re-validation must not demote: an active model
+#: keeps serving (the registry would stop resolving otherwise), a retired one
+#: stays parked for rollback. The reason lands on the entry either way.
+KEEP_STATE_ON_FAILURE = frozenset({"active", "retired"})
+
+
+def _resolve(registry: RegistryV2, target: str, descriptors: dict[str, RuntimeDescriptor], *,
+             catalog: Catalog | None, runtime: str | None, group: str | None,
+             name: str | None, vector: CapabilityVector, capability_class: str,
+             accelerator: str) -> Resolved:
+    try:
+        resolved = resolve_target(registry, target, descriptors, catalog=catalog,
+                                  runtime=runtime, group=group, name=name, vector=vector,
+                                  capability_class=capability_class, accelerator=accelerator)
+    except (SourceError, CatalogError) as exc:
+        raise LifecycleError(str(exc)) from exc
+    if resolved.is_new and resolved.name in registry.models:
+        raise LifecycleError(
+            f"a model named '{resolved.name}' already exists — pass name=… to add "
+            "this source under another name, or install by its registry name")
+    return resolved
+
+
+def _preflight(validator: Any) -> None:
+    """Ask the validator whether it can run here BEFORE anything is
+    downloaded: the shipped control-plane container has no docker CLI, and
+    a multi-GB fetch that can only end in a failed probe helps nobody."""
+    check = getattr(validator, "preflight", None)
+    if check is not None:
+        check()
+
+
+def _record_failure(entry: ModelEntry, name: str, error: str) -> str:
+    """A failed fetch or probe: the reason lands on the entry and the state
+    becomes ``failed`` — unless the entry serves or is parked
+    (``KEEP_STATE_ON_FAILURE``); then the state is kept and the message
+    says so."""
+    entry.error = error
+    if entry.state in KEEP_STATE_ON_FAILURE:
+        return f"install {name} failed — '{name}' stays {entry.state}: {error}"
+    transition(entry, "failed", reason=f"{error.split(':', 1)[0]} failed")
+    return f"install {name} failed: {error}"
+
+
+def prefetch(registry: RegistryV2, target: str, *, descriptors: dict[str, RuntimeDescriptor],
+             vector: CapabilityVector, platform_root: Path, validator: Validator | None = None,
+             catalog: Catalog | None = None, runtime: str | None = None,
+             group: str | None = None, name: str | None = None,
+             capability_class: str | None = None, accelerator: str | None = None,
+             fetcher_factory: FetcherFactory = default_fetcher, refetch: bool = False,
+             env: Mapping[str, str] | None = None) -> Fetched | None:
+    """The fetch half of ``install`` on its own — resolve, preflight, download
+    into the runtime's weights directory — with NO registry state change, so
+    a caller that serializes state mutations (the control plane) can run the
+    long part outside its lock and hand the result to ``install`` as
+    ``fetched=``. Resolution and preflight failures raise as in ``install``;
+    a failed download returns None, and ``install`` then repeats the
+    (fast-failing) fetch and records the reason in the one place."""
+    capability_class = capability_class or classify(vector)
+    accelerator = accelerator or vector.accelerator
+    resolved = _resolve(registry, target, descriptors, catalog=catalog, runtime=runtime,
+                        group=group, name=name, vector=vector,
+                        capability_class=capability_class, accelerator=accelerator)
+    if validator is not None:
+        _preflight(validator)
+    entry = resolved.entry
+    directory = weights_dir(descriptors[entry.provider], platform_root, env)
+    try:
+        return fetcher_factory(resolved.fmt, directory).fetch(
+            resolved.ref, expected_sha256=entry.source.get("sha256", ""), refetch=refetch)
+    except FetchError as exc:
+        log.warning("prefetch %s: %s", resolved.name, exc)
+        return None
+
+
 def install(registry: RegistryV2, target: str, *, descriptors: dict[str, RuntimeDescriptor],
             vector: CapabilityVector, platform_root: Path, validator: Validator,
             catalog: Catalog | None = None, runtime: str | None = None,
@@ -558,42 +659,41 @@ def install(registry: RegistryV2, target: str, *, descriptors: dict[str, Runtime
             capability_class: str | None = None, accelerator: str | None = None,
             fetcher_factory: FetcherFactory = default_fetcher, refetch: bool = False,
             persist_dir: Path | None = None,
-            env: Mapping[str, str] | None = None) -> InstallResult:
+            env: Mapping[str, str] | None = None,
+            fetched: Fetched | None = None) -> InstallResult:
     """``model install <name|source>`` — see module docstring. Returns the
     updated registry (persisted as the next generation when ``persist_dir``
     is given); never raises for fetch/validation failures — those become
-    state ``failed`` with the reason on the entry."""
+    state ``failed`` with the reason on the entry (an active or retired
+    entry keeps its state and carries the reason). ``fetched`` is a
+    ``prefetch`` result to reuse instead of fetching here. Raises
+    ``LifecycleError`` when the target cannot be resolved or this process
+    cannot validate at all (the validator's ``preflight``) — nothing is
+    downloaded in either case."""
     capability_class = capability_class or classify(vector)
     accelerator = accelerator or vector.accelerator
     updated = registry.model_copy(deep=True)
-    try:
-        resolved = resolve_target(updated, target, descriptors, catalog=catalog,
-                                  runtime=runtime, group=group, name=name, vector=vector,
-                                  capability_class=capability_class, accelerator=accelerator)
-    except (SourceError, CatalogError) as exc:
-        raise LifecycleError(str(exc)) from exc
+    resolved = _resolve(updated, target, descriptors, catalog=catalog, runtime=runtime,
+                        group=group, name=name, vector=vector,
+                        capability_class=capability_class, accelerator=accelerator)
     entry, model_name = resolved.entry, resolved.name
     descriptor = descriptors[entry.provider]
     if resolved.is_new:
-        if model_name in updated.models:
-            raise LifecycleError(
-                f"a model named '{model_name}' already exists — pass name=… to add "
-                "this source under another name, or install by its registry name")
         if updated.providers and entry.provider not in updated.providers:
             updated.providers.append(entry.provider)
         log.info("registered %s (%s via %s → %s)", model_name, resolved.fmt,
                  resolved.origin, entry.provider)
     updated.models[model_name] = entry  # resolved entries are copies: bind the working one
+    _preflight(validator)
 
-    directory = weights_dir(descriptor, platform_root, env)
-    try:
-        fetched = fetcher_factory(resolved.fmt, directory).fetch(
-            resolved.ref, expected_sha256=entry.source.get("sha256", ""), refetch=refetch)
-    except FetchError as exc:
-        transition(entry, "failed", reason="fetch failed")
-        entry.error = f"fetch: {exc}"
-        return _finish(updated, model_name, f"install {model_name} failed: {entry.error}",
-                       persist_dir, fetched=None, probe=None)
+    if fetched is None:
+        directory = weights_dir(descriptor, platform_root, env)
+        try:
+            fetched = fetcher_factory(resolved.fmt, directory).fetch(
+                resolved.ref, expected_sha256=entry.source.get("sha256", ""), refetch=refetch)
+        except FetchError as exc:
+            message = _record_failure(entry, model_name, f"fetch: {exc}")
+            return _finish(updated, model_name, message, persist_dir, fetched=None, probe=None)
     entry.artifact = fetched.artifact
     entry.size_gb = round(fetched.size_bytes / 1024**3, 2)
     if fetched.sha256:
@@ -601,15 +701,16 @@ def install(registry: RegistryV2, target: str, *, descriptors: dict[str, Runtime
 
     probe = validator(descriptor, model_name, entry)
     if probe.ok:
-        transition(entry, "installed", reason="validated")
+        # A re-run over a serving model keeps it serving; everything else
+        # (registered, failed, retired, benchmarked) is installed anew.
+        transition(entry, "active" if entry.state == "active" else "installed",
+                   reason="validated")
         entry.installed_at, entry.error = _now(), ""
-        message = (f"install {model_name}: installed ({entry.size_gb} GB, "
+        message = (f"install {model_name}: {entry.state} ({entry.size_gb} GB, "
                    f"{'weights reused' if fetched.reused else 'downloaded'}, probe "
                    f"{probe.latency_s:.1f}s)")
     else:
-        transition(entry, "failed", reason="validation failed")
-        entry.error = f"validate_model: {probe.error}"
-        message = f"install {model_name} failed: {entry.error}"
+        message = _record_failure(entry, model_name, f"validate_model: {probe.error}")
     return _finish(updated, model_name, message, persist_dir, fetched, probe)
 
 
@@ -620,8 +721,9 @@ def _finish(updated: RegistryV2, name: str, message: str, persist_dir: Path | No
     if persist_dir is not None and not persisted:
         message = f"{message} ({UNSERVABLE_HINT})"
     log.info(message)
-    return InstallResult(validated, name, validated.models[name].state, message, fetched,
-                         probe, persisted)
+    entry = validated.models[name]
+    return InstallResult(validated, name, entry.state, message, fetched, probe, persisted,
+                         error=entry.error)
 
 
 # ── benchmark ────────────────────────────────────────────────────────────────

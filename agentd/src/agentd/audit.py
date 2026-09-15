@@ -66,3 +66,11 @@ class AuditLog:
         if not self.path.is_file():
             return 0
         return sum(1 for line in self.path.read_text(encoding="utf-8").splitlines() if line)
+
+    def page(self, limit: int | None = None) -> tuple[int, list[AuditRecord]]:
+        """``(total, newest records)`` from ONE read — the shape the audit
+        endpoint serves; ``tail`` and ``count`` stay for single-purpose
+        callers. After a long soak the log is the largest file the console
+        polls, and reading it twice per request added up."""
+        records = self.tail()
+        return len(records), (records[-limit:] if limit else records)

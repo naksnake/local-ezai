@@ -318,7 +318,12 @@ class HFFetcher:
             log.info("repository present: %s", repo_dir)
             return Fetched(str(repo_dir), self._size(repo_dir), reused=True)
         command, env = self.command(ref)
-        proc = self._run(command, env)
+        try:
+            proc = self._run(command, env)
+        except FileNotFoundError as exc:  # neither `hf` nor docker where this runs
+            raise FetchError(f"hf download {ref}: no `hf` CLI and no docker to run the hub "
+                             "client where this runs — install one, or fetch from the host "
+                             "(local-ezai CLI, EZAI_TRANSPORT=direct)") from exc
         if proc.returncode != 0:
             tail = (proc.stderr or proc.stdout or "").strip().splitlines()[-3:]
             raise FetchError(f"hf download {ref} failed (exit {proc.returncode}): "

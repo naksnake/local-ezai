@@ -14,7 +14,10 @@ before it starts; a running job's model client is wrapped by
 ``CancellableLLM``, which raises ``RunCancelled`` at the job's next model
 call — the pipeline unwinds through its own ``finally`` blocks (memory
 store closed, journal intact) and the job ends ``cancelled``. Subprocesses
-already running (validation, git) finish on their own.
+already running (validation, git) finish on their own. ``RunCancelled``
+derives from ``BaseException`` (like ``KeyboardInterrupt``) on purpose: the
+graph nodes and the sprint scheduler turn any ``Exception`` into a *failed*
+report, and a cancellation must pass through them as what it is.
 
 **Limits:** ``max_concurrent`` workers; ``max_queued`` jobs may wait;
 beyond that a submission is refused (``too_many_runs``). At most one
@@ -57,8 +60,11 @@ REFUSAL_STATUS = {"not_found": 404, "project_busy": 409, "run_finished": 409,
                   "too_many_runs": 429, "invalid_request": 422}
 
 
-class RunCancelled(RuntimeError):
-    """Raised inside a job at its next model call once cancellation was requested."""
+class RunCancelled(BaseException):  # noqa: N818 — not an error: a requested stop
+    """Raised inside a job at its next model call once cancellation was
+    requested. Not an ``Exception``: every ``except Exception`` on the way
+    up (graph nodes, sprint tasks, agent loops) records a *failure*, and a
+    cancelled run is not one — it must reach ``RunRegistry._execute``."""
 
 
 class RunRefused(ValueError):
@@ -396,6 +402,7 @@ class RunRegistry:
             status, error = outcome_status(result)
         except RunCancelled:
             status, error = "cancelled", "cancelled at the next model call, as requested"
+            self._close_journal(run_dir, status, error)
         except Exception as exc:  # noqa: BLE001 — a job's failure is a recorded outcome
             status, error = "failed", f"{type(exc).__name__}: {exc}"
             log.exception("run %s failed", run_id)
@@ -410,6 +417,17 @@ class RunRegistry:
             self._save(record)
         self._record_audit("run.finished", record, error=error[:300])
         log.info("run %s %s", run_id, status)
+
+    @staticmethod
+    def _close_journal(run_dir: Path, status: str, error: str) -> None:
+        """A cancelled pipeline never reaches its own terminal event; the
+        journal on disk (when the run got far enough to have one) still
+        ends with how it ended."""
+        if not (run_dir / "journal.jsonl").is_file():
+            return
+        from agentd.journal import Journal
+
+        Journal(run_dir).append("RUN_TERMINAL", status=status, error=error)
 
     def wait(self, run_id: str, timeout: float | None = None) -> RunRecord:
         """Block until the job's worker returns (tests, graceful shutdown)."""

@@ -59,6 +59,37 @@ carries its artifact under `docs/prs/`. Release evidence:
   release train: the soak runbook (`make soak`), the DoD checklist, the
   refreshed guides.
 
+### Review hardening before the tag (PR-27, 2026-09-15)
+
+A code review of the merged release train found fourteen defects the suite
+did not cover; each is fixed with its regression test
+([prs/PR-27-review-fixes.md](prs/PR-27-review-fixes.md)). The ones you may
+notice:
+
+- **Control plane.** Model install and benchmark through the container
+  overlay's daemon are refused *before* any download with the fix named (the
+  side-load needs the host's docker CLI — run the verb direct, or `make
+  control-serve`); idempotent replays require the token and the same client,
+  and a 401 is never cached; a cancelled run ends `cancelled`, not `failed`;
+  a model download no longer holds the mutation lock, and a mutation that
+  waits more than 30 s for another gets `409 mutation_busy` instead of
+  hanging; `/v1/audit` and `/v1/health` stop re-parsing their files.
+- **Lifecycle and first run.** Re-installing an active model keeps it active
+  (a failed re-validation demotes nothing); a stack started before the first
+  render no longer breaks rendering (the stray directory docker leaves is
+  reclaimed); `local-ezai up` refuses without the rendered config and, like
+  `setup`, defaults the profile from the detected class; the setup report
+  records the real outcome; all platform errors become step results.
+- **Console and chat.** The monitor's OpenWebUI cookie check is bounded (cache
+  cap, shape check, at most eight concurrent validations); a waiting
+  `swe_plan` no longer blocks the other tools of the SWE tool server.
+- **Build and hygiene.** `make bootstrap` / `control-serve` work on a fresh
+  checkout; `config/control/` and `config/rendered/` are git-ignored,
+  `config/models/` no longer is (the weights rule is anchored to `/models/`).
+- **New: the offline SWE demo.** `make swe-demo` runs the whole pipeline on a
+  scratch copy of the sample project with a scripted model and no stack —
+  the walkthrough for newcomers ([SWE_DEMO.md](SWE_DEMO.md)).
+
 ### Compatibility and upgrade notes
 
 - The chat stack is **byte-identical in behavior** (ADR-002): a baseline of
@@ -79,6 +110,11 @@ carries its artifact under `docs/prs/`. Release evidence:
   notice is text-mode only). `model install <source>` without `--runtime`
   now prefers the active slot's runtime when it serves the format
   (identical outcome with the shipped runtimes).
+- PR-27: a bootstrapped checkout now shows `config/models/` (registry and
+  generations) as trackable — commit it if you version your platform state;
+  `config/control/` and `config/rendered/` are ignored. Idempotency records
+  written before PR-27 read back unchanged (no client recorded → any
+  authenticated client may replay them once).
 
 ### Known limitations (recorded for the next train)
 
@@ -93,8 +129,9 @@ carries its artifact under `docs/prs/`. Release evidence:
 
 ### Verification
 
-Full offline suite green (740+ tests after this release train), ruff clean,
-`make release-gate` green, the chat-stack baseline unchanged. The soak
+Full offline suite green (743 tests at the release train; 775 after the
+PR-27 review hardening), ruff clean, `make release-gate` green, the
+chat-stack baseline unchanged. The soak
 results and the sign-off are recorded in
 [V1_RELEASE_REPORT.md](V1_RELEASE_REPORT.md) §4 and §7 by the release
 manager; the `v1.0.0` tag follows the merge of the release PR

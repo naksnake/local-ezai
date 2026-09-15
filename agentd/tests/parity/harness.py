@@ -45,7 +45,7 @@ from typing import Any
 import yaml
 from fastapi.testclient import TestClient
 
-from agentd import platform_cli
+from agentd import activation, platform_cli
 from agentd.activation import Platform
 from agentd.capability import CapabilityVector
 from agentd.config import ControlConfig, load_config
@@ -389,7 +389,7 @@ def state(world: World) -> dict[str, Any]:
     registry = load_registry(world.config_dir)
     return scrub({
         "registry": registry.model_dump(mode="json"),
-        "rendered_generation": platform_cli._manifest_generation(ctx),
+        "rendered_generation": activation._manifest_generation(ctx.platform),
         "generations": platform_cli.generation_history(ctx, limit=50)["generations"],
         "queue": platform_cli.list_requests(ctx)["requests"],
         "projects": platform_cli.list_projects(ctx)["projects"],

@@ -12,7 +12,7 @@ fixes: [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 | `config/providers/*.yaml` | runtime descriptors — the **only** home of runtime and hardware knowledge | data; adding a runtime = one YAML + images, zero code ([RUNTIME_ABSTRACTION_STRATEGY.md](RUNTIME_ABSTRACTION_STRATEGY.md) §2/§6) |
 | `config/models/`, `config/governance/`, `config/projects.yaml`, `config/catalog/` | declarative platform state: registry + generations, the audit log and queue, the project allowlist, catalog additions | machine-written through `local-ezai …` / the Admin Center; back it up; never hand-edit the registry |
 | `config/rendered/` | LiteLLM config, engine compose override, role map, capability report, manifest | **outputs** — never edit (drift is refused); re-rendered on every generation |
-| `config/first-run/`, `config/control/`, `config/soak/` | first-run report + banner, the daemon's idempotency and run records, soak logs | machine-managed, git-ignored |
+| `config/first-run/`, `config/control/`, `config/soak/` | first-run report + banner, the daemon's idempotency and run records, soak logs | machine-managed, git-ignored (as is `config/rendered/` — regenerated, never restored from git) |
 | `agentd/` | Autonomous SWE runtime + the platform (`platform_cli`, `control/`, lifecycle, renderer, installer, pipeline) | tests + ruff + ADR required for every change; the contract `docs/api/ezaid-openapi.json` is versioned |
 | `agentd/tests/{unit,integration,security,acceptance,parity,gates}` | the suite and the release gates | a pre-existing test changes only with a "Behavior notes" justification in the PR |
 | `docs/` | architecture + guides (this directory) + `docs/prs/` (one artifact per PR) | update in the same PR as the change |

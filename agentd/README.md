@@ -558,7 +558,9 @@ The test suite runs **fully offline**: a `ScriptedLLM` replays canned
 model responses, integration tests drive the real graph end-to-end against
 throwaway git repos (real edits, real `git`, real validation subprocesses).
 The same mechanism is available at runtime (`llm.provider: scripted`) for
-demos and debugging.
+demos and debugging — `make swe-demo` is that demo
+([docs/SWE_DEMO.md](../docs/SWE_DEMO.md); the script is
+`examples/swe-demo/responses.json`).
 
 Layout:
 
