@@ -32,6 +32,9 @@ class StoredResponse:
     media_type: str
     operation: str
     stored_at: str
+    #: The surface that made the call (``X-EZAI-Client``); a replay from another
+    #: client is a conflict, not an answer. Empty on records written before it existed.
+    client: str = ""
 
 
 class IdempotencyStore:
@@ -55,12 +58,13 @@ class IdempotencyStore:
         return StoredResponse(**json.loads(path.read_text(encoding="utf-8")))
 
     def put(self, key: str, fingerprint: str, status: int, body: bytes, media_type: str,
-            operation: str) -> StoredResponse:
+            operation: str, client: str = "") -> StoredResponse:
         record = StoredResponse(key=key, fingerprint=fingerprint, status=status,
                                 body=body.decode("utf-8", errors="replace"),
                                 media_type=media_type or "application/json",
                                 operation=operation,
-                                stored_at=time.strftime("%Y-%m-%dT%H:%M:%S"))
+                                stored_at=time.strftime("%Y-%m-%dT%H:%M:%S"),
+                                client=client)
         self.directory.mkdir(parents=True, exist_ok=True)
         path = self._path(key)
         tmp = path.with_suffix(".json.tmp")

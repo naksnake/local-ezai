@@ -1049,6 +1049,30 @@ starting the daemon from `make up` stays opt-in (ADR-002; the P5 installer
 may wire a default). Stability item fixed in the close: run listing orders
 by submission, not by the second-resolution timestamp. P3 (ADR-029), P4
 (ADR-030) and P5 (ADR-031) proceed in parallel from PR-12.
+**As-built note (2026-09-15, PR-27 — review hardening, no contract change):**
+the pre-tag review of the merged train fixed what the suite had not covered
+([docs/prs/PR-27-review-fixes.md](../docs/prs/PR-27-review-fixes.md)).
+Decisions taken in it: (1) **the side-load's precondition is the
+lifecycle's, checked before any download** — `require_compose()` +
+`SideLoadValidator.preflight()`; the daemon adds no docker guard of its own
+(the test seams fake the validator, not the binary), so the container
+overlay's daemon refuses `model install`/`benchmark` with the fix named and
+the soak's churn benchmarks direct on the host; (2) **a replay is a call**:
+the idempotency middleware authenticates and applies the client policy
+before handing back a stored answer, a replay from another client is a
+conflict, replays are audited (`api.replayed`), and a 401 is never stored;
+(3) **`RunCancelled` is a `BaseException`** — the graph nodes' and the sprint
+scheduler's `except Exception` record failures, and a cancellation is not
+one; this is the asyncio `CancelledError` precedent and was tested through
+the real graph; (4) **downloads run outside the mutation lock**
+(`lifecycle.prefetch` → `install(fetched=…)`, serialized only among
+themselves) and every mutation's wait for the lock is bounded (30 s → `409
+mutation_busy`); (5) a re-install over an active or retired model keeps its
+state (`KEEP_STATE_ON_FAILURE`) — a failed re-validation never makes the
+registry unservable; (6) the weights ignore rule is anchored (`/models/`) so
+`config/models/` is trackable, as ADR-025's "git-committed generations"
+always intended. The offline demo (`make swe-demo`) reuses the `scripted`
+provider unchanged: only the model's answers are canned.
 
 ## ADR-029 — Chat-ops boundary: the SWE Tool Server (P3)
 **Date:** 2026-09-09 · **Status:** **Accepted** (2026-09-09, PR-15 — the P3

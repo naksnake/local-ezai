@@ -1,0 +1,40 @@
+[
+  {
+    "content": "{\"goal\": \"Add a GET /health endpoint that returns {\\\"status\\\": \\\"ok\\\"} and a test for it\", \"assumptions\": [\"routes() is the single table the handler serves from, so a new path is one entry\", \"tests are standard-library unittest under tests/, discovered by the configured check\"], \"tasks\": [{\"id\": \"T1\", \"intent\": \"Serve {\\\"status\\\": \\\"ok\\\"} on GET /health by adding the path to routes() in app.py, and add tests/test_health.py that starts the server on a free port and asserts the endpoint answers 200 with that body\", \"files_hint\": [\"app.py\", \"tests/test_health.py\"], \"check\": \"python3 -m unittest discover -s tests -q\", \"kind\": \"feature\"}], \"risks\": [\"none: additive change, existing routes untouched\"]}"
+  },
+  {
+    "tool_calls": [
+      {
+        "name": "fs_read",
+        "arguments": {
+          "path": "app.py"
+        }
+      }
+    ]
+  },
+  {
+    "tool_calls": [
+      {
+        "name": "fs_edit",
+        "arguments": {
+          "path": "app.py",
+          "old_string": "return {\"/\": GREETING}",
+          "new_string": "return {\"/\": GREETING, \"/health\": {\"status\": \"ok\"}}"
+        }
+      },
+      {
+        "name": "fs_write",
+        "arguments": {
+          "path": "tests/test_health.py",
+          "content": "import http.client\nimport json\nimport sys\nimport threading\nimport unittest\nfrom http.server import HTTPServer\nfrom pathlib import Path\n\nsys.path.insert(0, str(Path(__file__).resolve().parents[1]))\n\nimport app  # noqa: E402\n\n\nclass HealthTests(unittest.TestCase):\n    def test_health_reports_ok(self) -> None:\n        server = HTTPServer((\"127.0.0.1\", 0), app.Handler)\n        threading.Thread(target=server.serve_forever, daemon=True).start()\n        try:\n            connection = http.client.HTTPConnection(\n                \"127.0.0.1\", server.server_address[1], timeout=5)\n            connection.request(\"GET\", \"/health\")\n            response = connection.getresponse()\n            body = response.read()\n            connection.close()\n        finally:\n            server.shutdown()\n            server.server_close()\n        self.assertEqual(response.status, 200)\n        self.assertEqual(json.loads(body), {\"status\": \"ok\"})\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+        }
+      }
+    ]
+  },
+  {
+    "content": "Added the /health route to routes() in app.py and tests/test_health.py, which starts the server on a free port and asserts GET /health answers 200 with {\"status\": \"ok\"}."
+  },
+  {
+    "content": "{\"verdict\": \"approve\", \"summary\": \"In scope and minimal: one new entry in the route table, a new test that exercises it over HTTP, existing behavior untouched.\", \"findings\": []}"
+  }
+]

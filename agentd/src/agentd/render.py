@@ -673,6 +673,26 @@ def check_drift(out_dir: Path) -> list[str]:
     return drift
 
 
+def _reclaim_stray_directory(path: Path) -> None:
+    """Compose bind-mounts the rendered LiteLLM config; a stack started
+    before the first render finds no file there and docker creates a
+    DIRECTORY under that name — which would make every later render die
+    on ``replace``. An empty one is docker's and goes; one with content is
+    not ours to delete, so the refusal names what to do."""
+    if not path.is_dir():
+        return
+    try:
+        path.rmdir()
+    except OSError as exc:
+        raise RenderError(
+            f"{path} is a directory, not a file — the stack was started before the first "
+            "render (docker creates a directory for a missing bind-mount source) and something "
+            "was written into it since; stop the stack, remove that directory, render again"
+        ) from exc
+    log.warning("removed the empty directory docker left at %s (stack started before the "
+                "first render)", path)
+
+
 def write_rendered(result: RenderResult, out_dir: Path, *,
                    force: bool = False) -> list[Path]:
     """Persist a render atomically per file and record the manifest.
@@ -693,6 +713,7 @@ def write_rendered(result: RenderResult, out_dir: Path, *,
     written: list[Path] = []
     for name, text in result.artifacts.items():
         path = out_dir / name
+        _reclaim_stray_directory(path)
         tmp = path.with_suffix(path.suffix + ".tmp")
         tmp.write_text(text, encoding="utf-8")
         tmp.replace(path)
@@ -709,6 +730,7 @@ def write_rendered(result: RenderResult, out_dir: Path, *,
         "artifacts": {name: _digest(text) for name, text in result.artifacts.items()},
     }
     manifest_path = out_dir / MANIFEST_FILENAME
+    _reclaim_stray_directory(manifest_path)
     tmp = manifest_path.with_suffix(".yaml.tmp")
     tmp.write_text(_banner(["content hashes of every rendered artifact — "
                             "drift detection compares against these"])

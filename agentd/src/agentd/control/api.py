@@ -16,6 +16,8 @@ refused with the fix named instead of failing half-way.
 from __future__ import annotations
 
 import shutil
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Query, Request
@@ -28,10 +30,33 @@ from agentd.governance import ChangeRequest
 
 router = APIRouter(prefix=API_PREFIX)
 
+#: How long a mutation waits for the one in flight before the caller is told
+#: to retry. Validation and benchmarks side-load an engine (a minute or two);
+#: a CLI whose read timeout is unbounded, or a console with a 20 s one, is
+#: better served by a clear "busy" than by a hang or a false "unreachable".
+MUTATION_WAIT_S = 30.0
+
 
 def docker_available() -> bool:
     """Seam: can this process reload consumers (compose) at all?"""
     return shutil.which("docker") is not None
+
+
+@contextmanager
+def serialized(request: Request) -> Iterator[None]:
+    """Mutations are serialized in the daemon; a caller waits a bounded time
+    for the one in flight, then gets ``409 mutation_busy`` instead of
+    holding a connection (and a worker thread) for as long as it takes."""
+    lock = request.app.state.mutation_lock
+    if not lock.acquire(timeout=MUTATION_WAIT_S):
+        raise ApiError(409, "mutation_busy",
+                       f"another mutation is still being applied after {MUTATION_WAIT_S:.0f}s "
+                       "(a model validation, benchmark or generation apply)",
+                       "retry in a moment — nothing was changed by this call")
+    try:
+        yield
+    finally:
+        lock.release()
 
 
 def _check_reload(reload: bool) -> None:
@@ -256,10 +281,17 @@ def models_list(ctx: PlatformDep) -> ModelList:
              tags=["models"], summary="Fetch + validate a model (CLI: local-ezai model install)",
              responses=PLATFORM_ERRORS)
 def model_install(request: Request, ctx: PlatformDep, body: InstallRequest) -> InstallOutcome:
-    with request.app.state.mutation_lock:
-        return InstallOutcome(**ops.install_model(ctx, body.ref, name=body.name,
-                                                  runtime=body.runtime, group=body.group,
-                                                  refetch=body.refetch))
+    # The download is the long part and changes no state: it runs outside
+    # the mutation lock (serialized only with other downloads), so an
+    # approval or a rollback is never held behind a multi-GB fetch. The
+    # validation + generation write that follow take the lock as before.
+    with request.app.state.fetch_lock:
+        fetched = ops.prefetch_model(ctx, body.ref, name=body.name, runtime=body.runtime,
+                                     group=body.group, refetch=body.refetch)
+    with serialized(request):
+        return InstallOutcome(**ops.install_model(
+            ctx, body.ref, name=body.name, runtime=body.runtime, group=body.group,
+            refetch=body.refetch and fetched is None, fetched=fetched))
 
 
 @router.post("/models/{name}/benchmark", response_model=BenchmarkOutcome,
@@ -268,7 +300,7 @@ def model_install(request: Request, ctx: PlatformDep, body: InstallRequest) -> I
              responses=PLATFORM_ERRORS)
 def model_benchmark(request: Request, ctx: PlatformDep, name: str,
                     body: BenchmarkRequest | None = None) -> BenchmarkOutcome:
-    with request.app.state.mutation_lock:
+    with serialized(request):
         return BenchmarkOutcome(**ops.benchmark_model(
             ctx, name, base_url=body.base_url if body else None))
 
@@ -281,7 +313,7 @@ def model_activate(request: Request, ctx: PlatformDep, name: str,
                    body: ActivateRequest | None = None) -> ProposalOutcome:
     body = body or ActivateRequest()
     _check_reload(body.reload)
-    with request.app.state.mutation_lock:
+    with serialized(request):
         return ProposalOutcome(**ops.activate_model(ctx, name, group=body.group, role=body.role,
                                                     position=body.position, reload=body.reload))
 
@@ -292,7 +324,7 @@ def model_activate(request: Request, ctx: PlatformDep, name: str,
              responses=PLATFORM_ERRORS)
 def model_upgrade(request: Request, ctx: PlatformDep, body: UpgradeRequest) -> ProposalOutcome:
     _check_reload(body.reload)
-    with request.app.state.mutation_lock:
+    with serialized(request):
         return ProposalOutcome(**ops.upgrade_model(ctx, body.old, body.new, reload=body.reload))
 
 
@@ -304,7 +336,7 @@ def generation_rollback(request: Request, ctx: PlatformDep,
                         body: RollbackRequest | None = None) -> RollbackOutcome:
     body = body or RollbackRequest()
     _check_reload(body.reload)
-    with request.app.state.mutation_lock:
+    with serialized(request):
         return RollbackOutcome(**ops.rollback_generation(
             ctx, to_generation=body.to_generation, reason=body.reason, reload=body.reload))
 
@@ -314,7 +346,7 @@ def generation_rollback(request: Request, ctx: PlatformDep,
                                       "(CLI: local-ezai model retire)",
              responses=PLATFORM_ERRORS)
 def model_retire(request: Request, ctx: PlatformDep, name: str) -> RetireOutcome:
-    with request.app.state.mutation_lock:
+    with serialized(request):
         return RetireOutcome(**ops.retire_model(ctx, name))
 
 
@@ -326,7 +358,7 @@ def model_uninstall(request: Request, ctx: PlatformDep, name: str,
                     force: Annotated[bool, Query(
                         description="even if a stored generation could roll back to it")] = False,
                     ) -> UninstallOutcome:
-    with request.app.state.mutation_lock:
+    with serialized(request):
         return UninstallOutcome(**ops.uninstall_model(ctx, name, force=force))
 
 
@@ -388,7 +420,7 @@ def governance_approve(request: Request, ctx: PlatformDep, request_id: str,
                        body: ApproveRequest | None = None) -> DecisionOutcome:
     body = body or ApproveRequest()
     _check_reload(body.reload)
-    with request.app.state.mutation_lock:
+    with serialized(request):
         return DecisionOutcome(**ops.approve_request(ctx, request_id, reason=body.reason,
                                                      reload=body.reload))
 
@@ -399,7 +431,7 @@ def governance_approve(request: Request, ctx: PlatformDep, request_id: str,
                      "(CLI: local-ezai governance reject)", responses=PLATFORM_ERRORS)
 def governance_reject(request: Request, ctx: PlatformDep, request_id: str,
                       body: RejectRequest) -> DecisionOutcome:
-    with request.app.state.mutation_lock:
+    with serialized(request):
         return DecisionOutcome(**ops.reject_request(ctx, request_id, reason=body.reason))
 
 
@@ -417,7 +449,7 @@ def projects_list(ctx: PlatformDep) -> ProjectList:
              tags=["projects"], summary="Register a repository (CLI: local-ezai project add)",
              responses=PLATFORM_ERRORS)
 def project_add(request: Request, ctx: PlatformDep, body: ProjectAdd) -> ProjectOutcome:
-    with request.app.state.mutation_lock:
+    with serialized(request):
         return ProjectOutcome(**ops.add_project(ctx, body.path, name=body.name))
 
 
@@ -428,7 +460,7 @@ def project_add(request: Request, ctx: PlatformDep, body: ProjectAdd) -> Project
 def project_remove(request: Request, ctx: PlatformDep,
                    target: Annotated[str, Query(description="project name or path")],
                    ) -> ProjectOutcome:
-    with request.app.state.mutation_lock:
+    with serialized(request):
         return ProjectOutcome(**ops.remove_project(ctx, target))
 
 
@@ -451,7 +483,7 @@ def project_memory(ctx: PlatformDep, name: str,
              responses=PLATFORM_ERRORS)
 def project_memory_add(request: Request, ctx: PlatformDep, name: str,
                        body: MemoryAdd) -> MemoryAdded:
-    with request.app.state.mutation_lock:
+    with serialized(request):
         return MemoryAdded(**ops.add_project_memory(ctx, name, kind=body.kind, text=body.text))
 
 

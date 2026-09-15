@@ -62,6 +62,7 @@ from agentd.control import TOKEN_ENV as CONTROL_TOKEN_ENV
 from agentd.control import client as control_client
 from agentd.control.client import ConnectedOps, ControlPlaneError
 from agentd.governance import ChangeRequest, GovernanceQueue
+from agentd.installer import suggest_profile
 from agentd.lifecycle import (
     EngineHTTP,
     HttpxEngineHTTP,
@@ -82,7 +83,7 @@ from agentd.registry_v2 import (
 from agentd.render import (
     ENGINE_COMPOSE_FILENAME,
     ENGINE_PORT,
-    MANIFEST_FILENAME,
+    LITELLM_FILENAME,
     check_contract,
     rendered_dir,
 )
@@ -269,16 +270,31 @@ def _request_lines(req: ChangeRequest) -> list[str]:
 # (CLI_AND_WEBUI_STRATEGY §3/§7). The ``cmd_*`` verbs below only format.
 
 
+def prefetch_model(ctx: PlatformContext, ref: str, *, name: str | None = None,
+                   runtime: str | None = None, group: str | None = None,
+                   refetch: bool = False) -> Any:
+    """The download half of ``install_model`` with no state change — the
+    control plane runs it outside its mutation lock and passes the result
+    to ``install_model(fetched=…)``. None when the fetch failed (``install``
+    then records the reason)."""
+    registry = ctx.registry(required=False) or ctx.fresh_registry()
+    return lifecycle.prefetch(
+        registry, ref, descriptors=ctx.descriptors, vector=ctx.vector,
+        platform_root=ctx.root, validator=build_validator(ctx), catalog=ctx.catalog,
+        runtime=runtime, group=group, name=name,
+        capability_class=ctx.platform.klass, accelerator=ctx.platform.accel, refetch=refetch)
+
+
 def install_model(ctx: PlatformContext, ref: str, *, name: str | None = None,
                   runtime: str | None = None, group: str | None = None,
-                  refetch: bool = False) -> dict[str, Any]:
+                  refetch: bool = False, fetched: Any = None) -> dict[str, Any]:
     registry = ctx.registry(required=False) or ctx.fresh_registry()
     result = lifecycle.install(
         registry, ref, descriptors=ctx.descriptors, vector=ctx.vector,
         platform_root=ctx.root, validator=build_validator(ctx), catalog=ctx.catalog,
         runtime=runtime, group=group, name=name,
         capability_class=ctx.platform.klass, accelerator=ctx.platform.accel,
-        refetch=refetch, persist_dir=ctx.config_dir)
+        refetch=refetch, persist_dir=ctx.config_dir, fetched=fetched)
     entry = result.registry.models[result.name]
     return {"ok": result.ok, "name": result.name, "state": result.state,
             "artifact": entry.artifact, "size_gb": entry.size_gb, "error": entry.error,
@@ -749,14 +765,6 @@ def cmd_project_remove(ctx: Surface, args: argparse.Namespace) -> int:
 # ── status · up · down ───────────────────────────────────────────────────────
 
 
-def _manifest_generation(ctx: PlatformContext) -> int | None:
-    path = rendered_dir(ctx.config_dir) / MANIFEST_FILENAME
-    if not path.is_file():
-        return None
-    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    return data.get("generation") if isinstance(data, dict) else None
-
-
 def platform_snapshot(ctx: PlatformContext) -> dict[str, Any]:
     """The platform's declarative state as one JSON-able mapping — what
     ``local-ezai status`` prints and what the control plane's
@@ -778,7 +786,7 @@ def platform_snapshot(ctx: PlatformContext) -> dict[str, Any]:
             "system_memory_gb": ctx.vector.system_memory_gb, "cpu_cores": ctx.vector.cpu_cores,
             "generation": registry.generation if registry else None,
             "note": registry.note if registry else None,
-            "rendered_generation": _manifest_generation(ctx),
+            "rendered_generation": activation._manifest_generation(ctx.platform),
             "slot_runtime": active_runtimes[0] if len(active_runtimes) == 1 else active_runtimes,
             "models": models, "pending_approvals": len(pending)}
 
@@ -880,7 +888,9 @@ def compose_files(root: Path, profile: str, rendered: bool) -> list[Path]:
 
 
 def _compose(ctx: PlatformContext, args: argparse.Namespace, *verb: str) -> int:
-    files = compose_files(ctx.root, args.profile or "gpu", getattr(args, "rendered", False))
+    # --profile wins; otherwise this host's profile — the choice `setup` makes
+    profile = args.profile or suggest_profile(ctx.platform.klass, ctx.platform.accel)
+    files = compose_files(ctx.root, profile, getattr(args, "rendered", False))
     command = ["docker", "compose"]
     for file in files:
         command += ["-f", str(file)]
@@ -895,6 +905,14 @@ def _compose(ctx: PlatformContext, args: argparse.Namespace, *verb: str) -> int:
 
 
 def cmd_up(ctx: PlatformContext, args: argparse.Namespace) -> int:
+    # The base compose file bind-mounts the rendered LiteLLM config; when the
+    # file is missing Docker creates a DIRECTORY in its place and every later
+    # render fails — so `up` refuses before compose runs, whatever --rendered says.
+    litellm = rendered_dir(ctx.root / "config") / LITELLM_FILENAME
+    if not litellm.is_file():
+        raise PlatformError(f"no rendered LiteLLM config at {litellm} — {BASE_COMPOSE} "
+                            "bind-mounts it, so Docker would create a directory in its place; "
+                            "run `local-ezai bootstrap` (or `make bootstrap`) first")
     return _compose(ctx, args, "up", "-d")
 
 
@@ -1011,7 +1029,6 @@ def cmd_init(ctx: PlatformContext, args: argparse.Namespace) -> int:
 
 def cmd_bundle_create(ctx: PlatformContext, args: argparse.Namespace) -> int:
     from agentd.bundle import BundleError, create_bundle
-    from agentd.installer import suggest_profile
 
     profile = args.profile or suggest_profile(ctx.platform.klass, ctx.platform.accel)
     try:
@@ -1132,11 +1149,14 @@ def add_platform_parsers(sub: argparse._SubParsersAction, common: argparse.Argum
     p.add_argument("target")
 
     leaf(sub, "status", "Platform status: generation, models, approvals, stack health")
-    p = leaf(sub, "up", "Start the stack (compose profile; --rendered adds the engine override)")
-    p.add_argument("--profile", default=None, help="gpu (default) · cpu · n97 · n97-igpu")
+    p = leaf(sub, "up", "Start the stack (this host's compose profile; --rendered adds the "
+                        "engine override; refuses until the platform is bootstrapped)")
+    p.add_argument("--profile", default=None, help="gpu · cpu · n97 · n97-igpu (default: from "
+                                                   "the detected or asserted class)")
     p.add_argument("--rendered", action="store_true")
     p = leaf(sub, "down", "Stop the stack")
-    p.add_argument("--profile", default=None)
+    p.add_argument("--profile", default=None, help="gpu · cpu · n97 · n97-igpu (default: from "
+                                                   "the detected or asserted class)")
 
     p = leaf(sub, "bootstrap", "Consume the .env model seeds once into generation 1 "
                                "(validate → install → benchmark → activate → render)")

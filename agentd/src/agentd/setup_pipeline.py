@@ -46,9 +46,9 @@ from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import urlparse
 
-from agentd import bootstrap as bs
 from agentd import platform_cli
 from agentd.bootstrap import RUNTIME_KEY, SEED_GROUPS, parse_env, read_seeds, validate_seeds
+from agentd.bundle import _tail
 from agentd.catalog import Recommendation, recommend
 from agentd.config import AgentdConfig
 from agentd.control.health import DEFAULT_TARGETS, ServiceTarget, probe_services
@@ -57,6 +57,7 @@ from agentd.installer import EnvText, choose_runtime, suggest_profile
 from agentd.lifecycle import OFFLINE_KEY, LifecycleError
 from agentd.logging_setup import get_logger
 from agentd.platform_cli import PlatformContext, PlatformError, compose_files
+from agentd.platform_errors import platform_exceptions
 from agentd.registry_v2 import load_registry, reference_registry, registry_path
 
 log = get_logger("setup")
@@ -138,11 +139,6 @@ def runner_for(root: Path) -> Runner:
         return subprocess.run(command, cwd=str(root), capture_output=True, text=True,
                               check=False)
     return run
-
-
-def _tail(proc: subprocess.CompletedProcess[str], lines: int = 3) -> str:
-    text = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip().splitlines()
-    return " | ".join(line.strip() for line in text[-lines:] if line.strip())[:400]
 
 
 # ── report ───────────────────────────────────────────────────────────────────
@@ -256,6 +252,8 @@ class SetupPipeline:
         self.fetcher_factory = fetcher_factory
         self.sleep, self.clock, self.say = sleep, clock, say
         self.now = now or time.strftime(_STAMP)
+        #: A required step failed (set by ``run`` before the report is written).
+        self.failed = False
         env_text = self.env_path.read_text(encoding="utf-8") if self.env_path.is_file() else ""
         # the process environment wins over .env — compose's own precedence
         self.env: dict[str, str] = {**parse_env(env_text),
@@ -307,7 +305,7 @@ class SetupPipeline:
         start = self.clock()
         try:
             status, detail = fn()
-        except (bs.BootstrapError, PlatformError, LifecycleError, OSError) as exc:
+        except (*platform_exceptions(), OSError) as exc:  # the PR-9 vocabulary, none escapes
             status, detail = "failed", str(exc).strip()[:1500]  # every fix line stays
         result = StepResult(name, status, detail, round(self.clock() - start, 1))
         self.report.steps.append(result)
@@ -620,6 +618,10 @@ class SetupPipeline:
         chat_ok = any(c.name == "chat" and c.ok for c in report.smoke) or self.options.skip_smoke
         report.ready = bool(report.health.get("engine") and report.health.get("router")
                             and chat_ok and registry is not None)
+        # Decided here, BEFORE the file is written: report.json (and the
+        # Platform-ready card that reads it) must say what happened, not the
+        # dataclass default.
+        report.exit_code = self.outcome()
         report.next_steps = [
             f"sign up at {report.urls['webui']} — the first account is the admin",
             f"then: make orchestrator · try the Orchestrator at {report.urls['orchestrator']} "
@@ -668,12 +670,13 @@ class SetupPipeline:
             if result.status == "failed" and required:
                 failed = True
                 break
-        try:
-            self.step("report", self.step_report)
-        except OSError as exc:  # the report is best effort
-            self.say(f"  ! report: {exc}")
-        self.report.exit_code = EXIT_OK if self.report.ready and not failed else EXIT_FAILED
+        self.failed = failed
+        self.step("report", self.step_report)  # best effort: its own failure is a step result
+        self.report.exit_code = self.outcome()  # again: the report step may have failed early
         return self.report
+
+    def outcome(self) -> int:
+        return EXIT_OK if self.report.ready and not self.failed else EXIT_FAILED
 
 
 # ── init: the fallback wizard ────────────────────────────────────────────────

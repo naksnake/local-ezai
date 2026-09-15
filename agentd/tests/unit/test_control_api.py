@@ -354,3 +354,50 @@ def test_openapi_documents_every_verb_with_its_cli_mapping(api):
                 assert "CLI: local-ezai" in op["summary"], op_id
     assert "ChangeRequest" in spec["components"]["schemas"]
     assert spec["components"]["schemas"]["Recommendations"]["properties"]["class"]
+
+
+def test_idempotent_replay_needs_the_token_and_never_caches_a_rejection(api):
+    """A stored answer is handed back only to an authenticated caller of the
+    same client, and a 401 is never stored — so the corrected retry with the
+    same key reaches the route instead of a cached rejection."""
+    key = {IDEMPOTENCY_HEADER: "k-auth"}
+    wrong = api.post(f"{V1}/models/beta/activate", json={"group": "spare"},
+                     headers={**AUTH, **key, "Authorization": "Bearer nope"})
+    assert wrong.status_code == 401 and api.app.state.idempotency.get("k-auth") is None
+    assert registry(api).generation == 1  # the mutation did not run
+
+    first = api.post(f"{V1}/models/beta/activate", headers={**AUTH, **key}, json={"group": "spare"})
+    assert first.status_code == 200 and REPLAYED_HEADER not in first.headers
+    assert registry(api).generation == 2
+
+    anonymous = api.post(f"{V1}/models/beta/activate", headers=key, json={"group": "spare"})
+    assert anonymous.status_code == 401 and anonymous.json()["error"]["code"] == "unauthorized"
+    assert REPLAYED_HEADER not in anonymous.headers  # nothing leaks without the token
+
+    other = api.post(f"{V1}/models/beta/activate", json={"group": "spare"},
+                     headers={**AUTH, **key, CLIENT_HEADER: "admin-center"})
+    assert other.status_code == 409 and other.json()["error"]["code"] == "idempotency_conflict"
+
+    replay = api.post(f"{V1}/models/beta/activate", headers={**AUTH, **key},
+                      json={"group": "spare"})
+    assert replay.status_code == 200 and replay.headers[REPLAYED_HEADER] == "true"
+    assert replay.json() == first.json() and registry(api).generation == 2
+    replayed = [r for r in api.ctx.queue.audit() if r.event == "api.replayed"]
+    assert len(replayed) == 1 and replayed[0].actor == "nita via cli"
+    assert replayed[0].details["operation"] == "model_activate"
+
+
+def test_a_held_mutation_lock_answers_busy_instead_of_hanging(api, monkeypatch):
+    """Mutations are serialized; a caller waits a bounded time for the one in
+    flight and is then told to retry — not left hanging on an unbounded
+    read timeout while a validation or benchmark side-loads an engine."""
+    monkeypatch.setattr(control_api, "MUTATION_WAIT_S", 0.2)
+    api.app.state.mutation_lock.acquire()
+    try:
+        busy = api.post(f"{V1}/models/beta/activate", headers=AUTH, json={"group": "spare"})
+    finally:
+        api.app.state.mutation_lock.release()
+    assert busy.status_code == 409 and busy.json()["error"]["code"] == "mutation_busy"
+    assert "retry" in busy.json()["error"]["fix"] and registry(api).generation == 1
+    released = api.post(f"{V1}/models/beta/activate", headers=AUTH, json={"group": "spare"})
+    assert released.status_code == 200 and registry(api).generation == 2

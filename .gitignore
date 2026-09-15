@@ -5,12 +5,15 @@
 *.crt
 
 # ── AI Models (too large for git — stored in ./models) ────────────────────
+# Anchored to the checkout root: the weights live in ./models, while
+# config/models/ is the registry + generations (declarative state, meant to
+# be committed — ADR-025).
 *.bin
 *.safetensors
 *.gguf
 *.pt
 *.onnx
-models/
+/models/
 ai-models/
 hf-cache/
 
@@ -91,3 +94,10 @@ temp/
 config/first-run/
 config/soak/
 /sample-project/
+
+# ── machine-managed platform state: the daemon's idempotency + run records
+#    (response bodies included) and the artifacts re-rendered from the
+#    registry (the manifest refuses drift). config/governance/ (queue, audit
+#    log) is operator state the maintenance guide backs up — never ignore it.
+config/control/
+config/rendered/

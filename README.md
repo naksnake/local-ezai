@@ -28,6 +28,11 @@ local-ezai run "fix the failing date parser and add a test"
 local-ezai sprint sprint28.md     # or run a whole markdown spec
 ```
 
+No models yet? `make swe-demo` runs the whole pipeline offline in about a
+minute — a scripted model, a real branch, real tests, a real commit —
+[docs/SWE_DEMO.md](docs/SWE_DEMO.md) explains what you see and how to go
+from there to the real first run.
+
 `local-ezai` works on Linux, macOS, and Windows (chat · plan · run · code ·
 test · fix · review · commit · memory · sprint). It is fully additive — the
 chat stack above is unchanged. Guide: **[agentd/README.md](agentd/README.md)**
